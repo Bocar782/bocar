@@ -28,7 +28,7 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-3">
           <a
-            href="#"
+            href="/login"
             className="hidden text-sm text-foreground-muted transition-colors hover:text-foreground sm:block"
           >
             Connexion

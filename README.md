@@ -39,3 +39,22 @@ src/
 Voir `.env.example`. `SUPABASE_SECRET_KEY` ne doit jamais être préfixée par
 `NEXT_PUBLIC_` ni utilisée ailleurs que dans `src/lib/supabase/admin.ts`
 (côté serveur uniquement) : elle contourne les policies RLS.
+
+## Authentification
+
+Email/mot de passe via Supabase Auth (`@supabase/ssr`, Server Actions).
+
+- `/login`, `/signup` — redirigent vers `/dashboard` si une session existe déjà
+- `/dashboard` — protégée, redirige vers `/login` si aucune session
+- `/forgot-password` → email de réinitialisation → `/auth/callback` (échange
+  le code contre une session) → `/update-password`
+- `/auth/callback` gère aussi le lien de confirmation d'inscription
+
+Pour que les liens envoyés par email fonctionnent, dans le dashboard
+Supabase (Authentication → URL Configuration), ajouter à la liste des
+**Redirect URLs** :
+
+```
+http://localhost:3000/auth/callback
+https://<votre-domaine-de-prod>/auth/callback
+```
