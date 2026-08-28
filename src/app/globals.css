@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+:root {
+  --background: #06070f;
+  --background-elevated: #0b0d1c;
+  --foreground: #f4f4fb;
+  --foreground-muted: #9797ad;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --accent-violet: #8b5cf6;
+  --accent-violet-light: #c4b5fd;
+  --accent-blue: #4c7cf3;
+  --accent-blue-light: #7fa6ff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-violet-light: var(--accent-violet-light);
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-blue-light: var(--accent-blue-light);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--border-subtle);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+::selection {
+  background: var(--accent-violet);
+  color: white;
+}
+
+/* Halos décoratifs en arrière-plan : bleu nuit -> violet, très diffus */
+.aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  opacity: 0.55;
+}
+
+.aurora::before {
+  top: -18rem;
+  left: 50%;
+  translate: -50% 0;
+  width: 46rem;
+  height: 32rem;
+  background: radial-gradient(
+    closest-side,
+    var(--accent-violet) 0%,
+    transparent 100%
+  );
+}
+
+.aurora::after {
+  top: 6rem;
+  right: -12rem;
+  width: 34rem;
+  height: 34rem;
+  background: radial-gradient(
+    closest-side,
+    var(--accent-blue) 0%,
+    transparent 100%
+  );
+  opacity: 0.35;
+}
+
+/* Grille très subtile pour donner de la texture au fond sans distraire */
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black 40%, transparent 100%);
+  pointer-events: none;
+}
+
+.text-gradient {
+  background: linear-gradient(
+    100deg,
+    var(--accent-blue-light) 0%,
+    var(--accent-violet-light) 55%,
+    var(--accent-violet) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
