@@ -19,6 +19,7 @@ Ouvrir [http://localhost:3000](http://localhost:3000).
 - **Next.js 16** (App Router, TypeScript)
 - **Tailwind CSS v4**
 - **Supabase** (base de données, auth) via `@supabase/ssr`
+- **Anthropic API** (`@anthropic-ai/sdk`) pour la génération des formations
 - Police [Geist](https://vercel.com/font)
 
 ## Structure
@@ -31,14 +32,18 @@ src/
     client.ts         # Client navigateur (Client Components)
     server.ts          # Client serveur (Server Components / Actions, respecte la session + RLS)
     admin.ts            # Client privilégié, clé secrète — serveur uniquement
+  lib/anthropic/
+    client.ts           # Client Anthropic — serveur uniquement
   proxy.ts             # Rafraîchit la session Supabase à chaque requête (anciennement middleware.ts)
 ```
 
 ## Variables d'environnement
 
-Voir `.env.example`. `SUPABASE_SECRET_KEY` ne doit jamais être préfixée par
-`NEXT_PUBLIC_` ni utilisée ailleurs que dans `src/lib/supabase/admin.ts`
-(côté serveur uniquement) : elle contourne les policies RLS.
+Voir `.env.example`. `SUPABASE_SECRET_KEY` et `ANTHROPIC_API_KEY` ne doivent
+jamais être préfixées par `NEXT_PUBLIC_` ni importées en dehors de
+`src/lib/supabase/admin.ts` / `src/lib/anthropic/` (côté serveur
+uniquement, protégé par `server-only`) : la première contourne les policies
+RLS, la seconde est facturée à l'usage sur votre compte Anthropic.
 
 ## Authentification
 
