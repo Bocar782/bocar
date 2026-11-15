@@ -196,3 +196,52 @@ publique.
 Le SDK Stripe (basé sur `fetch`) a besoin de
 `NODE_USE_ENV_PROXY=1` (déjà dans `.env.local`) pour passer par le proxy
 réseau de cet environnement de développement — sans effet en production.
+
+## Analyse approfondie (réservée au plan Pro)
+
+En plus de la génération de formation classique, le dashboard propose une
+**analyse approfondie** : plutôt qu'un cours structuré en chapitres, elle
+étudie plusieurs cas réels (parcours d'entrepreneurs, entreprises,
+investisseurs, stratégies, réussites et échecs) en lien avec un sujet,
+avec recherche web et sources citées — un contenu plus long et plus
+recherché qu'une formation classique, et donc plus coûteux à générer.
+
+- **`src/lib/analysis/generate.ts`** : pipeline en 4 étapes, sur le modèle
+  du pipeline de formation (`src/lib/courses/generate.ts`) :
+  1. **Cadrage** (`scopeAnalysis`) : titre, domaine, introduction, angle de
+     recherche, nombre de cas à analyser (4 à 7) et requêtes de recherche
+     web distinctes et complémentaires (succès, échecs, stratégies,
+     données chiffrées — pas uniquement des success stories).
+  2. **Recherche** (`researchRealCases` + `extractVerifiedCases`) : mène
+     plusieurs recherches web réelles (outil `web_search_20260209`,
+     jusqu'à 14 recherches), puis extrait les cas réels et vérifiés —
+     avec le même filet anti-hallucination que les formations : un cas
+     dont l'URL ne correspond à aucune source réellement trouvée est
+     écarté. Si moins de 3 cas vérifiés sont trouvés, l'analyse échoue
+     plutôt que de produire un contenu non fondé.
+  3. **Rédaction** (`writeSection`) : une section détaillée par cas,
+     rédigée en parallèle, avec contexte, décisions clés, explication
+     causale de la réussite ou de l'échec, et enseignements — plus longue
+     et plus analytique qu'un chapitre de formation classique.
+  4. **Synthèse** (`writeSynthesis`) : motifs récurrents entre les cas,
+     enseignements transversaux.
+- **Persistance** : table `deep_analyses` (migration
+  `0006_deep_analyses.sql`), contenu stocké en jsonb (lecture seule une
+  fois généré, donc pas besoin d'un schéma normalisé comme pour les
+  chapitres de formation). RLS : chaque utilisateur ne voit que ses
+  propres analyses.
+- **`POST /api/analysis/generate`** (streaming NDJSON, même format que
+  `/api/courses/generate`) et page de détail
+  `/dashboard/analyses/[id]`.
+- **Quota, contrôlé côté serveur** (`getAnalysisUsageStatus` dans
+  `src/lib/courses/plan.ts`) : réservée au plan Pro
+  (`FREE_PLAN_ANALYSIS_LIMIT = 0`), `PRO_PLAN_MONTHLY_ANALYSIS_LIMIT = 2`
+  par période de facturation — plus restrictif que les formations
+  classiques vu le coût plus élevé (recherche web + génération longue).
+  `/api/analysis/generate` renvoie une erreur 403 si le quota est atteint
+  ou si l'utilisateur n'est pas sur le plan Pro, indépendamment de ce qui
+  est affiché côté client.
+- **Dashboard** : `GeneratorTabs` (`src/app/dashboard/generator-tabs.tsx`)
+  bascule entre "Formation classique" et "Analyse approfondie" au même
+  endroit, avec une section "Mes analyses approfondies" listant les
+  analyses déjà générées.

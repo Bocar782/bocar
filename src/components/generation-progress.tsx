@@ -8,16 +8,20 @@ const STAGE_ORDER: GenerationStage[] = [
   "pret",
 ];
 
-export function GenerationProgress({
+export function GenerationProgress<Stage extends string>({
   currentStage,
+  stageOrder = STAGE_ORDER as unknown as Stage[],
+  stageLabels = STAGE_LABELS as unknown as Record<Stage, string>,
 }: {
-  currentStage: GenerationStage;
+  currentStage: Stage;
+  stageOrder?: Stage[];
+  stageLabels?: Record<Stage, string>;
 }) {
-  const currentIndex = STAGE_ORDER.indexOf(currentStage);
+  const currentIndex = stageOrder.indexOf(currentStage);
 
   return (
     <div className="mx-auto w-full max-w-md space-y-4">
-      {STAGE_ORDER.map((stage, i) => {
+      {stageOrder.map((stage, i) => {
         const isDone = i < currentIndex;
         const isActive = i === currentIndex;
 
@@ -43,7 +47,7 @@ export function GenerationProgress({
                     : "text-sm text-foreground-muted/40"
               }
             >
-              {STAGE_LABELS[stage]}
+              {stageLabels[stage]}
             </span>
             {isActive && (
               <span className="ml-auto h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light" />
