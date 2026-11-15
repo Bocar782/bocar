@@ -78,7 +78,7 @@ async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis>
       "Tu es Lia, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
     user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Choisis un nombre de chapitres entre 4 et 6 selon la richesse du sujet. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
     schema: AnalysisSchema,
-    maxTokens: 1024,
+    maxTokens: 2048,
   });
 
   return {
@@ -105,11 +105,10 @@ async function searchRealExamples(
   let response = requireContent(
     await client.messages.create({
       model: MODEL,
-      max_tokens: 8192,
+      max_tokens: 12000,
       system,
       messages,
       tools,
-      output_config: { effort: "high" },
     }),
   );
 
@@ -121,11 +120,10 @@ async function searchRealExamples(
     response = requireContent(
       await client.messages.create({
         model: MODEL,
-        max_tokens: 8192,
+        max_tokens: 12000,
         system,
         messages,
         tools,
-        output_config: { effort: "high" },
       }),
     );
     resumes += 1;
@@ -167,7 +165,7 @@ async function extractVerifiedExamples(
       "Tu extrais des exemples réels vérifiés à partir de notes de recherche, pour une formation. Pour chaque exemple, l'URL source doit être copiée EXACTEMENT depuis la liste fournie — jamais inventée, jamais modifiée.",
     user: `Sujet : "${analysis.title}"\n\nNotes de recherche :\n${findings}\n\nSources réellement trouvées (copie l'URL exactement) :\n${sourceList}\n\nExtrais la liste des exemples réels et vérifiés, chacun avec sa source exacte tirée de la liste ci-dessus.`,
     schema: ResearchExtractionSchema,
-    maxTokens: 4096,
+    maxTokens: 6000,
   });
 
   const realUrlSet = new Set(realSources.map((s) => s.url.trim().replace(/\/$/, "")));
@@ -197,8 +195,7 @@ async function buildProgramme(
       "Tu es Lia. Tu construis le plan détaillé d'une formation : introduction, objectifs pédagogiques et liste de chapitres. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire).",
     user: `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis le programme avec exactement ${analysis.chapterCount} chapitres, progressifs (chaque chapitre s'appuie sur les précédents).\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex au chapitre le plus pertinent s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`,
     schema: ProgrammeSchema,
-    maxTokens: 6144,
-    effort: "high",
+    maxTokens: 12000,
   });
 }
 
@@ -231,8 +228,7 @@ async function writeChapter(
       "Tu es Lia. Tu rédiges un chapitre complet et pédagogique d'une formation, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
     user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet :\n${outline}\n\n${continuityNote}\n\nRédige le chapitre ${chapterIndex + 1} : "${chapterPlan.title}".\nCe chapitre doit couvrir : ${chapterPlan.summary}\n\n${exampleInstruction}`,
     schema: ChapterContentSchema,
-    maxTokens: 8192,
-    effort: "high",
+    maxTokens: 20000,
   });
 }
 
@@ -252,8 +248,7 @@ async function writeSummary(
     system: "Tu es Lia. Tu rédiges le résumé final d'une formation à partir de ses points clés.",
     user: `Formation : "${analysis.title}".\nAngle du résumé : ${programme.summaryAngle}\n\nPoints à retenir de chaque chapitre :\n${takeaways}\n\nRédige un résumé final synthétique et les points essentiels de toute la formation.`,
     schema: CourseSummarySchema,
-    maxTokens: 3072,
-    effort: "high",
+    maxTokens: 6000,
   });
 }
 
