@@ -5,8 +5,13 @@ import { useEffect, useState } from "react";
 /**
  * Repère le chapitre (`[data-chapter-index]`) actuellement visible dans une
  * bande proche du haut de l'écran — pattern classique de "scrollspy".
+ *
+ * `maxIndex`, s'il est fourni, plafonne la valeur retournée (utile pour une
+ * formation verrouillée : on ne veut pas faire avancer la progression ou le
+ * contexte du chat au-delà du contenu réellement débloqué, même si le
+ * contenu flouté reste visuellement présent dans la page).
  */
-export function useCurrentChapterIndex(): number {
+export function useCurrentChapterIndex(maxIndex?: number): number {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
 
   useEffect(() => {
@@ -30,5 +35,7 @@ export function useCurrentChapterIndex(): number {
     return () => observer.disconnect();
   }, []);
 
-  return currentChapterIndex;
+  return maxIndex !== undefined
+    ? Math.min(currentChapterIndex, maxIndex)
+    : currentChapterIndex;
 }

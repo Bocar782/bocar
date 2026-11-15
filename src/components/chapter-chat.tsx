@@ -14,11 +14,18 @@ const SUGGESTIONS = [
   "Fais-moi un résumé de ce chapitre",
 ];
 
-export function ChapterChat({ course }: { course: GeneratedCourse }) {
+export function ChapterChat({
+  course,
+  maxChapterIndex,
+}: {
+  course: GeneratedCourse;
+  /** Formation verrouillée : ne pas donner à Lia de contexte au-delà du contenu débloqué. */
+  maxChapterIndex?: number;
+}) {
   const [open, setOpen] = useState(false);
   // Repère le chapitre actuellement visible à l'écran, pour donner le bon
   // contexte à Lia sans que l'utilisateur ait à le préciser.
-  const currentChapterIndex = useCurrentChapterIndex();
+  const currentChapterIndex = useCurrentChapterIndex(maxChapterIndex);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);

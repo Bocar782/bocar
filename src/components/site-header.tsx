@@ -1,6 +1,6 @@
 const NAV_LINKS = [
   { label: "Comment ça marche", href: "#comment-ca-marche" },
-  { label: "Tarifs", href: "#tarifs" },
+  { label: "Tarifs", href: "/tarifs" },
 ];
 
 export function SiteHeader() {

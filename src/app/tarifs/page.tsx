@@ -1,0 +1,128 @@
+import Link from "next/link";
+import { BackgroundGlow } from "@/components/background-glow";
+import { FREE_PLAN_COURSE_LIMIT, FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
+import { createClient } from "@/lib/supabase/server";
+
+export default async function PricingPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  return (
+    <div className="relative flex min-h-screen flex-1 flex-col">
+      <BackgroundGlow />
+
+      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
+        <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white shadow-[0_0_24px_-4px_var(--accent-violet)]">
+            L
+          </span>
+          <span className="text-lg font-semibold tracking-tight">Lia</span>
+        </Link>
+        {!user && (
+          <Link
+            href="/login"
+            className="text-sm text-foreground-muted transition-colors hover:text-foreground"
+          >
+            Connexion
+          </Link>
+        )}
+      </header>
+
+      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24 pt-8 sm:pt-16">
+        <h1 className="text-center text-3xl font-semibold tracking-tight sm:text-4xl">
+          Des tarifs simples
+        </h1>
+        <p className="mt-3 max-w-md text-center text-sm text-foreground-muted">
+          Commence gratuitement, débloque la suite quand tu es prêt à aller
+          plus loin.
+        </p>
+
+        <div className="mt-12 grid w-full gap-6 sm:grid-cols-2">
+          <div className="rounded-[28px] border border-border-subtle bg-white/[0.02] p-6 sm:p-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+              Gratuit
+            </h2>
+            <p className="mt-3 text-3xl font-semibold text-foreground">0 €</p>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Pour découvrir Lia sans engagement.
+            </p>
+
+            <ul className="mt-6 space-y-3 text-sm text-foreground">
+              <li className="flex gap-2.5">
+                <span className="mt-0.5 text-accent-violet-light">✓</span>
+                <span>
+                  {FREE_PLAN_COURSE_LIMIT} formation complète générée par Lia
+                </span>
+              </li>
+              <li className="flex gap-2.5">
+                <span className="mt-0.5 text-accent-violet-light">✓</span>
+                <span>
+                  Les {FREE_PLAN_UNLOCKED_CHAPTERS} premiers chapitres en
+                  accès libre
+                </span>
+              </li>
+              <li className="flex gap-2.5">
+                <span className="mt-0.5 text-foreground-muted">—</span>
+                <span className="text-foreground-muted">
+                  Chapitres suivants et quiz verrouillés
+                </span>
+              </li>
+            </ul>
+
+            <div className="mt-8 rounded-full border border-border-subtle bg-white/[0.03] px-5 py-2.5 text-center text-sm text-foreground-muted">
+              {user ? "Ton plan actuel" : "Plan par défaut"}
+            </div>
+          </div>
+
+          <div className="relative rounded-[28px] p-px">
+            <div
+              aria-hidden
+              className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-white/10 to-accent-violet/50"
+            />
+            <div className="relative h-full rounded-[28px] bg-background-elevated/95 p-6 sm:p-8">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
+                Pro
+              </h2>
+              <p className="mt-3 text-3xl font-semibold text-foreground">
+                Bientôt disponible
+              </p>
+              <p className="mt-1 text-sm text-foreground-muted">
+                Pour apprendre sans limites.
+              </p>
+
+              <ul className="mt-6 space-y-3 text-sm text-foreground">
+                <li className="flex gap-2.5">
+                  <span className="mt-0.5 text-accent-violet-light">✓</span>
+                  <span>Formations illimitées</span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="mt-0.5 text-accent-violet-light">✓</span>
+                  <span>Accès complet à chaque formation, du premier au dernier chapitre</span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="mt-0.5 text-accent-violet-light">✓</span>
+                  <span>Quiz et suivi de progression sans restriction</span>
+                </li>
+              </ul>
+
+              <div className="mt-8 rounded-full bg-white/[0.06] px-5 py-2.5 text-center text-sm text-foreground-muted">
+                Bientôt disponible
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-10 text-sm text-foreground-muted">
+          <Link
+            href={user ? "/dashboard" : "/"}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {user ? "← Retour au tableau de bord" : "← Retour à l'accueil"}
+          </Link>
+        </p>
+      </main>
+    </div>
+  );
+}

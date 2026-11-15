@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { GenerationProgress } from "@/components/generation-progress";
+import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
 import type { GeneratedCourse, GenerationStage } from "@/lib/courses/schemas";
 
 type Status = "idle" | "generating" | "done" | "error";
@@ -22,8 +24,10 @@ const MAX_LENGTH = 500;
 
 export function CourseGenerator({
   remainingGenerations,
+  locked,
 }: {
   remainingGenerations: number;
+  locked: boolean;
 }) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
@@ -118,7 +122,7 @@ export function CourseGenerator({
             Ta formation est prête mais n&apos;a pas pu être sauvegardée ({saveWarning}). Elle ne sera pas visible après avoir quitté cette page.
           </p>
         )}
-        <CourseView course={course} courseId={courseId} />
+        <CourseView course={course} courseId={courseId} locked={locked} />
         <button
           type="button"
           onClick={startOver}
@@ -126,7 +130,10 @@ export function CourseGenerator({
         >
           Générer une autre formation
         </button>
-        <ChapterChat course={course} />
+        <ChapterChat
+          course={course}
+          maxChapterIndex={locked ? FREE_PLAN_UNLOCKED_CHAPTERS - 1 : undefined}
+        />
       </div>
     );
   }
@@ -146,12 +153,18 @@ export function CourseGenerator({
     return (
       <div className="w-full max-w-2xl rounded-[28px] border border-border-subtle bg-background-elevated/80 p-6 text-center sm:p-8">
         <p className="text-sm font-medium text-foreground">
-          Limite mensuelle de générations atteinte
+          Limite du plan gratuit atteinte
         </p>
         <p className="mt-2 text-sm text-foreground-muted">
-          Tu as utilisé toutes tes générations pour ce mois-ci. Reviens le
-          mois prochain pour en créer de nouvelles.
+          Le plan gratuit permet de générer une formation. Débloque la
+          formation complète pour continuer à apprendre avec Lia.
         </p>
+        <Link
+          href="/tarifs"
+          className="mt-4 inline-block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+        >
+          Voir les tarifs
+        </Link>
       </div>
     );
   }

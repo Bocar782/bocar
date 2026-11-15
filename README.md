@@ -106,8 +106,39 @@ refaire le quiz.
   `src/lib/courses/progress-actions.ts`, qui enregistrent aussi le score
   du quiz une fois terminé. Colonnes ajoutées par la migration
   `0003_progress.sql`.
-- **Utilisation** : quota mensuel fixe (`MONTHLY_GENERATION_LIMIT` dans
-  `src/lib/courses/limits.ts`, actuellement 3 — à remplacer par un vrai
-  système d'abonnement le jour venu). Affiché sur le dashboard et
-  **contrôlé côté serveur** dans `/api/courses/generate` (pas seulement
-  côté client) pour éviter qu'un appel direct à l'API ne le contourne.
+- **Utilisation** : affiche le nombre de formations générées par
+  l'utilisateur. Voir la section "Plan gratuit & paywall" ci-dessous pour
+  la limite appliquée.
+
+## Plan gratuit & paywall
+
+Tout le monde est actuellement sur le plan gratuit (il n'existe pas encore
+de système d'abonnement — pas de Stripe, pas de table "plan"). Les règles
+vivent dans `src/lib/courses/plan.ts` :
+
+- `FREE_PLAN_COURSE_LIMIT` (1) : nombre de formations qu'un utilisateur
+  gratuit peut générer, **à vie** (pas par mois). `isOnFreePlan()` est le
+  point unique à modifier le jour où un vrai plan payant existera.
+- `FREE_PLAN_UNLOCKED_CHAPTERS` (2) : nombre de chapitres accessibles
+  normalement dans une formation du plan gratuit.
+
+**Contrôle côté serveur** : `/api/courses/generate` compte le nombre total
+de formations déjà générées par l'utilisateur
+(`countTotalGenerations` dans `src/lib/courses/persist.ts`) et renvoie une
+erreur 403 si la limite est atteinte — un appel direct à l'API sans passer
+par l'interface ne permet donc pas de la contourner.
+
+**Paywall visuel** (`src/components/course-view.tsx`) : pour une formation
+verrouillée, les `FREE_PLAN_UNLOCKED_CHAPTERS` premiers chapitres
+s'affichent normalement. Le reste (chapitres suivants, résumé, quiz) est
+toujours envoyé au client mais rendu flouté (`blur-sm` + `inert`, donc non
+interactif et retiré de l'arbre d'accessibilité) dans un conteneur à
+hauteur limitée avec un fondu vers le fond. Juste avant ce flou, une carte
+nette (non floutée) annonce combien de chapitres restent à débloquer et
+propose un bouton "Débloquer la formation complète" vers `/tarifs`
+(`src/app/tarifs/page.tsx`, page de tarifs avec un plan "Gratuit" et un
+plan "Pro" marqué "Bientôt disponible" — aucun paiement réel n'est encore
+branché). Le chat (`ChapterChat`) et le suivi de progression
+(`ProgressTracker`) reçoivent tous les deux un `maxChapterIndex` qui les
+empêche d'aller au-delà du dernier chapitre débloqué, même si le DOM
+contient le reste de la formation.

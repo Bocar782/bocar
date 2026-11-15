@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CourseGenerationError, generateCourse } from "@/lib/courses/generate";
-import { MONTHLY_GENERATION_LIMIT } from "@/lib/courses/limits";
-import { countGenerationsThisMonth, saveCourse } from "@/lib/courses/persist";
+import { FREE_PLAN_COURSE_LIMIT, isOnFreePlan } from "@/lib/courses/plan";
+import { countTotalGenerations, saveCourse } from "@/lib/courses/persist";
 import type { GenerationStage } from "@/lib/courses/schemas";
 
 export const dynamic = "force-dynamic";
@@ -20,22 +20,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
-  // Quota mensuel contrôlé côté serveur (pas seulement affiché côté client)
-  // pour éviter qu'un appel direct à cette route ne le contourne. En cas
-  // d'échec du comptage (ex. migration pas encore appliquée), on laisse
-  // passer plutôt que de bloquer toute génération.
-  try {
-    const usedThisMonth = await countGenerationsThisMonth(supabase, user.id);
-    if (usedThisMonth >= MONTHLY_GENERATION_LIMIT) {
-      return NextResponse.json(
-        {
-          error: `Limite mensuelle atteinte (${MONTHLY_GENERATION_LIMIT} formations). Réessaie le mois prochain.`,
-        },
-        { status: 429 },
-      );
+  // Limite du plan gratuit contrôlée côté serveur (pas seulement affichée
+  // côté client) pour qu'un appel direct à cette route ne puisse pas la
+  // contourner. En cas d'échec du comptage (ex. migration pas encore
+  // appliquée), on laisse passer plutôt que de bloquer toute génération.
+  if (isOnFreePlan()) {
+    try {
+      const totalGenerated = await countTotalGenerations(supabase, user.id);
+      if (totalGenerated >= FREE_PLAN_COURSE_LIMIT) {
+        return NextResponse.json(
+          {
+            error: `Le plan gratuit est limité à ${FREE_PLAN_COURSE_LIMIT} formation${FREE_PLAN_COURSE_LIMIT > 1 ? "s" : ""}. Débloque la formation complète pour continuer.`,
+          },
+          { status: 403 },
+        );
+      }
+    } catch {
+      // ignoré
     }
-  } catch {
-    // ignoré
   }
 
   let topic: string;

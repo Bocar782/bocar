@@ -1,4 +1,6 @@
+import Link from "next/link";
 import type { GeneratedCourse } from "@/lib/courses/schemas";
+import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
 import { MarkdownContent } from "./markdown-content";
 import { QuizView } from "./quiz-view";
 
@@ -59,13 +61,124 @@ function ChapterCard({
   );
 }
 
+function SummarySection({ course }: { course: GeneratedCourse }) {
+  return (
+    <section className="relative mt-8 rounded-[28px] p-px">
+      <div
+        aria-hidden
+        className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
+      />
+      <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
+        <h2 className="text-lg font-semibold text-foreground">Résumé final</h2>
+        <div className="mt-3">
+          <MarkdownContent content={course.summary} />
+        </div>
+        <ul className="mt-2 space-y-2">
+          {course.keyPoints.map((point, i) => (
+            <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-foreground">
+              <span className="mt-0.5 text-accent-blue-light">★</span>
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Aperçu du contenu verrouillé : un CTA clair et non flouté, suivi d'une
+ * prévisualisation floutée (tronquée en hauteur, fondue vers l'arrière-plan)
+ * pour montrer qu'il y a bien du contenu derrière sans forcer à le
+ * parcourir. `inert` retire toute interactivité (clic, focus clavier) du
+ * contenu flouté sans le masquer du rendu visuel.
+ */
+function LockedPreview({
+  remainingChapters,
+  hasQuiz,
+  children,
+}: {
+  remainingChapters: number;
+  hasQuiz: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-8">
+      <div className="relative rounded-[28px] p-px">
+        <div
+          aria-hidden
+          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
+        />
+        <div className="relative flex flex-col items-center gap-3 rounded-[28px] bg-background-elevated/95 p-6 text-center sm:p-8">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-violet/15 text-lg">
+            🔒
+          </span>
+          <p className="text-base font-semibold text-foreground">
+            {remainingChapters} chapitre{remainingChapters > 1 ? "s" : ""}
+            {hasQuiz ? " + le quiz final" : ""} t&apos;attendent
+          </p>
+          <p className="max-w-sm text-sm text-foreground-muted">
+            Tu as terminé l&apos;aperçu gratuit de cette formation. Débloque
+            la version complète pour continuer ta lecture et valider tes
+            acquis.
+          </p>
+          <Link
+            href="/tarifs"
+            className="mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+          >
+            Débloquer la formation complète
+          </Link>
+        </div>
+      </div>
+
+      <div className="relative mt-6 max-h-[560px] overflow-hidden rounded-[28px]">
+        <div
+          inert
+          aria-hidden
+          className="select-none space-y-6 blur-sm"
+        >
+          {children}
+        </div>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-background to-transparent"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function CourseView({
   course,
   courseId = null,
+  locked = false,
 }: {
   course: GeneratedCourse;
   courseId?: string | null;
+  /** Plan gratuit : flouter tout ce qui suit les premiers chapitres. */
+  locked?: boolean;
 }) {
+  const unlockedCount = locked
+    ? Math.min(FREE_PLAN_UNLOCKED_CHAPTERS, course.chapters.length)
+    : course.chapters.length;
+  const unlockedChapters = course.chapters.slice(0, unlockedCount);
+  const lockedChapters = course.chapters.slice(unlockedCount);
+  const isLockedForThisCourse = locked && lockedChapters.length + course.quiz.length > 0;
+
+  const rest = (
+    <>
+      {lockedChapters.length > 0 && (
+        <div className="space-y-6">
+          {lockedChapters.map((chapter, i) => (
+            <ChapterCard key={unlockedCount + i} chapter={chapter} index={unlockedCount + i} />
+          ))}
+        </div>
+      )}
+      <SummarySection course={course} />
+      <QuizView quiz={course.quiz} courseId={courseId} />
+    </>
+  );
+
   return (
     <div className="w-full max-w-3xl">
       <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
@@ -75,6 +188,11 @@ export function CourseView({
         <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1">
           Niveau {course.level}
         </span>
+        {isLockedForThisCourse && (
+          <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1">
+            Formation gratuite
+          </span>
+        )}
       </div>
 
       <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
@@ -100,33 +218,21 @@ export function CourseView({
       </section>
 
       <div className="mt-8 space-y-6">
-        {course.chapters.map((chapter, i) => (
+        {unlockedChapters.map((chapter, i) => (
           <ChapterCard key={i} chapter={chapter} index={i} />
         ))}
       </div>
 
-      <section className="relative mt-8 rounded-[28px] p-px">
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-        />
-        <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
-          <h2 className="text-lg font-semibold text-foreground">Résumé final</h2>
-          <div className="mt-3">
-            <MarkdownContent content={course.summary} />
-          </div>
-          <ul className="mt-2 space-y-2">
-            {course.keyPoints.map((point, i) => (
-              <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-foreground">
-                <span className="mt-0.5 text-accent-blue-light">★</span>
-                <span>{point}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <QuizView quiz={course.quiz} courseId={courseId} />
+      {isLockedForThisCourse ? (
+        <LockedPreview
+          remainingChapters={lockedChapters.length}
+          hasQuiz={course.quiz.length > 0}
+        >
+          {rest}
+        </LockedPreview>
+      ) : (
+        rest
+      )}
     </div>
   );
 }
