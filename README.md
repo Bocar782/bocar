@@ -245,3 +245,35 @@ recherché qu'une formation classique, et donc plus coûteux à générer.
   bascule entre "Formation classique" et "Analyse approfondie" au même
   endroit, avec une section "Mes analyses approfondies" listant les
   analyses déjà générées.
+
+## Landing page
+
+La page `/` (`src/app/page.tsx`) est la vitrine publique, accessible sans
+connexion : hero, démonstration visuelle du produit ("wow effect" —
+`src/components/marketing/wow-demo.tsx`, un mockup statique montrant une
+demande puis la formation générée, pour qu'un visiteur comprenne
+immédiatement que ce n'est pas un chatbot), exemples de sujets, avantages,
+une présentation de l'interface (mockups en CSS/HTML, pas de vraies
+captures d'écran, pour rester léger et cohérent avec le design system),
+avis clients (**placeholders explicitement labellisés comme fictifs** —
+badge visible + mention sous chaque avis, à remplacer par de vrais avis
+après le lancement), tarifs (section condensée qui reflète les vraies
+constantes de `src/lib/courses/plan.ts`, donc toujours synchronisée avec
+le plan réellement facturé), FAQ (accordéon), et un CTA final. Les
+sections apparaissent avec une légère animation au scroll
+(`src/components/marketing/reveal.tsx`, IntersectionObserver + filet de
+sécurité qui force l'affichage après 1,5s si l'observer ne se déclenche
+pas, pour qu'aucun contenu ne reste invisible).
+
+Une page séparée, `/pourquoi-nous` (accessible depuis le footer et la nav
+du header), explique le problème de l'apprentissage traditionnel, notre
+vision de l'apprentissage assisté par IA, et pourquoi ce produit existe.
+
+Le header (`src/components/site-header.tsx`) bascule vers un menu mobile
+(hamburger) en dessous de `lg:` (1024px) : avec le nombre de liens de
+navigation actuels, un breakpoint `md:` (768px) provoquait un
+chevauchement du logo sur tablette — testé visuellement et corrigé.
+
+**Preuve sociale** : le chiffre "+5 000 utilisateurs" du hero est un
+placeholder, à remplacer par un vrai chiffre avant la mise en ligne
+publique.
