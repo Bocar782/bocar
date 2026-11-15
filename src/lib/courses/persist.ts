@@ -79,6 +79,24 @@ export async function saveCourse(
     );
   }
 
+  if (course.quiz.length > 0) {
+    const { error: quizError } = await supabase.from("course_quiz_questions").insert(
+      course.quiz.map((q) => ({
+        course_id: courseId,
+        position: q.position,
+        chapter_index: q.chapterIndex,
+        question: q.question,
+        choices: q.choices,
+        correct_choice_index: q.correctChoiceIndex,
+        explanation: q.explanation,
+      })),
+    );
+
+    if (quizError) {
+      throw new Error(`Échec de l'enregistrement du quiz : ${quizError.message}`);
+    }
+  }
+
   return courseId;
 }
 
@@ -124,6 +142,14 @@ export async function getCourseById(
 
   if (chaptersError) throw new Error(`Échec du chargement des chapitres : ${chaptersError.message}`);
 
+  const { data: quizRows, error: quizError } = await supabase
+    .from("course_quiz_questions")
+    .select("position, chapter_index, question, choices, correct_choice_index, explanation")
+    .eq("course_id", courseId)
+    .order("position", { ascending: true });
+
+  if (quizError) throw new Error(`Échec du chargement du quiz : ${quizError.message}`);
+
   return {
     topic: course.topic,
     title: course.title,
@@ -150,5 +176,13 @@ export async function getCourseById(
         },
       };
     }),
+    quiz: (quizRows ?? []).map((q) => ({
+      position: q.position as number,
+      chapterIndex: (q.chapter_index as number | null) ?? null,
+      question: q.question as string,
+      choices: (q.choices ?? []) as string[],
+      correctChoiceIndex: q.correct_choice_index as number,
+      explanation: q.explanation as string,
+    })),
   };
 }

@@ -98,6 +98,32 @@ export const CourseSummarySchema = z.object({
 });
 export type CourseSummary = z.infer<typeof CourseSummarySchema>;
 
+export const QuizSchema = z.object({
+  questions: z.array(
+    z.object({
+      chapterIndex: z
+        .number()
+        .int()
+        .nullable()
+        .describe("Index (0-based) du chapitre dont la question est tirée"),
+      question: z.string(),
+      choices: z
+        .array(z.string())
+        .describe("4 choix de réponse, une seule bonne réponse parmi eux"),
+      correctChoiceIndex: z
+        .number()
+        .int()
+        .describe("Index (0-based) du choix correct dans `choices`"),
+      explanation: z
+        .string()
+        .describe(
+          "Explication de la bonne réponse, basée uniquement sur le contenu fourni",
+        ),
+    }),
+  ),
+});
+export type Quiz = z.infer<typeof QuizSchema>;
+
 // --- Formation assemblée, prête à être affichée / persistée ---
 
 export type GeneratedChapter = {
@@ -113,6 +139,15 @@ export type GeneratedChapter = {
   };
 };
 
+export type QuizQuestion = {
+  position: number;
+  chapterIndex: number | null;
+  question: string;
+  choices: string[];
+  correctChoiceIndex: number;
+  explanation: string;
+};
+
 export type GeneratedCourse = {
   topic: string;
   title: string;
@@ -123,6 +158,7 @@ export type GeneratedCourse = {
   chapters: GeneratedChapter[];
   summary: string;
   keyPoints: string[];
+  quiz: QuizQuestion[];
 };
 
 export type GenerationStage =

@@ -78,3 +78,15 @@ bouton flottant. Il est bâti sur :
 - `src/app/api/chat/route.ts` — appelle `claude-opus-5-5` en streaming,
   sans persistance : l'historique vit dans l'état React du navigateur et
   est renvoyé à chaque tour (API sans état)
+
+## Quiz final
+
+Chaque formation se termine par un quiz de 10 questions à choix multiples,
+généré en même temps que le résumé (`writeQuiz` dans
+`src/lib/courses/generate.ts`) à partir du contenu réel des chapitres
+uniquement — jamais de connaissance externe. Persisté dans
+`course_quiz_questions` (migration `0002_quiz.sql`). Interface
+(`src/components/quiz-view.tsx`) : question par question, score final,
+explication par question (bonne réponse justifiée, qu'on se soit trompé
+ou non), filtre pour ne revoir que ses erreurs, et possibilité de
+refaire le quiz.

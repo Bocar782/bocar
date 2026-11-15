@@ -26,6 +26,15 @@ const ChapterSchema = z.object({
   example: ExampleSchema,
 });
 
+const QuizQuestionSchema = z.object({
+  position: z.number().int(),
+  chapterIndex: z.number().int().nullable(),
+  question: z.string(),
+  choices: z.array(z.string()),
+  correctChoiceIndex: z.number().int(),
+  explanation: z.string(),
+});
+
 const CourseSchema = z.object({
   topic: z.string(),
   title: z.string(),
@@ -36,6 +45,7 @@ const CourseSchema = z.object({
   chapters: z.array(ChapterSchema).min(1),
   summary: z.string(),
   keyPoints: z.array(z.string()),
+  quiz: z.array(QuizQuestionSchema),
 });
 
 const MessageSchema = z.object({

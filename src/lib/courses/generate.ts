@@ -7,6 +7,7 @@ import {
   ChapterContentSchema,
   CourseSummarySchema,
   ProgrammeSchema,
+  QuizSchema,
   ResearchExtractionSchema,
   STAGE_LABELS,
   type Analysis,
@@ -16,6 +17,7 @@ import {
   type GeneratedCourse,
   type GenerationStage,
   type Programme,
+  type QuizQuestion,
   type VerifiedExample,
 } from "./schemas";
 
@@ -252,6 +254,52 @@ async function writeSummary(
   });
 }
 
+// --- Étape 6 : quiz final ---
+
+const QUESTION_COUNT = 10;
+
+async function writeQuiz(
+  client: Anthropic,
+  analysis: Analysis,
+  chapters: GeneratedChapter[],
+): Promise<QuizQuestion[]> {
+  const fullContent = chapters
+    .map(
+      (c, i) =>
+        `--- Chapitre ${i + 1} : ${c.title} ---\n${c.explanation}\n\nExemple : ${c.example.description}\n\nÀ retenir : ${c.keyTakeaway}`,
+    )
+    .join("\n\n");
+
+  const result = await parseStructured(client, {
+    system:
+      "Tu es Lia. Tu crées un quiz de validation des acquis à partir du contenu RÉEL d'une formation. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni. N'utilise aucune connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs.",
+    user: `Contenu complet de la formation "${analysis.title}" (niveau ${analysis.level}) :\n\n${fullContent}\n\nGénère un quiz de ${QUESTION_COUNT} questions à choix multiples (4 choix chacune, une seule bonne réponse), qui couvre l'ensemble de la formation de façon équilibrée entre les chapitres — pas seulement le premier. Pour chaque question, donne une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus, et indique l'index (0-based) du chapitre dont elle est tirée.`,
+    schema: QuizSchema,
+    maxTokens: 8000,
+  });
+
+  // Filet de sécurité : écarte toute question malformée plutôt que de
+  // laisser planter l'interface sur un quiz.
+  return result.questions
+    .filter(
+      (q) =>
+        q.choices.length >= 2 &&
+        q.correctChoiceIndex >= 0 &&
+        q.correctChoiceIndex < q.choices.length,
+    )
+    .map((q, i) => ({
+      position: i,
+      chapterIndex:
+        q.chapterIndex !== null && q.chapterIndex >= 0 && q.chapterIndex < chapters.length
+          ? q.chapterIndex
+          : null,
+      question: q.question,
+      choices: q.choices,
+      correctChoiceIndex: q.correctChoiceIndex,
+      explanation: q.explanation,
+    }));
+}
+
 // --- Orchestration complète ---
 
 export async function generateCourse(
@@ -316,7 +364,13 @@ export async function generateCourse(
     }),
   );
 
-  const summary = await writeSummary(client, analysis, programme, chapters);
+  // Résumé et quiz sont indépendants l'un de l'autre (tous deux ne
+  // dépendent que des chapitres déjà écrits) : les lancer en parallèle
+  // évite d'ajouter leur latence l'une à l'autre.
+  const [summary, quiz] = await Promise.all([
+    writeSummary(client, analysis, programme, chapters),
+    writeQuiz(client, analysis, chapters),
+  ]);
 
   onProgress("pret", STAGE_LABELS.pret);
 
@@ -330,5 +384,6 @@ export async function generateCourse(
     chapters,
     summary: summary.summary,
     keyPoints: summary.keyPoints,
+    quiz,
   };
 }

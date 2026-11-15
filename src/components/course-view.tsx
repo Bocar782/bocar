@@ -1,5 +1,6 @@
 import type { GeneratedCourse } from "@/lib/courses/schemas";
 import { MarkdownContent } from "./markdown-content";
+import { QuizView } from "./quiz-view";
 
 function ChapterCard({
   chapter,
@@ -117,6 +118,8 @@ export function CourseView({ course }: { course: GeneratedCourse }) {
           </ul>
         </div>
       </section>
+
+      <QuizView quiz={course.quiz} />
     </div>
   );
 }
