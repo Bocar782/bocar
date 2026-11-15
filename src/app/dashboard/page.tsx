@@ -42,7 +42,7 @@ export default async function DashboardPage() {
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
         <div className="flex items-center gap-2">
           <BrandMark size={32} />
-          <span className="text-lg font-semibold tracking-tight">Lia</span>
+          <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </div>
 
         <div className="flex items-center gap-4">
@@ -63,7 +63,7 @@ export default async function DashboardPage() {
           Que veux-tu apprendre aujourd&apos;hui ?
         </h1>
         <p className="mt-2 max-w-md text-center text-sm text-foreground-muted">
-          Décris un sujet, Lia construit ta formation complète.
+          Décris un sujet, Tavyra construit ta formation complète.
         </p>
 
         <div className="mt-10 flex w-full flex-1 flex-col items-center">

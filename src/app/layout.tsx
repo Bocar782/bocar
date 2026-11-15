@@ -13,27 +13,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const TITLE = "Lia — Transforme n'importe quel sujet en formation sur mesure";
+const TITLE = "Tavyra — Transforme n'importe quel sujet en formation sur mesure";
 const DESCRIPTION =
-  "Lia est une plateforme d'apprentissage assistée par IA : décris ce que tu veux apprendre, elle génère une formation complète, structurée et personnalisée, avec exemples, cas pratiques et quiz.";
+  "Tavyra est une plateforme d'apprentissage assistée par IA : décris ce que tu veux apprendre, elle génère une formation complète, structurée et personnalisée, avec exemples, cas pratiques et quiz.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
-  title: { default: TITLE, template: "%s · Lia" },
+  title: { default: TITLE, template: "%s · Tavyra" },
   description: DESCRIPTION,
   keywords: [
     "formation en ligne IA",
     "apprentissage personnalisé",
     "générateur de cours",
     "e-learning IA",
-    "Lia",
+    "Tavyra",
   ],
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     locale: "fr_FR",
     url: "/",
-    siteName: "Lia",
+    siteName: "Tavyra",
     title: TITLE,
     description: DESCRIPTION,
   },

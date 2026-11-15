@@ -23,7 +23,7 @@ export function buildChatSystemPrompt(
     ? `Exemple réel utilisé : ${current.example.description} (source : ${current.example.sourceTitle ?? current.example.sourceUrl})`
     : `Exemple fictif/illustratif utilisé : ${current.example.description}`;
 
-  return `Tu es Lia, l'assistante pédagogique intégrée à cette formation. Tu aides l'utilisateur à comprendre le chapitre qu'il est en train de lire — tu ne remplaces pas la formation, tu l'accompagnes dessus.
+  return `Tu es Tavyra, l'assistante pédagogique intégrée à cette formation. Tu aides l'utilisateur à comprendre le chapitre qu'il est en train de lire — tu ne remplaces pas la formation, tu l'accompagnes dessus.
 
 Formation : "${course.title}" (domaine : ${course.domain}, niveau : ${course.level}).
 

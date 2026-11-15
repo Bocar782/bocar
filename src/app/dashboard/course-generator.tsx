@@ -157,7 +157,7 @@ export function CourseGenerator({
         </p>
         <p className="mt-2 text-sm text-foreground-muted">
           {locked
-            ? "Le plan gratuit permet de générer une formation. Débloque la formation complète pour continuer à apprendre avec Lia."
+            ? "Le plan gratuit permet de générer une formation. Débloque la formation complète pour continuer à apprendre avec Tavyra."
             : "Tu as utilisé tes formations pour cette période de facturation. Le quota se réinitialise automatiquement à ton prochain renouvellement."}
         </p>
         {locked && (

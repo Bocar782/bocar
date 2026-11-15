@@ -13,7 +13,7 @@ const PLACEHOLDER_TESTIMONIALS = [
   },
   {
     quote:
-      "Pouvoir demander des précisions à Lia pendant la lecture change tout par rapport à un simple article.",
+      "Pouvoir demander des précisions à Tavyra pendant la lecture change tout par rapport à un simple article.",
     name: "Exemple d'avis",
     role: "Avis fictif — à venir après le lancement",
   },

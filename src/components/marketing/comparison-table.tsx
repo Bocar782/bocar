@@ -36,7 +36,7 @@ export function ComparisonTable() {
     <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-[28px] border border-border-subtle bg-white/[0.02]">
       <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr] items-center gap-2 border-b border-border-subtle bg-white/[0.02] px-4 py-4 sm:px-6">
         <span className="text-xs font-medium text-foreground-muted">&nbsp;</span>
-        <span className="text-center text-sm font-semibold text-foreground">Lia</span>
+        <span className="text-center text-sm font-semibold text-foreground">Tavyra</span>
         <span className="text-center text-xs text-foreground-muted">Chatbot</span>
         <span className="text-center text-xs text-foreground-muted">Cours en ligne</span>
       </div>

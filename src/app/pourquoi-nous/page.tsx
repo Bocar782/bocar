@@ -34,7 +34,7 @@ export default function WhyWeExistPage() {
           Pourquoi nous existons
         </h1>
         <p className="mt-6 text-lg leading-relaxed text-foreground-muted">
-          Lia n&apos;est pas né d&apos;une envie de faire « encore un outil
+          Tavyra n&apos;est pas né d&apos;une envie de faire « encore un outil
           IA ». Il est né d&apos;un constat simple : apprendre un nouveau
           sujet aujourd&apos;hui est inutilement difficile — pas par manque
           d&apos;information, mais par excès.
@@ -86,7 +86,7 @@ export default function WhyWeExistPage() {
           </h2>
           <div className="mt-6 space-y-4 text-base leading-relaxed text-foreground-muted">
             <p>
-              Lia a été créé pour rendre ce type de parcours accessible à
+              Tavyra a été créé pour rendre ce type de parcours accessible à
               n&apos;importe qui, sur n&apos;importe quel sujet, en quelques
               minutes plutôt qu&apos;en plusieurs heures de recherche et de
               tri. Pas pour remplacer les bons livres, les bons cours ou les
@@ -109,7 +109,7 @@ export default function WhyWeExistPage() {
 
       <footer className="relative z-10 border-t border-border-subtle">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-xs text-foreground-muted sm:flex-row">
-          <span>© {new Date().getFullYear()} Lia. Tous droits réservés.</span>
+          <span>© {new Date().getFullYear()} Tavyra. Tous droits réservés.</span>
           <Link href="/" className="transition-colors hover:text-foreground">
             ← Retour à l&apos;accueil
           </Link>

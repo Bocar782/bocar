@@ -39,7 +39,7 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Link href="/" className="flex items-center gap-2">
           <BrandMark size={32} />
-          <span className="text-lg font-semibold tracking-tight">Lia</span>
+          <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </Link>
 
         <nav className="hidden items-center gap-6 text-sm text-foreground-muted lg:flex xl:gap-8">

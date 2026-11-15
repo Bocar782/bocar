@@ -24,7 +24,7 @@ export default async function PricingPage() {
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
         <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
           <BrandMark size={32} />
-          <span className="text-lg font-semibold tracking-tight">Lia</span>
+          <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </Link>
         {!user && (
           <Link
@@ -52,14 +52,14 @@ export default async function PricingPage() {
             </h2>
             <p className="mt-3 text-3xl font-semibold text-foreground">0 €</p>
             <p className="mt-1 text-sm text-foreground-muted">
-              Pour découvrir Lia sans engagement.
+              Pour découvrir Tavyra sans engagement.
             </p>
 
             <ul className="mt-6 space-y-3 text-sm text-foreground">
               <li className="flex gap-2.5">
                 <span className="mt-0.5 text-accent-violet-light">✓</span>
                 <span>
-                  {FREE_PLAN_COURSE_LIMIT} formation complète générée par Lia
+                  {FREE_PLAN_COURSE_LIMIT} formation complète générée par Tavyra
                 </span>
               </li>
               <li className="flex gap-2.5">

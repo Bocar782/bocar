@@ -17,12 +17,12 @@ import { getSiteUrl } from "@/lib/site-url";
 const SOFTWARE_APPLICATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "Lia",
+  name: "Tavyra",
   url: getSiteUrl(),
   applicationCategory: "EducationalApplication",
   operatingSystem: "Web",
   description:
-    "Lia est une plateforme d'apprentissage assistée par IA : décris ce que tu veux apprendre, elle génère une formation complète, structurée et personnalisée.",
+    "Tavyra est une plateforme d'apprentissage assistée par IA : décris ce que tu veux apprendre, elle génère une formation complète, structurée et personnalisée.",
   offers: [
     { "@type": "Offer", name: "Gratuit", price: "0", priceCurrency: "EUR" },
     { "@type": "Offer", name: "Pro", price: "9.99", priceCurrency: "EUR" },
@@ -92,7 +92,7 @@ export default function Home() {
         </h1>
 
         <p className="mt-6 max-w-xl text-balance text-center text-lg text-foreground-muted">
-          Décris ce que tu veux apprendre. Lia génère une formation complète
+          Décris ce que tu veux apprendre. Tavyra génère une formation complète
           et structurée — chapitres progressifs, exemples concrets et quiz —
           adaptée à ton niveau, en quelques minutes.
         </p>
@@ -114,7 +114,7 @@ export default function Home() {
 
         <p className="mt-8 text-xs text-foreground-muted">
           <span className="font-semibold text-foreground">+5 000 utilisateurs</span>{" "}
-          apprennent déjà avec Lia
+          apprennent déjà avec Tavyra
         </p>
 
         {/* Démonstration visuelle */}
@@ -143,7 +143,7 @@ export default function Home() {
               },
               {
                 number: "02",
-                title: "Lia structure ta formation",
+                title: "Tavyra structure ta formation",
                 description:
                   "Objectifs, chapitres, exemples concrets et cas pratiques, adaptés à ton niveau et à ton sujet.",
               },
@@ -151,7 +151,7 @@ export default function Home() {
                 number: "03",
                 title: "Apprends, teste, progresse",
                 description:
-                  "Avance à ton rythme, pose tes questions à Lia et valide tes acquis avec un quiz final.",
+                  "Avance à ton rythme, pose tes questions à Tavyra et valide tes acquis avec un quiz final.",
               },
             ].map((step, i) => (
               <Reveal key={step.number} delay={i * 100}>
@@ -175,7 +175,7 @@ export default function Home() {
             <SectionHeading
               eyebrow="Un sujet, n'importe lequel"
               title="Business, sciences, histoire, examens..."
-              description="Lia adapte la structure de la formation au domaine — voici quelques exemples parmi une infinité de sujets possibles."
+              description="Tavyra adapte la structure de la formation au domaine — voici quelques exemples parmi une infinité de sujets possibles."
             />
           </Reveal>
           <div className="mt-12">
@@ -190,7 +190,7 @@ export default function Home() {
           <div aria-hidden className="section-tint-violet" />
           <Reveal>
             <SectionHeading
-              eyebrow="Pourquoi Lia"
+              eyebrow="Pourquoi Tavyra"
               title="Une vraie pédagogie, pas une réponse générée à la va-vite"
             />
           </Reveal>
@@ -206,7 +206,7 @@ export default function Home() {
           <Reveal>
             <SectionHeading
               eyebrow="La différence"
-              title="Lia n'est pas un chatbot, ni un cours en ligne de plus"
+              title="Tavyra n'est pas un chatbot, ni un cours en ligne de plus"
             />
           </Reveal>
           <div className="mt-12">
@@ -221,7 +221,7 @@ export default function Home() {
           <div aria-hidden className="section-tint-blue" />
           <Reveal>
             <SectionHeading
-              eyebrow="À l'intérieur de Lia"
+              eyebrow="À l'intérieur de Tavyra"
               title="Un tableau de bord pensé pour apprendre, pas pour discuter"
             />
           </Reveal>
@@ -286,7 +286,7 @@ export default function Home() {
                   Prêt à apprendre autrement ?
                 </h2>
                 <p className="mx-auto mt-4 max-w-md text-balance text-foreground-muted">
-                  Ta première formation est gratuite. Décris ton sujet, Lia
+                  Ta première formation est gratuite. Décris ton sujet, Tavyra
                   s&apos;occupe du reste.
                 </p>
                 <MagneticButton
@@ -303,7 +303,7 @@ export default function Home() {
 
       <footer className="relative z-10 border-t border-border-subtle">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-xs text-foreground-muted sm:flex-row">
-          <span>© {new Date().getFullYear()} Lia. Tous droits réservés.</span>
+          <span>© {new Date().getFullYear()} Tavyra. Tous droits réservés.</span>
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             <Link href="/pourquoi-nous" className="transition-colors hover:text-foreground">
               Pourquoi nous existons

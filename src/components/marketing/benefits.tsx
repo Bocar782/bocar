@@ -31,7 +31,7 @@ const BENEFITS = [
   {
     Icon: IconChat,
     title: "Ton assistant personnel",
-    description: "Lia reste disponible pour répondre à tes questions, chapitre par chapitre.",
+    description: "Tavyra reste disponible pour répondre à tes questions, chapitre par chapitre.",
   },
   {
     Icon: IconTelescope,

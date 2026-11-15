@@ -146,7 +146,7 @@ export function WowDemo() {
           <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
           <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
           <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
-          <span className="ml-3 text-xs text-foreground-muted">dashboard.lia.app</span>
+          <span className="ml-3 text-xs text-foreground-muted">dashboard.tavyra.app</span>
         </div>
 
         <div className="grid gap-0 p-5 sm:p-8 md:grid-cols-2 md:gap-8">
@@ -185,7 +185,7 @@ export function WowDemo() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-violet opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-violet" />
               </span>
-              Lia construit ta formation...
+              Tavyra construit ta formation...
             </div>
           </div>
 

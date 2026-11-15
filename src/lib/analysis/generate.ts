@@ -60,7 +60,7 @@ async function parseStructured<Schema extends z.ZodType>(
 async function scopeAnalysis(client: Anthropic, topic: string): Promise<AnalysisBrief> {
   const result = await parseStructured(client, {
     system:
-      "Tu es Lia, analyste pédagogique spécialisée dans l'étude de cas réels : parcours d'entrepreneurs, d'entreprises, d'investisseurs, stratégies, réussites et échecs. Tu cadres une demande d'analyse approfondie avant la phase de recherche. Ton rôle est de préparer une vraie recherche structurée, pas une simple reformulation du sujet.",
+      "Tu es Tavyra, analyste pédagogique spécialisée dans l'étude de cas réels : parcours d'entrepreneurs, d'entreprises, d'investisseurs, stratégies, réussites et échecs. Tu cadres une demande d'analyse approfondie avant la phase de recherche. Ton rôle est de préparer une vraie recherche structurée, pas une simple reformulation du sujet.",
     user: `Sujet demandé : "${topic}"\n\nCadre cette analyse approfondie. Choisis un nombre de cas réels à analyser entre 4 et 7 selon la richesse du sujet. Prépare 4 à 6 requêtes de recherche web distinctes et complémentaires (par exemple : succès notables, échecs notables, stratégies spécifiques, données chiffrées ou études) pour rassembler des cas réels variés et pertinents, pas uniquement des success stories.`,
     schema: AnalysisBriefSchema,
     maxTokens: 2048,
@@ -76,7 +76,7 @@ async function researchRealCases(
   brief: AnalysisBrief,
 ): Promise<{ findings: string; realSources: { url: string; title: string }[] }> {
   const system =
-    "Tu es Lia, chargée de rassembler des cas réels et vérifiables (parcours d'entrepreneurs, entreprises, investisseurs, stratégies, réussites, échecs, événements, données) disponibles publiquement, en lien avec un sujet donné. Utilise l'outil de recherche web pour mener PLUSIEURS recherches distinctes couvrant différents angles (succès, échecs, stratégies, données). Vérifie chaque fait par une recherche avant de l'avancer. N'affirme jamais qu'un cas est réel sans l'avoir confirmé par une recherche.";
+    "Tu es Tavyra, chargée de rassembler des cas réels et vérifiables (parcours d'entrepreneurs, entreprises, investisseurs, stratégies, réussites, échecs, événements, données) disponibles publiquement, en lien avec un sujet donné. Utilise l'outil de recherche web pour mener PLUSIEURS recherches distinctes couvrant différents angles (succès, échecs, stratégies, données). Vérifie chaque fait par une recherche avant de l'avancer. N'affirme jamais qu'un cas est réel sans l'avoir confirmé par une recherche.";
   const queriesList = brief.searchQueries.map((q) => `- ${q}`).join("\n");
   const user = `Sujet : "${brief.title}" (domaine : ${brief.domain}).\nAngle de recherche : ${brief.researchAngle}\n\nMène des recherches web sur CHACUNE des requêtes suivantes, et d'autres si besoin pour compléter :\n${queriesList}\n\nRassemble au moins ${brief.caseCount + 2} cas réels et vérifiables (personnes, entreprises, événements), en couvrant à la fois des réussites ET des échecs ou situations mitigées — pas uniquement des success stories. Pour chacun : vérifie les faits par la recherche, résume ce qui s'est passé et pourquoi, et cite explicitement l'URL exacte de ta source.`;
 
@@ -160,7 +160,7 @@ async function writeSection(
 
   return parseStructured(client, {
     system:
-      "Tu es Lia, analyste pédagogique. Tu rédiges une section d'analyse approfondie et rigoureuse sur un cas réel précis : contexte, décisions clés, explication causale de la réussite ou de l'échec, et enseignements concrets. N'invente jamais un fait : base-toi uniquement sur le résumé de recherche fourni. Ce contenu doit être nettement plus long, plus développé et plus analytique qu'un simple chapitre introductif.",
+      "Tu es Tavyra, analyste pédagogique. Tu rédiges une section d'analyse approfondie et rigoureuse sur un cas réel précis : contexte, décisions clés, explication causale de la réussite ou de l'échec, et enseignements concrets. N'invente jamais un fait : base-toi uniquement sur le résumé de recherche fourni. Ce contenu doit être nettement plus long, plus développé et plus analytique qu'un simple chapitre introductif.",
     user: `Analyse approfondie : "${brief.title}" (domaine : ${brief.domain}).\n\nCas à analyser : ${verifiedCase.name}.\nRésultat : ${verifiedCase.outcome}.\nRésumé de recherche (base factuelle, ne pas aller au-delà) : ${verifiedCase.summary}\nSource : ${verifiedCase.sourceUrl} ("${verifiedCase.sourceTitle}")\n\n${context}\n\nRédige une analyse approfondie de ce cas : contexte, ce qui s'est passé, la stratégie ou les décisions clés, pourquoi ça a réussi ou échoué (explications causales concrètes, pas de généralités vagues), et enseignements transférables à d'autres situations.`,
     schema: DeepSectionSchema,
     maxTokens: 24000,
@@ -180,7 +180,7 @@ async function writeSynthesis(
 
   return parseStructured(client, {
     system:
-      "Tu es Lia. Tu rédiges la synthèse pédagogique finale d'une analyse approfondie, en identifiant les motifs récurrents entre plusieurs cas réels analysés — ce qui distingue les réussites des échecs, et les enseignements transversaux applicables au-delà des cas précis.",
+      "Tu es Tavyra. Tu rédiges la synthèse pédagogique finale d'une analyse approfondie, en identifiant les motifs récurrents entre plusieurs cas réels analysés — ce qui distingue les réussites des échecs, et les enseignements transversaux applicables au-delà des cas précis.",
     user: `Analyse : "${brief.title}" (domaine : ${brief.domain}).\n\nCas analysés et leurs enseignements :\n${casesOverview}\n\nRédige une synthèse pédagogique transversale : quels motifs reviennent entre ces cas, qu'est-ce qui distingue ceux qui ont réussi de ceux qui ont échoué, et quels enseignements clés en tirer, applicables au-delà de ces cas précis.`,
     schema: DeepSynthesisSchema,
     maxTokens: 8000,

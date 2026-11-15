@@ -19,12 +19,12 @@ export function ChapterChat({
   maxChapterIndex,
 }: {
   course: GeneratedCourse;
-  /** Formation verrouillée : ne pas donner à Lia de contexte au-delà du contenu débloqué. */
+  /** Formation verrouillée : ne pas donner à Tavyra de contexte au-delà du contenu débloqué. */
   maxChapterIndex?: number;
 }) {
   const [open, setOpen] = useState(false);
   // Repère le chapitre actuellement visible à l'écran, pour donner le bon
-  // contexte à Lia sans que l'utilisateur ait à le préciser.
+  // contexte à Tavyra sans que l'utilisateur ait à le préciser.
   const currentChapterIndex = useCurrentChapterIndex(maxChapterIndex);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -54,7 +54,7 @@ export function ChapterChat({
       });
 
       if (!response.ok || !response.body) {
-        throw new Error("La connexion à Lia a échoué.");
+        throw new Error("La connexion à Tavyra a échoué.");
       }
 
       const reader = response.body.getReader();
@@ -91,7 +91,7 @@ export function ChapterChat({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Fermer le chat avec Lia" : "Ouvrir le chat avec Lia"}
+        aria-label={open ? "Fermer le chat avec Tavyra" : "Ouvrir le chat avec Tavyra"}
         className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-transform hover:scale-105"
       >
         {open ? (
@@ -122,7 +122,7 @@ export function ChapterChat({
               L
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">Lia</p>
+              <p className="text-sm font-semibold text-foreground">Tavyra</p>
               {currentChapter && (
                 <p className="truncate text-xs text-foreground-muted">
                   Chapitre {currentChapterIndex + 1} · {currentChapter.title}

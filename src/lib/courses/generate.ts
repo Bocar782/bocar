@@ -77,7 +77,7 @@ async function parseStructured<Schema extends z.ZodType>(
 async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis> {
   const result = await parseStructured(client, {
     system:
-      "Tu es Lia, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
+      "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
     user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Choisis un nombre de chapitres entre 4 et 6 selon la richesse du sujet. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
     schema: AnalysisSchema,
     maxTokens: 2048,
@@ -96,7 +96,7 @@ async function searchRealExamples(
   analysis: Analysis,
 ): Promise<{ findings: string; realSources: { url: string; title: string }[] }> {
   const system =
-    "Tu es Lia, chargée de trouver des exemples réels et vérifiables (vraies entreprises, personnes, événements, statistiques) pour illustrer une formation. Utilise l'outil de recherche web pour vérifier chaque fait avant de l'avancer. N'affirme jamais qu'un exemple est réel sans l'avoir confirmé par une recherche.";
+    "Tu es Tavyra, chargée de trouver des exemples réels et vérifiables (vraies entreprises, personnes, événements, statistiques) pour illustrer une formation. Utilise l'outil de recherche web pour vérifier chaque fait avant de l'avancer. N'affirme jamais qu'un exemple est réel sans l'avoir confirmé par une recherche.";
   const user = `Sujet de la formation : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}).\n\nTrouve entre ${Math.min(8, analysis.chapterCount + 2)} et 8 exemples réels et vérifiables pertinents pour illustrer différents aspects de ce sujet. Pour chacun : cherche sur le web pour vérifier les faits, puis décris ce que l'exemple illustre et quel aspect du sujet il concerne. Cite explicitement l'URL exacte de ta source pour chaque exemple.`;
 
   let messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
@@ -194,7 +194,7 @@ async function buildProgramme(
 
   return parseStructured(client, {
     system:
-      "Tu es Lia. Tu construis le plan détaillé d'une formation : introduction, objectifs pédagogiques et liste de chapitres. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire).",
+      "Tu es Tavyra. Tu construis le plan détaillé d'une formation : introduction, objectifs pédagogiques et liste de chapitres. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire).",
     user: `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis le programme avec exactement ${analysis.chapterCount} chapitres, progressifs (chaque chapitre s'appuie sur les précédents).\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex au chapitre le plus pertinent s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`,
     schema: ProgrammeSchema,
     maxTokens: 12000,
@@ -227,7 +227,7 @@ async function writeChapter(
 
   return parseStructured(client, {
     system:
-      "Tu es Lia. Tu rédiges un chapitre complet et pédagogique d'une formation, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
+      "Tu es Tavyra. Tu rédiges un chapitre complet et pédagogique d'une formation, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
     user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation (pour situer ce chapitre dans la progression globale, sans répéter ce que les autres couvrent) :\n${outline}\n\nRédige le chapitre ${chapterIndex + 1} : "${chapterPlan.title}".\nCe chapitre doit couvrir : ${chapterPlan.summary}\n\n${exampleInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 20000,
@@ -247,7 +247,7 @@ async function writeSummary(
     .join("\n");
 
   return parseStructured(client, {
-    system: "Tu es Lia. Tu rédiges le résumé final d'une formation à partir de ses points clés.",
+    system: "Tu es Tavyra. Tu rédiges le résumé final d'une formation à partir de ses points clés.",
     user: `Formation : "${analysis.title}".\nAngle du résumé : ${programme.summaryAngle}\n\nPoints à retenir de chaque chapitre :\n${takeaways}\n\nRédige un résumé final synthétique et les points essentiels de toute la formation.`,
     schema: CourseSummarySchema,
     maxTokens: 6000,
@@ -272,7 +272,7 @@ async function writeQuiz(
 
   const result = await parseStructured(client, {
     system:
-      "Tu es Lia. Tu crées un quiz de validation des acquis à partir du contenu RÉEL d'une formation. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni. N'utilise aucune connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs.",
+      "Tu es Tavyra. Tu crées un quiz de validation des acquis à partir du contenu RÉEL d'une formation. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni. N'utilise aucune connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs.",
     user: `Contenu complet de la formation "${analysis.title}" (niveau ${analysis.level}) :\n\n${fullContent}\n\nGénère un quiz de ${QUESTION_COUNT} questions à choix multiples (4 choix chacune, une seule bonne réponse), qui couvre l'ensemble de la formation de façon équilibrée entre les chapitres — pas seulement le premier. Pour chaque question, donne une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus, et indique l'index (0-based) du chapitre dont elle est tirée.`,
     schema: QuizSchema,
     maxTokens: 8000,

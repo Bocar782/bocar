@@ -21,7 +21,7 @@ export function AuthShell({
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16">
         <Link href="/" className="mb-8 flex items-center gap-2">
           <BrandMark size={32} />
-          <span className="text-lg font-semibold tracking-tight">Lia</span>
+          <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </Link>
 
         <div className="w-full max-w-md rounded-[28px] border border-border-subtle bg-background-elevated/80 p-8 shadow-[0_20px_60px_-20px_rgba(76,124,243,0.25)] backdrop-blur-xl">

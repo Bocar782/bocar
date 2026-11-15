@@ -1,6 +1,6 @@
-# Lia
+# Tavyra
 
-Lia est une plateforme d'apprentissage assistée par IA : l'utilisateur décrit ce qu'il veut apprendre, et Lia génère une formation complète, structurée et personnalisée (chapitres, exemples, cas pratiques, quiz).
+Tavyra est une plateforme d'apprentissage assistée par IA : l'utilisateur décrit ce qu'il veut apprendre, et Tavyra génère une formation complète, structurée et personnalisée (chapitres, exemples, cas pratiques, quiz).
 
 Ce dépôt contient le frontend de la plateforme, construit avec Next.js (App Router, TypeScript) et Tailwind CSS.
 
@@ -64,7 +64,7 @@ http://localhost:3000/auth/callback
 https://<votre-domaine-de-prod>/auth/callback
 ```
 
-## Chat avec Lia
+## Chat avec Tavyra
 
 Un chat contextuel est accessible depuis la page d'une formation
 (`/dashboard/formations/[id]` et la vue juste après génération) via un
@@ -255,7 +255,7 @@ propre sujet dans un champ, et l'aperçu de la formation générée
 (domaine, titre, chapitres, exemple, quiz) s'adapte en direct parmi une
 poignée de préréglages reconnus par mots-clés — **purement simulé côté
 client, aucun appel API**, pour que ce soit immédiat et gratuit à servir
-à chaque visiteur), exemples de sujets, avantages, un comparatif "Lia vs
+à chaque visiteur), exemples de sujets, avantages, un comparatif "Tavyra vs
 chatbot vs cours en ligne" (`comparison-table.tsx`), une présentation de
 l'interface (mockups en CSS/HTML, pas de vraies captures d'écran, pour
 rester léger et cohérent avec le design system), avis clients
@@ -285,13 +285,16 @@ publique.
 
 ### Branding
 
-- **Marque** (`src/components/brand-mark.tsx`) : trois barres ascendantes
-  dans un carré à dégradé bleu/violet (progression pédagogique), utilisée
-  partout à la place d'un simple "L" — header, dashboard, `/pricing`,
-  pages d'authentification. Déclinée en favicon (`src/app/icon.svg`),
-  icône iOS (`apple-icon.tsx`) et image de partage Open Graph
-  (`opengraph-image.tsx`, générée avec `next/og`, référencée par défaut
-  dans les métadonnées de `layout.tsx` pour toutes les pages).
+- **Marque** (`src/components/brand-mark.tsx`) : logo fourni par le client
+  (asset raster, `public/brand/tavyra-mark.png`), détouré en fond
+  transparent (découpe par couleur clé depuis l'image source — le trait
+  et l'étoile restent nets sur n'importe quel arrière-plan) et utilisé
+  partout — header, dashboard, `/pricing`, pages d'authentification.
+  Décliné en favicon (`src/app/icon.png`), icône iOS
+  (`src/app/apple-icon.png`, fond opaque — requis par iOS, une icône
+  transparente serait mal rendue) et image de partage Open Graph
+  (`src/app/opengraph-image.png`, la bannière de marque complète fournie
+  par le client, recadrée au ratio standard 1200×630).
 - **Icônes** (`src/components/marketing/icons.tsx`) : set de pictogrammes
   SVG dessinés sur-mesure (trait, 1.6px, couleurs de la marque) pour les
   sections Avantages et Exemples de sujets, à la place d'emojis.

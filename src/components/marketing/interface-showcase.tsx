@@ -77,7 +77,7 @@ export function InterfaceShowcase() {
         </div>
       </MockFrame>
 
-      <MockFrame label="Chat avec Lia">
+      <MockFrame label="Chat avec Tavyra">
         <div className="space-y-2">
           <div className="ml-auto max-w-[80%] rounded-xl rounded-tr-sm bg-white/[0.06] px-3 py-2 text-xs text-foreground">
             C&apos;est quoi un ETF concrètement ?

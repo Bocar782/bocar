@@ -2,7 +2,7 @@ export const FAQ_ITEMS = [
   {
     question: "Comment fonctionne le SaaS ?",
     answer:
-      "Tu décris ce que tu veux apprendre, en une phrase. Lia analyse ta demande, construit un programme adapté à ton niveau, puis rédige une formation complète : introduction, chapitres progressifs, exemples concrets et quiz final.",
+      "Tu décris ce que tu veux apprendre, en une phrase. Tavyra analyse ta demande, construit un programme adapté à ton niveau, puis rédige une formation complète : introduction, chapitres progressifs, exemples concrets et quiz final.",
   },
   {
     question: "Comment les formations sont-elles générées ?",
@@ -12,12 +12,12 @@ export const FAQ_ITEMS = [
   {
     question: "Quels sujets puis-je apprendre ?",
     answer:
-      "Pratiquement n'importe quel sujet : business, finance, marketing, sciences, histoire, préparation d'examens... Décris ton besoin, Lia adapte la structure de la formation au domaine.",
+      "Pratiquement n'importe quel sujet : business, finance, marketing, sciences, histoire, préparation d'examens... Décris ton besoin, Tavyra adapte la structure de la formation au domaine.",
   },
   {
-    question: "Lia peut-elle comprendre ma formation ?",
+    question: "Tavyra peut-elle comprendre ma formation ?",
     answer:
-      "Oui : pendant que tu lis, tu peux poser des questions à Lia directement sur le chapitre en cours. Elle connaît le contenu exact de ta formation et répond dans ce contexte.",
+      "Oui : pendant que tu lis, tu peux poser des questions à Tavyra directement sur le chapitre en cours. Elle connaît le contenu exact de ta formation et répond dans ce contexte.",
   },
   {
     question: "Comment fonctionnent les quiz ?",
@@ -27,7 +27,7 @@ export const FAQ_ITEMS = [
   {
     question: "Les formations utilisent-elles des sources ?",
     answer:
-      "Quand le sujet s'y prête, Lia recherche de vrais exemples (entreprises, événements, données) sur le web et cite sa source. Si un fait n'est pas vérifié, l'exemple est clairement présenté comme illustratif plutôt que réel.",
+      "Quand le sujet s'y prête, Tavyra recherche de vrais exemples (entreprises, événements, données) sur le web et cite sa source. Si un fait n'est pas vérifié, l'exemple est clairement présenté comme illustratif plutôt que réel.",
   },
   {
     question: "Puis-je annuler mon abonnement ?",

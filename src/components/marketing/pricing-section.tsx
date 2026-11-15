@@ -15,12 +15,12 @@ export function PricingSection() {
           Gratuit
         </h3>
         <p className="mt-3 text-3xl font-semibold text-foreground">0 €</p>
-        <p className="mt-1 text-sm text-foreground-muted">Pour découvrir Lia sans engagement.</p>
+        <p className="mt-1 text-sm text-foreground-muted">Pour découvrir Tavyra sans engagement.</p>
 
         <ul className="mt-6 space-y-3 text-sm text-foreground">
           <li className="flex gap-2.5">
             <span className="mt-0.5 text-accent-violet-light">✓</span>
-            <span>{FREE_PLAN_COURSE_LIMIT} formation complète générée par Lia</span>
+            <span>{FREE_PLAN_COURSE_LIMIT} formation complète générée par Tavyra</span>
           </li>
           <li className="flex gap-2.5">
             <span className="mt-0.5 text-accent-violet-light">✓</span>
@@ -66,7 +66,7 @@ export function PricingSection() {
             </li>
             <li className="flex gap-2.5">
               <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>Lia, ton assistant personnel, sur chaque formation</span>
+              <span>Tavyra, ton assistant personnel, sur chaque formation</span>
             </li>
             <li className="flex gap-2.5">
               <span className="mt-0.5 text-accent-violet-light">✓</span>
