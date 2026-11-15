@@ -63,3 +63,18 @@ Supabase (Authentication → URL Configuration), ajouter à la liste des
 http://localhost:3000/auth/callback
 https://<votre-domaine-de-prod>/auth/callback
 ```
+
+## Chat avec Lia
+
+Un chat contextuel est accessible depuis la page d'une formation
+(`/dashboard/formations/[id]` et la vue juste après génération) via un
+bouton flottant. Il est bâti sur :
+
+- `src/lib/courses/chat-context.ts` — construit le prompt système à partir
+  de la formation et du chapitre actuel (fonction pure, sans appel réseau)
+- `src/components/chapter-chat.tsx` — widget client : repère le chapitre
+  visible à l'écran avec un `IntersectionObserver`, envoie la conversation
+  à `/api/chat` et affiche la réponse au fur et à mesure qu'elle arrive
+- `src/app/api/chat/route.ts` — appelle `claude-opus-5-5` en streaming,
+  sans persistance : l'historique vit dans l'état React du navigateur et
+  est renvoyé à chaque tour (API sans état)

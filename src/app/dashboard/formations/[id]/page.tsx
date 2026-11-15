@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
+import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { getCourseById } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
@@ -40,6 +41,8 @@ export default async function CourseDetailPage(
       <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24">
         <CourseView course={course} />
       </main>
+
+      <ChapterChat course={course} />
     </div>
   );
 }

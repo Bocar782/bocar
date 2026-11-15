@@ -117,7 +117,7 @@ export type GeneratedCourse = {
   topic: string;
   title: string;
   domain: string;
-  level: Analysis["level"];
+  level: string;
   introduction: string;
   objectives: string[];
   chapters: GeneratedChapter[];

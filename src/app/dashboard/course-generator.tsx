@@ -2,6 +2,7 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { GenerationProgress } from "@/components/generation-progress";
 import type { GeneratedCourse, GenerationStage } from "@/lib/courses/schemas";
@@ -117,6 +118,7 @@ export function CourseGenerator() {
         >
           Générer une autre formation
         </button>
+        <ChapterChat course={course} />
       </div>
     );
   }

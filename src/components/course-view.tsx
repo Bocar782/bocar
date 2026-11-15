@@ -9,7 +9,10 @@ function ChapterCard({
   index: number;
 }) {
   return (
-    <article className="rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8">
+    <article
+      data-chapter-index={index}
+      className="rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
+    >
       <span className="text-xs font-mono text-accent-violet-light">
         Chapitre {index + 1}
       </span>
