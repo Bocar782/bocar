@@ -7,6 +7,10 @@ type CourseListItem = {
   domain: string;
   level: string;
   createdAt: string;
+  chapterCount: number;
+  currentChapterIndex: number | null;
+  quizScore: number | null;
+  quizTotal: number | null;
 };
 
 export async function saveCourse(
@@ -106,19 +110,49 @@ export async function listCourses(
 ): Promise<CourseListItem[]> {
   const { data, error } = await supabase
     .from("courses")
-    .select("id, title, domain, level, created_at")
+    .select(
+      "id, title, domain, level, created_at, current_chapter_index, quiz_score, quiz_total, course_chapters(count)",
+    )
     .eq("user_id", userId)
+    .order("last_accessed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Échec du chargement des formations : ${error.message}`);
 
-  return (data ?? []).map((row) => ({
-    id: row.id as string,
-    title: row.title as string,
-    domain: row.domain as string,
-    level: row.level as string,
-    createdAt: row.created_at as string,
-  }));
+  return (data ?? []).map((row) => {
+    const chapters = Array.isArray(row.course_chapters)
+      ? row.course_chapters[0]
+      : row.course_chapters;
+    return {
+      id: row.id as string,
+      title: row.title as string,
+      domain: row.domain as string,
+      level: row.level as string,
+      createdAt: row.created_at as string,
+      chapterCount: (chapters?.count as number) ?? 0,
+      currentChapterIndex: (row.current_chapter_index as number | null) ?? null,
+      quizScore: (row.quiz_score as number | null) ?? null,
+      quizTotal: (row.quiz_total as number | null) ?? null,
+    };
+  });
+}
+
+export async function countGenerationsThisMonth(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<number> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const { count, error } = await supabase
+    .from("courses")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", startOfMonth);
+
+  if (error) throw new Error(`Échec du calcul de l'utilisation : ${error.message}`);
+
+  return count ?? 0;
 }
 
 export async function getCourseById(

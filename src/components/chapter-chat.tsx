@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { GeneratedCourse } from "@/lib/courses/schemas";
+import { useCurrentChapterIndex } from "@/lib/use-current-chapter";
 import { MarkdownContent } from "./markdown-content";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -15,35 +16,14 @@ const SUGGESTIONS = [
 
 export function ChapterChat({ course }: { course: GeneratedCourse }) {
   const [open, setOpen] = useState(false);
-  const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  // Repère le chapitre actuellement visible à l'écran, pour donner le bon
+  // contexte à Lia sans que l'utilisateur ait à le préciser.
+  const currentChapterIndex = useCurrentChapterIndex();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Repère le chapitre actuellement visible à l'écran, pour donner le bon
-  // contexte à Lia sans que l'utilisateur ait à le préciser.
-  useEffect(() => {
-    const elements = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-chapter-index]"),
-    );
-    if (elements.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((entry) => entry.isIntersecting);
-        if (visible.length > 0) {
-          const index = Number(visible[0].target.getAttribute("data-chapter-index"));
-          setCurrentChapterIndex(index);
-        }
-      },
-      { rootMargin: "-20% 0px -70% 0px", threshold: 0 },
-    );
-
-    elements.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

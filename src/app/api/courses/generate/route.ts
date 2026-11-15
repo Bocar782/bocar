@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CourseGenerationError, generateCourse } from "@/lib/courses/generate";
-import { saveCourse } from "@/lib/courses/persist";
+import { MONTHLY_GENERATION_LIMIT } from "@/lib/courses/limits";
+import { countGenerationsThisMonth, saveCourse } from "@/lib/courses/persist";
 import type { GenerationStage } from "@/lib/courses/schemas";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,24 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+  }
+
+  // Quota mensuel contrôlé côté serveur (pas seulement affiché côté client)
+  // pour éviter qu'un appel direct à cette route ne le contourne. En cas
+  // d'échec du comptage (ex. migration pas encore appliquée), on laisse
+  // passer plutôt que de bloquer toute génération.
+  try {
+    const usedThisMonth = await countGenerationsThisMonth(supabase, user.id);
+    if (usedThisMonth >= MONTHLY_GENERATION_LIMIT) {
+      return NextResponse.json(
+        {
+          error: `Limite mensuelle atteinte (${MONTHLY_GENERATION_LIMIT} formations). Réessaie le mois prochain.`,
+        },
+        { status: 429 },
+      );
+    }
+  } catch {
+    // ignoré
   }
 
   let topic: string;

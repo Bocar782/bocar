@@ -90,3 +90,24 @@ uniquement — jamais de connaissance externe. Persisté dans
 explication par question (bonne réponse justifiée, qu'on se soit trompé
 ou non), filtre pour ne revoir que ses erreurs, et possibilité de
 refaire le quiz.
+
+## Dashboard : mes formations, progression, utilisation
+
+- **Mes formations** (`src/components/course-list-item.tsx`) : liste des
+  formations de l'utilisateur, triées par dernière consultation. Chaque
+  carte affiche son statut (pas commencée / en cours / terminée), une
+  barre de progression, le chapitre actuel et le score du quiz s'il a été
+  fait. Le bouton "Continuer" (ou "Commencer") renvoie directement sur
+  `/dashboard/formations/[id]#chapitre-N`, à l'endroit exact où la
+  lecture s'était arrêtée.
+- **Progression** : `src/lib/use-current-chapter.ts` (hook partagé avec
+  le chat) détecte le chapitre visible à l'écran ; `progress-tracker.tsx`
+  l'enregistre en base (debounce de 1,5 s) via les Server Actions de
+  `src/lib/courses/progress-actions.ts`, qui enregistrent aussi le score
+  du quiz une fois terminé. Colonnes ajoutées par la migration
+  `0003_progress.sql`.
+- **Utilisation** : quota mensuel fixe (`MONTHLY_GENERATION_LIMIT` dans
+  `src/lib/courses/limits.ts`, actuellement 3 — à remplacer par un vrai
+  système d'abonnement le jour venu). Affiché sur le dashboard et
+  **contrôlé côté serveur** dans `/api/courses/generate` (pas seulement
+  côté client) pour éviter qu'un appel direct à l'API ne le contourne.

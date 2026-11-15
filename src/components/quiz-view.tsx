@@ -2,11 +2,18 @@
 
 import { useState } from "react";
 import type { QuizQuestion } from "@/lib/courses/schemas";
+import { recordQuizScore } from "@/lib/courses/progress-actions";
 
 type Phase = "intro" | "active" | "results";
 type ReviewFilter = "all" | "mistakes";
 
-export function QuizView({ quiz }: { quiz: QuizQuestion[] }) {
+export function QuizView({
+  quiz,
+  courseId = null,
+}: {
+  quiz: QuizQuestion[];
+  courseId?: string | null;
+}) {
   const [phase, setPhase] = useState<Phase>("intro");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(
@@ -33,6 +40,12 @@ export function QuizView({ quiz }: { quiz: QuizQuestion[] }) {
       setCurrentIndex((i) => i + 1);
     } else {
       setPhase("results");
+      if (courseId) {
+        const finalScore = answers.filter(
+          (answer, i) => answer !== null && answer === quiz[i].correctChoiceIndex,
+        ).length;
+        recordQuizScore(courseId, finalScore, quiz.length);
+      }
     }
   }
 

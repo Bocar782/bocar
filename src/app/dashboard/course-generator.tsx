@@ -13,18 +13,24 @@ type StreamEvent = {
   stage: GenerationStage | "done" | "error";
   label?: string;
   course?: GeneratedCourse;
+  courseId?: string | null;
   message?: string;
   saveWarning?: string | null;
 };
 
 const MAX_LENGTH = 500;
 
-export function CourseGenerator() {
+export function CourseGenerator({
+  remainingGenerations,
+}: {
+  remainingGenerations: number;
+}) {
   const router = useRouter();
   const [topic, setTopic] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [stage, setStage] = useState<GenerationStage>("analyse");
   const [course, setCourse] = useState<GeneratedCourse | null>(null);
+  const [courseId, setCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -81,6 +87,7 @@ export function CourseGenerator() {
           }
           if (parsed.stage === "done" && parsed.course) {
             setCourse(parsed.course);
+            setCourseId(parsed.courseId ?? null);
             setSaveWarning(parsed.saveWarning ?? null);
             setStatus("done");
             router.refresh();
@@ -99,6 +106,7 @@ export function CourseGenerator() {
     setStatus("idle");
     setTopic("");
     setCourse(null);
+    setCourseId(null);
     setError(null);
   }
 
@@ -110,7 +118,7 @@ export function CourseGenerator() {
             Ta formation est prête mais n&apos;a pas pu être sauvegardée ({saveWarning}). Elle ne sera pas visible après avoir quitté cette page.
           </p>
         )}
-        <CourseView course={course} />
+        <CourseView course={course} courseId={courseId} />
         <button
           type="button"
           onClick={startOver}
@@ -132,6 +140,21 @@ export function CourseGenerator() {
   }
 
   const isEmpty = topic.trim().length === 0;
+  const quotaReached = remainingGenerations <= 0;
+
+  if (quotaReached) {
+    return (
+      <div className="w-full max-w-2xl rounded-[28px] border border-border-subtle bg-background-elevated/80 p-6 text-center sm:p-8">
+        <p className="text-sm font-medium text-foreground">
+          Limite mensuelle de générations atteinte
+        </p>
+        <p className="mt-2 text-sm text-foreground-muted">
+          Tu as utilisé toutes tes générations pour ce mois-ci. Reviens le
+          mois prochain pour en créer de nouvelles.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-2xl">

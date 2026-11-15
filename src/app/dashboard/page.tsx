@@ -1,7 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
-import { listCourses } from "@/lib/courses/persist";
+import { CourseListItem } from "@/components/course-list-item";
+import { MONTHLY_GENERATION_LIMIT } from "@/lib/courses/limits";
+import { countGenerationsThisMonth, listCourses } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 import { CourseGenerator } from "./course-generator";
@@ -17,8 +18,14 @@ export default async function DashboardPage() {
   }
 
   // Si la migration SQL n'a pas encore été appliquée côté Supabase, ne pas
-  // faire planter tout le dashboard : l'utilisateur voit juste une liste vide.
-  const courses = await listCourses(supabase, user.id).catch(() => []);
+  // faire planter tout le dashboard : l'utilisateur voit juste une liste vide
+  // et un quota par défaut.
+  const [courses, usedThisMonth] = await Promise.all([
+    listCourses(supabase, user.id).catch(() => []),
+    countGenerationsThisMonth(supabase, user.id).catch(() => 0),
+  ]);
+
+  const remainingGenerations = Math.max(0, MONTHLY_GENERATION_LIMIT - usedThisMonth);
 
   return (
     <div className="relative flex min-h-screen flex-1 flex-col">
@@ -54,30 +61,39 @@ export default async function DashboardPage() {
         </p>
 
         <div className="mt-10 flex w-full flex-1 flex-col items-center">
-          <CourseGenerator />
+          <CourseGenerator remainingGenerations={remainingGenerations} />
         </div>
 
+        <section className="mt-6 w-full max-w-2xl">
+          <div className="flex items-center justify-between rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3">
+            <span className="text-xs text-foreground-muted">
+              Utilisation ce mois-ci
+            </span>
+            <span className="text-xs font-medium text-foreground">
+              {usedThisMonth}/{MONTHLY_GENERATION_LIMIT} formations générées ·{" "}
+              {remainingGenerations} restante{remainingGenerations > 1 ? "s" : ""}
+            </span>
+          </div>
+        </section>
+
         {courses.length > 0 && (
-          <section className="mt-16 w-full max-w-2xl">
+          <section className="mt-10 w-full max-w-2xl">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-              Tes formations
+              Mes formations
             </h2>
-            <ul className="mt-4 space-y-2">
+            <ul className="mt-4 space-y-3">
               {courses.map((course) => (
-                <li key={course.id}>
-                  <Link
-                    href={`/dashboard/formations/${course.id}`}
-                    className="flex items-center justify-between rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3 text-sm transition-colors hover:bg-white/[0.05]"
-                  >
-                    <span className="font-medium text-foreground">{course.title}</span>
-                    <span className="text-xs text-foreground-muted">
-                      {course.domain} · niveau {course.level}
-                    </span>
-                  </Link>
-                </li>
+                <CourseListItem key={course.id} course={course} />
               ))}
             </ul>
           </section>
+        )}
+
+        {courses.length === 0 && (
+          <p className="mt-10 text-sm text-foreground-muted">
+            Aucune formation pour l&apos;instant — lance ta première
+            génération ci-dessus.
+          </p>
         )}
       </main>
     </div>

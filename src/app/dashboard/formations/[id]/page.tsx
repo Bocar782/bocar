@@ -5,6 +5,7 @@ import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { getCourseById } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
+import { ProgressTracker } from "./progress-tracker";
 
 export default async function CourseDetailPage(
   props: PageProps<"/dashboard/formations/[id]">,
@@ -39,10 +40,11 @@ export default async function CourseDetailPage(
       </header>
 
       <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24">
-        <CourseView course={course} />
+        <CourseView course={course} courseId={id} />
       </main>
 
       <ChapterChat course={course} />
+      <ProgressTracker courseId={id} />
     </div>
   );
 }

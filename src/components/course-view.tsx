@@ -11,8 +11,9 @@ function ChapterCard({
 }) {
   return (
     <article
+      id={`chapitre-${index}`}
       data-chapter-index={index}
-      className="rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
+      className="scroll-mt-6 rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
     >
       <span className="text-xs font-mono text-accent-violet-light">
         Chapitre {index + 1}
@@ -58,7 +59,13 @@ function ChapterCard({
   );
 }
 
-export function CourseView({ course }: { course: GeneratedCourse }) {
+export function CourseView({
+  course,
+  courseId = null,
+}: {
+  course: GeneratedCourse;
+  courseId?: string | null;
+}) {
   return (
     <div className="w-full max-w-3xl">
       <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
@@ -119,7 +126,7 @@ export function CourseView({ course }: { course: GeneratedCourse }) {
         </div>
       </section>
 
-      <QuizView quiz={course.quiz} />
+      <QuizView quiz={course.quiz} courseId={courseId} />
     </div>
   );
 }
