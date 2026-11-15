@@ -153,18 +153,21 @@ export function CourseGenerator({
     return (
       <div className="w-full max-w-2xl rounded-[28px] border border-border-subtle bg-background-elevated/80 p-6 text-center sm:p-8">
         <p className="text-sm font-medium text-foreground">
-          Limite du plan gratuit atteinte
+          {locked ? "Limite du plan gratuit atteinte" : "Limite mensuelle atteinte"}
         </p>
         <p className="mt-2 text-sm text-foreground-muted">
-          Le plan gratuit permet de générer une formation. Débloque la
-          formation complète pour continuer à apprendre avec Lia.
+          {locked
+            ? "Le plan gratuit permet de générer une formation. Débloque la formation complète pour continuer à apprendre avec Lia."
+            : "Tu as utilisé tes formations pour cette période de facturation. Le quota se réinitialise automatiquement à ton prochain renouvellement."}
         </p>
-        <Link
-          href="/tarifs"
-          className="mt-4 inline-block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-        >
-          Voir les tarifs
-        </Link>
+        {locked && (
+          <Link
+            href="/pricing"
+            className="mt-4 inline-block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+          >
+            Voir les tarifs
+          </Link>
+        )}
       </div>
     );
   }

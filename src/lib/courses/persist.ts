@@ -151,6 +151,22 @@ export async function countTotalGenerations(
   return count ?? 0;
 }
 
+export async function countGenerationsSince(
+  supabase: SupabaseClient,
+  userId: string,
+  sinceIso: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("courses")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", sinceIso);
+
+  if (error) throw new Error(`Échec du calcul de l'utilisation : ${error.message}`);
+
+  return count ?? 0;
+}
+
 export async function getCourseById(
   supabase: SupabaseClient,
   courseId: string,

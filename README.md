@@ -122,12 +122,17 @@ Les règles de contenu vivent dans `src/lib/courses/plan.ts` :
   Stripe de l'utilisateur dans la table `subscriptions` (`active` ou
   `trialing` → plan Pro, sinon plan gratuit). Voir la section Stripe
   ci-dessous.
+- `getUsageStatus(supabase, userId)` : renvoie `{ isPro, used, limit,
+  remaining, resetsAt }` — pour le plan gratuit, `used`/`limit` comptent
+  les formations à vie ; pour le plan Pro, elles sont recomptées depuis
+  `current_period_start` de l'abonnement (donc remises à zéro à chaque
+  renouvellement), et `resetsAt` donne la date du prochain renouvellement.
 
-**Contrôle côté serveur** : `/api/courses/generate` compte le nombre total
-de formations déjà générées par l'utilisateur
-(`countTotalGenerations` dans `src/lib/courses/persist.ts`) et renvoie une
-erreur 403 si la limite est atteinte — un appel direct à l'API sans passer
-par l'interface ne permet donc pas de la contourner.
+**Contrôle côté serveur** : `/api/courses/generate` appelle
+`getUsageStatus` et renvoie une erreur 403 si `remaining <= 0` (limite à
+vie pour le plan gratuit, limite mensuelle réinitialisée à chaque période
+de facturation pour le plan Pro) — un appel direct à l'API sans passer par
+l'interface ne permet donc pas de la contourner.
 
 **Paywall visuel** (`src/components/course-view.tsx`) : pour une formation
 verrouillée, les `FREE_PLAN_UNLOCKED_CHAPTERS` premiers chapitres
@@ -136,8 +141,8 @@ toujours envoyé au client mais rendu flouté (`blur-sm` + `inert`, donc non
 interactif et retiré de l'arbre d'accessibilité) dans un conteneur à
 hauteur limitée avec un fondu vers le fond. Juste avant ce flou, une carte
 nette (non floutée) annonce combien de chapitres restent à débloquer et
-propose un bouton "Débloquer la formation complète" vers `/tarifs`
-(`src/app/tarifs/page.tsx`, page de tarifs avec un plan "Gratuit" et un
+propose un bouton "Débloquer la formation complète" vers `/pricing`
+(`src/app/pricing/page.tsx`, page de tarifs avec un plan "Gratuit" et un
 plan "Pro" à 9,99€/mois). Le chat (`ChapterChat`) et le suivi de
 progression (`ProgressTracker`) reçoivent tous les deux un
 `maxChapterIndex` qui les empêche d'aller au-delà du dernier chapitre
@@ -145,27 +150,34 @@ débloqué, même si le DOM contient le reste de la formation.
 
 ## Paiement : abonnement Pro via Stripe
 
-Le plan Pro (9,99€/mois, formations illimitées, accès complet à chaque
-formation) est un abonnement Stripe Checkout.
+Un seul plan payant : 9,99€/mois, 3 formations générées par mois (quota
+remis à zéro à chaque renouvellement), accès complet à chaque formation.
+Abonnement géré par Stripe Checkout + Billing Portal, en mode test.
 
 - **Produit/Price** : créés une fois dans Stripe (voir `STRIPE_PRICE_ID`),
-  abonnement mensuel récurrent de 999 centimes (`PRO_PLAN_PRICE_EUR` dans
-  `src/lib/courses/plan.ts`).
+  abonnement mensuel récurrent de 999 centimes (`PRO_PLAN_PRICE_EUR` /
+  `PRO_PLAN_MONTHLY_COURSE_LIMIT` dans `src/lib/courses/plan.ts`).
 - **`POST /api/stripe/checkout`** (`src/app/api/stripe/checkout/route.ts`) :
   crée (ou réutilise) le customer Stripe de l'utilisateur connecté, ouvre
   une session Stripe Checkout hébergée pour le Price Pro, et redirige
   l'utilisateur dessus. Déclenché par un simple `<form method="POST">`
-  (page `/tarifs` et dashboard) — fonctionne même sans JavaScript.
+  (page `/pricing` et dashboard) — fonctionne même sans JavaScript.
 - **`POST /api/stripe/webhook`** (`src/app/api/stripe/webhook/route.ts`) :
   vérifie la signature Stripe (`STRIPE_WEBHOOK_SECRET`) et synchronise la
-  table `subscriptions` (statut, `current_period_end`) sur
-  `checkout.session.completed` et `customer.subscription.*`. Utilise le
-  client Supabase "admin" (clé de service, contourne la RLS) car Stripe
-  appelle cette route sans session utilisateur.
-- **Table `subscriptions`** (migration `0004_subscriptions.sql`) : un
-  abonnement par utilisateur, lu par `isOnFreePlan()`. RLS : l'utilisateur
-  peut lire son propre statut, seule la route webhook (clé de service)
-  peut écrire.
+  table `subscriptions` (statut, `current_period_start`,
+  `current_period_end`) sur `checkout.session.completed` (paiement réussi)
+  et `customer.subscription.created/updated/deleted` (renouvellement,
+  passage en impayé, résiliation). Utilise le client Supabase "admin" (clé
+  de service, contourne la RLS) car Stripe appelle cette route sans
+  session utilisateur.
+- **`POST /api/stripe/portal`** (`src/app/api/stripe/portal/route.ts`) :
+  ouvre le Stripe Billing Portal (factures, moyen de paiement,
+  résiliation) pour le customer Stripe de l'utilisateur connecté. Bouton
+  "Gérer mon abonnement" sur `/pricing` et dans le dashboard.
+- **Table `subscriptions`** (migrations `0004_subscriptions.sql` et
+  `0005_subscription_period.sql`) : un abonnement par utilisateur, lu par
+  `isOnFreePlan()` / `getUsageStatus()`. RLS : l'utilisateur peut lire son
+  propre statut, seule la route webhook (clé de service) peut écrire.
 
 **Sécurité des clés** : la clé secrète Stripe n'est jamais stockée en
 clair dans ce projet. Dans cet environnement de développement, elle est

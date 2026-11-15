@@ -4,6 +4,7 @@ import {
   FREE_PLAN_COURSE_LIMIT,
   FREE_PLAN_UNLOCKED_CHAPTERS,
   isOnFreePlan,
+  PRO_PLAN_MONTHLY_COURSE_LIMIT,
   PRO_PLAN_PRICE_EUR,
 } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -96,13 +97,16 @@ export default async function PricingPage() {
                 <span className="text-base font-normal text-foreground-muted"> / mois</span>
               </p>
               <p className="mt-1 text-sm text-foreground-muted">
-                Pour apprendre sans limites.
+                Pour aller plus loin, chaque mois.
               </p>
 
               <ul className="mt-6 space-y-3 text-sm text-foreground">
                 <li className="flex gap-2.5">
                   <span className="mt-0.5 text-accent-violet-light">✓</span>
-                  <span>Formations illimitées</span>
+                  <span>
+                    {PRO_PLAN_MONTHLY_COURSE_LIMIT} formations générées par
+                    mois (quota renouvelé à chaque facturation)
+                  </span>
                 </li>
                 <li className="flex gap-2.5">
                   <span className="mt-0.5 text-accent-violet-light">✓</span>
@@ -133,8 +137,18 @@ export default async function PricingPage() {
                 </form>
               )}
               {user && !onFreePlan && (
-                <div className="mt-8 rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
-                  Ton plan actuel
+                <div className="mt-8 space-y-2">
+                  <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
+                    Ton plan actuel
+                  </div>
+                  <form action="/api/stripe/portal" method="POST">
+                    <button
+                      type="submit"
+                      className="w-full rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-center text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
+                    >
+                      Gérer mon abonnement
+                    </button>
+                  </form>
                 </div>
               )}
             </div>

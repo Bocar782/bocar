@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CourseGenerationError, generateCourse } from "@/lib/courses/generate";
-import { FREE_PLAN_COURSE_LIMIT, isOnFreePlan } from "@/lib/courses/plan";
-import { countTotalGenerations, saveCourse } from "@/lib/courses/persist";
+import { getUsageStatus } from "@/lib/courses/plan";
+import { saveCourse } from "@/lib/courses/persist";
 import type { GenerationStage } from "@/lib/courses/schemas";
 
 export const dynamic = "force-dynamic";
@@ -20,21 +20,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
-  // Limite du plan gratuit contrôlée côté serveur (pas seulement affichée
-  // côté client) pour qu'un appel direct à cette route ne puisse pas la
-  // contourner. En cas d'échec du comptage (ex. migration pas encore
-  // appliquée), on laisse passer plutôt que de bloquer toute génération.
+  // Limite de génération contrôlée côté serveur (pas seulement affichée côté
+  // client) pour qu'un appel direct à cette route ne puisse pas la
+  // contourner — plan gratuit (1 formation à vie) ou plan Pro (3 formations
+  // par période de facturation, réinitialisées à chaque renouvellement).
+  // En cas d'échec du calcul (ex. migration pas encore appliquée), on laisse
+  // passer plutôt que de bloquer toute génération.
   try {
-    if (await isOnFreePlan(supabase, user.id)) {
-      const totalGenerated = await countTotalGenerations(supabase, user.id);
-      if (totalGenerated >= FREE_PLAN_COURSE_LIMIT) {
-        return NextResponse.json(
-          {
-            error: `Le plan gratuit est limité à ${FREE_PLAN_COURSE_LIMIT} formation${FREE_PLAN_COURSE_LIMIT > 1 ? "s" : ""}. Débloque la formation complète pour continuer.`,
-          },
-          { status: 403 },
-        );
-      }
+    const usage = await getUsageStatus(supabase, user.id);
+    if (usage.remaining <= 0) {
+      const message = usage.isPro
+        ? `Tu as atteint la limite de ${usage.limit} formations pour cette période de facturation. Le quota se réinitialise à ton prochain renouvellement.`
+        : `Le plan gratuit est limité à ${usage.limit} formation${usage.limit > 1 ? "s" : ""}. Débloque la formation complète pour continuer.`;
+      return NextResponse.json({ error: message }, { status: 403 });
     }
   } catch {
     // ignoré

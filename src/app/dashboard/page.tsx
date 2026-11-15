@@ -2,8 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
 import { CourseListItem } from "@/components/course-list-item";
-import { FREE_PLAN_COURSE_LIMIT, isOnFreePlan } from "@/lib/courses/plan";
-import { countTotalGenerations, listCourses } from "@/lib/courses/persist";
+import { getUsageStatus } from "@/lib/courses/plan";
+import { listCourses } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 import { CourseGenerator } from "./course-generator";
@@ -18,19 +18,21 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const onFreePlan = await isOnFreePlan(supabase, user.id);
-
   // Si la migration SQL n'a pas encore été appliquée côté Supabase, ne pas
   // faire planter tout le dashboard : l'utilisateur voit juste une liste vide
   // et un quota par défaut.
-  const [courses, totalGenerated] = await Promise.all([
+  const [courses, usage] = await Promise.all([
     listCourses(supabase, user.id).catch(() => []),
-    countTotalGenerations(supabase, user.id).catch(() => 0),
+    getUsageStatus(supabase, user.id).catch(() => ({
+      isPro: false,
+      used: 0,
+      limit: 1,
+      remaining: 1,
+      resetsAt: null,
+    })),
   ]);
 
-  const remainingGenerations = onFreePlan
-    ? Math.max(0, FREE_PLAN_COURSE_LIMIT - totalGenerated)
-    : Infinity;
+  const onFreePlan = !usage.isPro;
 
   return (
     <div className="relative flex min-h-screen flex-1 flex-col">
@@ -66,27 +68,41 @@ export default async function DashboardPage() {
         </p>
 
         <div className="mt-10 flex w-full flex-1 flex-col items-center">
-          <CourseGenerator remainingGenerations={remainingGenerations} locked={onFreePlan} />
+          <CourseGenerator remainingGenerations={usage.remaining} locked={onFreePlan} />
         </div>
 
         <section className="mt-6 w-full max-w-2xl">
           <div className="flex items-center justify-between rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3">
             <span className="text-xs text-foreground-muted">
-              {onFreePlan ? "Plan gratuit" : "Utilisation"}
+              {onFreePlan ? "Plan gratuit" : "Plan Pro"}
             </span>
             <span className="text-xs font-medium text-foreground">
-              {onFreePlan
-                ? `${totalGenerated}/${FREE_PLAN_COURSE_LIMIT} formation${FREE_PLAN_COURSE_LIMIT > 1 ? "s" : ""} générée${FREE_PLAN_COURSE_LIMIT > 1 ? "s" : ""}`
-                : `${totalGenerated} formations générées`}
+              {usage.used}/{usage.limit} formation{usage.limit > 1 ? "s" : ""}{" "}
+              générée{usage.limit > 1 ? "s" : ""}
+              {usage.isPro && usage.resetsAt
+                ? ` (renouvellement le ${new Date(usage.resetsAt).toLocaleDateString("fr-FR")})`
+                : onFreePlan
+                  ? " (à vie)"
+                  : ""}
             </span>
           </div>
           {onFreePlan && (
             <Link
-              href="/tarifs"
+              href="/pricing"
               className="mt-2 block text-center text-xs text-accent-violet-light underline underline-offset-2 hover:text-accent-violet"
             >
               Passer au plan Pro
             </Link>
+          )}
+          {!onFreePlan && (
+            <form action="/api/stripe/portal" method="POST" className="mt-2">
+              <button
+                type="submit"
+                className="block w-full text-center text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground"
+              >
+                Gérer mon abonnement
+              </button>
+            </form>
           )}
         </section>
 

@@ -45,7 +45,7 @@ export async function POST() {
     customer: customerId,
     line_items: [{ price: getStripePriceId(), quantity: 1 }],
     success_url: `${siteUrl}/dashboard?upgraded=1`,
-    cancel_url: `${siteUrl}/tarifs`,
+    cancel_url: `${siteUrl}/pricing`,
     client_reference_id: user.id,
     metadata: { supabase_user_id: user.id },
     subscription_data: { metadata: { supabase_user_id: user.id } },

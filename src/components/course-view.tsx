@@ -123,7 +123,7 @@ function LockedPreview({
             acquis.
           </p>
           <Link
-            href="/tarifs"
+            href="/pricing"
             className="mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
           >
             Débloquer la formation complète

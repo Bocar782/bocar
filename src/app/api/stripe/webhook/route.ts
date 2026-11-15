@@ -32,7 +32,9 @@ export async function POST(request: Request) {
     const userId = subscription.metadata?.supabase_user_id;
     if (!userId) return;
 
-    const currentPeriodEnd = subscription.items.data[0]?.current_period_end;
+    const item = subscription.items.data[0];
+    const currentPeriodStart = item?.current_period_start;
+    const currentPeriodEnd = item?.current_period_end;
 
     await admin.from("subscriptions").upsert(
       {
@@ -40,6 +42,9 @@ export async function POST(request: Request) {
         stripe_customer_id: subscription.customer as string,
         stripe_subscription_id: subscription.id,
         status: subscription.status,
+        current_period_start: currentPeriodStart
+          ? new Date(currentPeriodStart * 1000).toISOString()
+          : null,
         current_period_end: currentPeriodEnd
           ? new Date(currentPeriodEnd * 1000).toISOString()
           : null,
