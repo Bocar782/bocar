@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
+import { BrandMark } from "@/components/brand-mark";
 import { CourseListItem } from "@/components/course-list-item";
 import { DeepAnalysisListItem } from "@/components/deep-analysis-list-item";
 import { listDeepAnalyses } from "@/lib/analysis/persist";
@@ -40,9 +41,7 @@ export default async function DashboardPage() {
 
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white shadow-[0_0_24px_-4px_var(--accent-violet)]">
-            L
-          </span>
+          <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Lia</span>
         </div>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { BackgroundGlow } from "./background-glow";
+import { BrandMark } from "./brand-mark";
 
 export function AuthShell({
   title,
@@ -19,9 +20,7 @@ export function AuthShell({
 
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16">
         <Link href="/" className="mb-8 flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white shadow-[0_0_24px_-4px_var(--accent-violet)]">
-            L
-          </span>
+          <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Lia</span>
         </Link>
 

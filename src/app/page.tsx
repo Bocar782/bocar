@@ -2,13 +2,42 @@ import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { SiteHeader } from "@/components/site-header";
 import { Benefits } from "@/components/marketing/benefits";
+import { ComparisonTable } from "@/components/marketing/comparison-table";
 import { Faq } from "@/components/marketing/faq";
+import { FAQ_ITEMS } from "@/components/marketing/faq-data";
 import { InterfaceShowcase } from "@/components/marketing/interface-showcase";
+import { MagneticButton } from "@/components/marketing/magnetic-button";
 import { PricingSection } from "@/components/marketing/pricing-section";
 import { Reveal } from "@/components/marketing/reveal";
 import { Testimonials } from "@/components/marketing/testimonials";
 import { TopicExamples } from "@/components/marketing/topic-examples";
 import { WowDemo } from "@/components/marketing/wow-demo";
+import { getSiteUrl } from "@/lib/site-url";
+
+const SOFTWARE_APPLICATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Lia",
+  url: getSiteUrl(),
+  applicationCategory: "EducationalApplication",
+  operatingSystem: "Web",
+  description:
+    "Lia est une plateforme d'apprentissage assistée par IA : décris ce que tu veux apprendre, elle génère une formation complète, structurée et personnalisée.",
+  offers: [
+    { "@type": "Offer", name: "Gratuit", price: "0", priceCurrency: "EUR" },
+    { "@type": "Offer", name: "Pro", price: "9.99", priceCurrency: "EUR" },
+  ],
+};
+
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ_ITEMS.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: { "@type": "Answer", text: item.answer },
+  })),
+};
 
 function SectionHeading({
   eyebrow,
@@ -39,6 +68,14 @@ function SectionHeading({
 export default function Home() {
   return (
     <div className="relative flex-1 overflow-x-clip">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
+      />
       <BackgroundGlow />
       <SiteHeader />
 
@@ -61,12 +98,12 @@ export default function Home() {
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
-          <Link
+          <MagneticButton
             href="/signup"
             className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
           >
             Créer ma première formation →
-          </Link>
+          </MagneticButton>
           <a
             href="#comment-ca-marche"
             className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/5 px-7 py-3.5 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
@@ -149,7 +186,8 @@ export default function Home() {
         </section>
 
         {/* Avantages */}
-        <section id="avantages" className="mt-32 w-full scroll-mt-20 sm:mt-40">
+        <section id="avantages" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
+          <div aria-hidden className="section-tint-violet" />
           <Reveal>
             <SectionHeading
               eyebrow="Pourquoi Lia"
@@ -163,8 +201,24 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Présentation de l'interface */}
+        {/* Comparatif */}
         <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="La différence"
+              title="Lia n'est pas un chatbot, ni un cours en ligne de plus"
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <ComparisonTable />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Présentation de l'interface */}
+        <section className="relative mt-32 w-full sm:mt-40">
+          <div aria-hidden className="section-tint-blue" />
           <Reveal>
             <SectionHeading
               eyebrow="À l'intérieur de Lia"
@@ -191,7 +245,8 @@ export default function Home() {
         </section>
 
         {/* Tarifs */}
-        <section id="tarifs" className="mt-32 w-full scroll-mt-20 sm:mt-40">
+        <section id="tarifs" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
+          <div aria-hidden className="section-tint-violet" />
           <Reveal>
             <SectionHeading
               eyebrow="Tarifs"
@@ -234,12 +289,12 @@ export default function Home() {
                   Ta première formation est gratuite. Décris ton sujet, Lia
                   s&apos;occupe du reste.
                 </p>
-                <Link
+                <MagneticButton
                   href="/signup"
                   className="mt-8 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
                 >
                   Créer ma première formation →
-                </Link>
+                </MagneticButton>
               </div>
             </div>
           </Reveal>

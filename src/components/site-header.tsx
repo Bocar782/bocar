@@ -1,25 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { BrandMark } from "./brand-mark";
+import { useActiveSection } from "./marketing/use-active-section";
 
 const NAV_LINKS = [
-  { label: "Comment ça marche", href: "/#comment-ca-marche" },
-  { label: "Fonctionnalités", href: "/#avantages" },
-  { label: "Tarifs", href: "/#tarifs" },
-  { label: "Pourquoi nous", href: "/pourquoi-nous" },
+  { label: "Comment ça marche", href: "/#comment-ca-marche", id: "comment-ca-marche" },
+  { label: "Fonctionnalités", href: "/#avantages", id: "avantages" },
+  { label: "Tarifs", href: "/#tarifs", id: "tarifs" },
+  { label: "Pourquoi nous", href: "/pourquoi-nous", id: null },
 ];
+
+const SECTION_IDS = NAV_LINKS.map((link) => link.id).filter((id): id is string => id !== null);
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const activeSection = useActiveSection(SECTION_IDS);
+
+  useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 24);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <header className="relative z-20 w-full">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
+    <header
+      className={`sticky top-0 z-20 w-full transition-colors duration-300 ${
+        scrolled
+          ? "border-b border-border-subtle bg-background/80 backdrop-blur-xl"
+          : "border-b border-transparent"
+      }`}
+    >
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white shadow-[0_0_24px_-4px_var(--accent-violet)]">
-            L
-          </span>
+          <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Lia</span>
         </Link>
 
@@ -28,7 +47,9 @@ export function SiteHeader() {
             <a
               key={link.href}
               href={link.href}
-              className="transition-colors hover:text-foreground"
+              className={`transition-colors hover:text-foreground ${
+                link.id && activeSection === link.id ? "text-foreground" : ""
+              }`}
             >
               {link.label}
             </a>

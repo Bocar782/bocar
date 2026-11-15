@@ -249,18 +249,23 @@ recherché qu'une formation classique, et donc plus coûteux à générer.
 ## Landing page
 
 La page `/` (`src/app/page.tsx`) est la vitrine publique, accessible sans
-connexion : hero, démonstration visuelle du produit ("wow effect" —
-`src/components/marketing/wow-demo.tsx`, un mockup statique montrant une
-demande puis la formation générée, pour qu'un visiteur comprenne
-immédiatement que ce n'est pas un chatbot), exemples de sujets, avantages,
-une présentation de l'interface (mockups en CSS/HTML, pas de vraies
-captures d'écran, pour rester léger et cohérent avec le design system),
-avis clients (**placeholders explicitement labellisés comme fictifs** —
-badge visible + mention sous chaque avis, à remplacer par de vrais avis
-après le lancement), tarifs (section condensée qui reflète les vraies
-constantes de `src/lib/courses/plan.ts`, donc toujours synchronisée avec
-le plan réellement facturé), FAQ (accordéon), et un CTA final. Les
-sections apparaissent avec une légère animation au scroll
+connexion : hero, démonstration visuelle interactive du produit ("wow
+effect" — `src/components/marketing/wow-demo.tsx` : le visiteur tape son
+propre sujet dans un champ, et l'aperçu de la formation générée
+(domaine, titre, chapitres, exemple, quiz) s'adapte en direct parmi une
+poignée de préréglages reconnus par mots-clés — **purement simulé côté
+client, aucun appel API**, pour que ce soit immédiat et gratuit à servir
+à chaque visiteur), exemples de sujets, avantages, un comparatif "Lia vs
+chatbot vs cours en ligne" (`comparison-table.tsx`), une présentation de
+l'interface (mockups en CSS/HTML, pas de vraies captures d'écran, pour
+rester léger et cohérent avec le design system), avis clients
+(**placeholders explicitement labellisés comme fictifs** — badge visible
++ mention sous chaque avis, à remplacer par de vrais avis après le
+lancement), tarifs (section condensée qui reflète les vraies constantes
+de `src/lib/courses/plan.ts`, donc toujours synchronisée avec le plan
+réellement facturé), FAQ (accordéon, dont le contenu alimente aussi des
+données structurées FAQPage pour le SEO — voir plus bas), et un CTA
+final. Les sections apparaissent avec une légère animation au scroll
 (`src/components/marketing/reveal.tsx`, IntersectionObserver + filet de
 sécurité qui force l'affichage après 1,5s si l'observer ne se déclenche
 pas, pour qu'aucun contenu ne reste invisible).
@@ -277,3 +282,34 @@ chevauchement du logo sur tablette — testé visuellement et corrigé.
 **Preuve sociale** : le chiffre "+5 000 utilisateurs" du hero est un
 placeholder, à remplacer par un vrai chiffre avant la mise en ligne
 publique.
+
+### Branding
+
+- **Marque** (`src/components/brand-mark.tsx`) : trois barres ascendantes
+  dans un carré à dégradé bleu/violet (progression pédagogique), utilisée
+  partout à la place d'un simple "L" — header, dashboard, `/pricing`,
+  pages d'authentification. Déclinée en favicon (`src/app/icon.svg`),
+  icône iOS (`apple-icon.tsx`) et image de partage Open Graph
+  (`opengraph-image.tsx`, générée avec `next/og`, référencée par défaut
+  dans les métadonnées de `layout.tsx` pour toutes les pages).
+- **Icônes** (`src/components/marketing/icons.tsx`) : set de pictogrammes
+  SVG dessinés sur-mesure (trait, 1.6px, couleurs de la marque) pour les
+  sections Avantages et Exemples de sujets, à la place d'emojis.
+- **Fond vivant** (`globals.css`) : les halos d'arrière-plan dérivent très
+  lentement (`aurora-drift-a/b`), un grain subtil casse l'effet "dégradé
+  plat" (`.grain-overlay`), et certaines sections ont une teinte de fond
+  légèrement différente (`.section-tint-violet` / `.section-tint-blue`)
+  pour rythmer le scroll. Tout est désactivé sous
+  `prefers-reduced-motion`.
+- **CTA magnétiques** (`src/components/marketing/magnetic-button.tsx`) :
+  les boutons principaux suivent légèrement le curseur et affichent une
+  lueur qui le suit, au survol.
+- **Header** : sticky (reste visible au scroll, CTA toujours à portée de
+  main) et surligne le lien de nav correspondant à la section visible
+  (`use-active-section.ts`, IntersectionObserver — s'efface simplement
+  sur les pages sans ces sections, comme `/pourquoi-nous`).
+- **SEO** : métadonnées complètes dans `layout.tsx` (Open Graph, Twitter
+  Card, `metadataBase`, canonical) et données structurées JSON-LD sur la
+  page d'accueil (`SoftwareApplication` + `FAQPage`, cette dernière
+  alimentée par les mêmes données que l'accordéon FAQ —
+  `src/components/marketing/faq-data.ts`).

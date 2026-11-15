@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
+import { BrandMark } from "@/components/brand-mark";
 import {
   FREE_PLAN_COURSE_LIMIT,
   FREE_PLAN_UNLOCKED_CHAPTERS,
@@ -22,9 +23,7 @@ export default async function PricingPage() {
 
       <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
         <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white shadow-[0_0_24px_-4px_var(--accent-violet)]">
-            L
-          </span>
+          <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Lia</span>
         </Link>
         {!user && (
