@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
-import { FREE_PLAN_COURSE_LIMIT, FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
+import {
+  FREE_PLAN_COURSE_LIMIT,
+  FREE_PLAN_UNLOCKED_CHAPTERS,
+  isOnFreePlan,
+  PRO_PLAN_PRICE_EUR,
+} from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function PricingPage() {
@@ -8,6 +13,7 @@ export default async function PricingPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const onFreePlan = user ? await isOnFreePlan(supabase, user.id) : true;
 
   return (
     <div className="relative flex min-h-screen flex-1 flex-col">
@@ -72,7 +78,7 @@ export default async function PricingPage() {
             </ul>
 
             <div className="mt-8 rounded-full border border-border-subtle bg-white/[0.03] px-5 py-2.5 text-center text-sm text-foreground-muted">
-              {user ? "Ton plan actuel" : "Plan par défaut"}
+              {!user ? "Plan par défaut" : onFreePlan ? "Ton plan actuel" : "Plan précédent"}
             </div>
           </div>
 
@@ -86,7 +92,8 @@ export default async function PricingPage() {
                 Pro
               </h2>
               <p className="mt-3 text-3xl font-semibold text-foreground">
-                Bientôt disponible
+                {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
+                <span className="text-base font-normal text-foreground-muted"> / mois</span>
               </p>
               <p className="mt-1 text-sm text-foreground-muted">
                 Pour apprendre sans limites.
@@ -107,9 +114,29 @@ export default async function PricingPage() {
                 </li>
               </ul>
 
-              <div className="mt-8 rounded-full bg-white/[0.06] px-5 py-2.5 text-center text-sm text-foreground-muted">
-                Bientôt disponible
-              </div>
+              {!user && (
+                <Link
+                  href="/login"
+                  className="mt-8 block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+                >
+                  Se connecter pour s&apos;abonner
+                </Link>
+              )}
+              {user && onFreePlan && (
+                <form action="/api/stripe/checkout" method="POST">
+                  <button
+                    type="submit"
+                    className="mt-8 w-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+                  >
+                    S&apos;abonner
+                  </button>
+                </form>
+              )}
+              {user && !onFreePlan && (
+                <div className="mt-8 rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
+                  Ton plan actuel
+                </div>
+              )}
             </div>
           </div>
         </div>

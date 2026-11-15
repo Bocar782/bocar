@@ -27,7 +27,7 @@ export default async function CourseDetailPage(
     notFound();
   }
 
-  const locked = isOnFreePlan();
+  const locked = await isOnFreePlan(supabase, user.id);
   const maxChapterIndex = locked ? FREE_PLAN_UNLOCKED_CHAPTERS - 1 : undefined;
 
   return (

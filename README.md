@@ -112,15 +112,16 @@ refaire le quiz.
 
 ## Plan gratuit & paywall
 
-Tout le monde est actuellement sur le plan gratuit (il n'existe pas encore
-de système d'abonnement — pas de Stripe, pas de table "plan"). Les règles
-vivent dans `src/lib/courses/plan.ts` :
+Les règles de contenu vivent dans `src/lib/courses/plan.ts` :
 
 - `FREE_PLAN_COURSE_LIMIT` (1) : nombre de formations qu'un utilisateur
-  gratuit peut générer, **à vie** (pas par mois). `isOnFreePlan()` est le
-  point unique à modifier le jour où un vrai plan payant existera.
+  gratuit peut générer, **à vie** (pas par mois).
 - `FREE_PLAN_UNLOCKED_CHAPTERS` (2) : nombre de chapitres accessibles
   normalement dans une formation du plan gratuit.
+- `isOnFreePlan(supabase, userId)` : vérifie le vrai statut d'abonnement
+  Stripe de l'utilisateur dans la table `subscriptions` (`active` ou
+  `trialing` → plan Pro, sinon plan gratuit). Voir la section Stripe
+  ci-dessous.
 
 **Contrôle côté serveur** : `/api/courses/generate` compte le nombre total
 de formations déjà générées par l'utilisateur
@@ -137,8 +138,49 @@ hauteur limitée avec un fondu vers le fond. Juste avant ce flou, une carte
 nette (non floutée) annonce combien de chapitres restent à débloquer et
 propose un bouton "Débloquer la formation complète" vers `/tarifs`
 (`src/app/tarifs/page.tsx`, page de tarifs avec un plan "Gratuit" et un
-plan "Pro" marqué "Bientôt disponible" — aucun paiement réel n'est encore
-branché). Le chat (`ChapterChat`) et le suivi de progression
-(`ProgressTracker`) reçoivent tous les deux un `maxChapterIndex` qui les
-empêche d'aller au-delà du dernier chapitre débloqué, même si le DOM
-contient le reste de la formation.
+plan "Pro" à 9,99€/mois). Le chat (`ChapterChat`) et le suivi de
+progression (`ProgressTracker`) reçoivent tous les deux un
+`maxChapterIndex` qui les empêche d'aller au-delà du dernier chapitre
+débloqué, même si le DOM contient le reste de la formation.
+
+## Paiement : abonnement Pro via Stripe
+
+Le plan Pro (9,99€/mois, formations illimitées, accès complet à chaque
+formation) est un abonnement Stripe Checkout.
+
+- **Produit/Price** : créés une fois dans Stripe (voir `STRIPE_PRICE_ID`),
+  abonnement mensuel récurrent de 999 centimes (`PRO_PLAN_PRICE_EUR` dans
+  `src/lib/courses/plan.ts`).
+- **`POST /api/stripe/checkout`** (`src/app/api/stripe/checkout/route.ts`) :
+  crée (ou réutilise) le customer Stripe de l'utilisateur connecté, ouvre
+  une session Stripe Checkout hébergée pour le Price Pro, et redirige
+  l'utilisateur dessus. Déclenché par un simple `<form method="POST">`
+  (page `/tarifs` et dashboard) — fonctionne même sans JavaScript.
+- **`POST /api/stripe/webhook`** (`src/app/api/stripe/webhook/route.ts`) :
+  vérifie la signature Stripe (`STRIPE_WEBHOOK_SECRET`) et synchronise la
+  table `subscriptions` (statut, `current_period_end`) sur
+  `checkout.session.completed` et `customer.subscription.*`. Utilise le
+  client Supabase "admin" (clé de service, contourne la RLS) car Stripe
+  appelle cette route sans session utilisateur.
+- **Table `subscriptions`** (migration `0004_subscriptions.sql`) : un
+  abonnement par utilisateur, lu par `isOnFreePlan()`. RLS : l'utilisateur
+  peut lire son propre statut, seule la route webhook (clé de service)
+  peut écrire.
+
+**Sécurité des clés** : la clé secrète Stripe n'est jamais stockée en
+clair dans ce projet. Dans cet environnement de développement, elle est
+injectée automatiquement par le proxy réseau sur les appels vers
+`api.stripe.com` (`.env.local` ne contient qu'un placeholder,
+`STRIPE_SECRET_KEY=sk_test_proxy_injected_placeholder`). En production,
+remplace-la par la vraie clé secrète directement dans les variables
+d'environnement de la plateforme de déploiement (jamais dans un fichier
+commité, jamais collée dans un chat). Le secret de signature du webhook
+(`STRIPE_WEBHOOK_SECRET`) suit la même règle : à renseigner uniquement en
+production, une fois l'endpoint webhook créé dans le dashboard Stripe avec
+l'URL publique du déploiement. Seule la clé **publiable**
+(`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) est, par nature, destinée à être
+publique.
+
+Le SDK Stripe (basé sur `fetch`) a besoin de
+`NODE_USE_ENV_PROXY=1` (déjà dans `.env.local`) pour passer par le proxy
+réseau de cet environnement de développement — sans effet en production.

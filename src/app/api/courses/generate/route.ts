@@ -24,8 +24,8 @@ export async function POST(request: Request) {
   // côté client) pour qu'un appel direct à cette route ne puisse pas la
   // contourner. En cas d'échec du comptage (ex. migration pas encore
   // appliquée), on laisse passer plutôt que de bloquer toute génération.
-  if (isOnFreePlan()) {
-    try {
+  try {
+    if (await isOnFreePlan(supabase, user.id)) {
       const totalGenerated = await countTotalGenerations(supabase, user.id);
       if (totalGenerated >= FREE_PLAN_COURSE_LIMIT) {
         return NextResponse.json(
@@ -35,9 +35,9 @@ export async function POST(request: Request) {
           { status: 403 },
         );
       }
-    } catch {
-      // ignoré
     }
+  } catch {
+    // ignoré
   }
 
   let topic: string;

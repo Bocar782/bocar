@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
 import { CourseListItem } from "@/components/course-list-item";
@@ -17,7 +18,7 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const onFreePlan = isOnFreePlan();
+  const onFreePlan = await isOnFreePlan(supabase, user.id);
 
   // Si la migration SQL n'a pas encore été appliquée côté Supabase, ne pas
   // faire planter tout le dashboard : l'utilisateur voit juste une liste vide
@@ -79,6 +80,14 @@ export default async function DashboardPage() {
                 : `${totalGenerated} formations générées`}
             </span>
           </div>
+          {onFreePlan && (
+            <Link
+              href="/tarifs"
+              className="mt-2 block text-center text-xs text-accent-violet-light underline underline-offset-2 hover:text-accent-violet"
+            >
+              Passer au plan Pro
+            </Link>
+          )}
         </section>
 
         {courses.length > 0 && (
