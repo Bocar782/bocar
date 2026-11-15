@@ -207,26 +207,26 @@ async function writeChapter(
   programme: Programme,
   chapterIndex: number,
   assignedExample: VerifiedExample | null,
-  previousTakeaways: string[],
 ): Promise<ChapterContent> {
   const chapterPlan = programme.chapters[chapterIndex];
+  // Les chapitres sont rédigés en parallèle (latence) : chacun reçoit le plan
+  // complet avec un résumé par chapitre pour situer sa place dans la
+  // progression, plutôt que le contenu déjà écrit des précédents.
   const outline = programme.chapters
-    .map((c, i) => `${i + 1}. ${c.title}`)
+    .map(
+      (c, i) =>
+        `${i + 1}. ${c.title}${i === chapterIndex ? " ← ce chapitre" : ""} — ${c.summary}`,
+    )
     .join("\n");
 
   const exampleInstruction = assignedExample
     ? `Utilise CET exemple réel, sans en changer les faits ni la source : "${assignedExample.description}" (source : ${assignedExample.sourceUrl}, "${assignedExample.sourceTitle}"). Mets isReal à true et recopie l'URL exactement.`
     : "Aucun exemple réel vérifié n'est disponible pour ce chapitre : invente un exemple fictif ou une simulation clairement illustrative, mets isReal à false et laisse sourceUrl/sourceTitle à null. Ne présente jamais cet exemple comme réel.";
 
-  const continuityNote =
-    previousTakeaways.length > 0
-      ? `Points déjà vus dans les chapitres précédents (ne les réexplique pas, construis dessus) :\n${previousTakeaways.map((t) => `- ${t}`).join("\n")}`
-      : "C'est le premier chapitre de la formation.";
-
   return parseStructured(client, {
     system:
       "Tu es Lia. Tu rédiges un chapitre complet et pédagogique d'une formation, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
-    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet :\n${outline}\n\n${continuityNote}\n\nRédige le chapitre ${chapterIndex + 1} : "${chapterPlan.title}".\nCe chapitre doit couvrir : ${chapterPlan.summary}\n\n${exampleInstruction}`,
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation (pour situer ce chapitre dans la progression globale, sans répéter ce que les autres couvrent) :\n${outline}\n\nRédige le chapitre ${chapterIndex + 1} : "${chapterPlan.title}".\nCe chapitre doit couvrir : ${chapterPlan.summary}\n\n${exampleInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 20000,
   });
@@ -274,42 +274,47 @@ export async function generateCourse(
   const programme = await buildProgramme(client, analysis, verifiedExamples);
 
   onProgress("chapitres", STAGE_LABELS.chapitres);
-  const chapters: GeneratedChapter[] = [];
-  for (let i = 0; i < programme.chapters.length; i += 1) {
-    const plan = programme.chapters[i];
-    const assignedExample =
-      plan.exampleIndex !== null ? verifiedExamples[plan.exampleIndex] ?? null : null;
+  const totalChapters = programme.chapters.length;
+  let completedChapters = 0;
 
-    const content = await writeChapter(
-      client,
-      analysis,
-      programme,
-      i,
-      assignedExample,
-      chapters.map((c) => c.keyTakeaway),
-    );
+  // Rédigés en parallèle : chaque chapitre est indépendant (il reçoit le
+  // plan complet pour se situer), ce qui ramène la latence totale de
+  // "N chapitres séquentiels" à "1 chapitre" au lieu de N.
+  const chapters: GeneratedChapter[] = await Promise.all(
+    programme.chapters.map(async (plan, i) => {
+      const assignedExample =
+        plan.exampleIndex !== null ? verifiedExamples[plan.exampleIndex] ?? null : null;
 
-    // Deuxième filet de sécurité : si le modèle prétend "réel" sans fournir
-    // une source qui corresponde à un exemple vérifié, on force le fictif.
-    const claimedUrl = content.example.sourceUrl?.trim().replace(/\/$/, "") ?? null;
-    const matchesVerified =
-      claimedUrl !== null &&
-      verifiedExamples.some((e) => e.sourceUrl.trim().replace(/\/$/, "") === claimedUrl);
-    const isReal = content.example.isReal && matchesVerified;
+      const content = await writeChapter(client, analysis, programme, i, assignedExample);
 
-    chapters.push({
-      position: i,
-      title: plan.title,
-      explanation: content.explanation,
-      keyTakeaway: content.keyTakeaway,
-      example: {
-        isReal,
-        description: content.example.description,
-        sourceUrl: isReal ? content.example.sourceUrl : null,
-        sourceTitle: isReal ? content.example.sourceTitle : null,
-      },
-    });
-  }
+      completedChapters += 1;
+      onProgress(
+        "chapitres",
+        `${STAGE_LABELS.chapitres} (${completedChapters}/${totalChapters})`,
+      );
+
+      // Deuxième filet de sécurité : si le modèle prétend "réel" sans fournir
+      // une source qui corresponde à un exemple vérifié, on force le fictif.
+      const claimedUrl = content.example.sourceUrl?.trim().replace(/\/$/, "") ?? null;
+      const matchesVerified =
+        claimedUrl !== null &&
+        verifiedExamples.some((e) => e.sourceUrl.trim().replace(/\/$/, "") === claimedUrl);
+      const isReal = content.example.isReal && matchesVerified;
+
+      return {
+        position: i,
+        title: plan.title,
+        explanation: content.explanation,
+        keyTakeaway: content.keyTakeaway,
+        example: {
+          isReal,
+          description: content.example.description,
+          sourceUrl: isReal ? content.example.sourceUrl : null,
+          sourceTitle: isReal ? content.example.sourceTitle : null,
+        },
+      };
+    }),
+  );
 
   const summary = await writeSummary(client, analysis, programme, chapters);
 
