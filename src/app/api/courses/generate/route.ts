@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CourseGenerationError, generateCourse } from "@/lib/courses/generate";
-import { getUsageStatus } from "@/lib/courses/plan";
 import { saveCourse } from "@/lib/courses/persist";
+import {
+  QuotaExceededError,
+  consumeReservation,
+  releaseReservation,
+  reserveGenerationSlot,
+} from "@/lib/courses/reservation";
 import type { GenerationStage } from "@/lib/courses/schemas";
 
 export const dynamic = "force-dynamic";
@@ -18,24 +23,6 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
-  }
-
-  // Limite de génération contrôlée côté serveur (pas seulement affichée côté
-  // client) pour qu'un appel direct à cette route ne puisse pas la
-  // contourner — plan gratuit (1 formation à vie) ou plan Pro (3 formations
-  // par période de facturation, réinitialisées à chaque renouvellement).
-  // En cas d'échec du calcul (ex. migration pas encore appliquée), on laisse
-  // passer plutôt que de bloquer toute génération.
-  try {
-    const usage = await getUsageStatus(supabase, user.id);
-    if (usage.remaining <= 0) {
-      const message = usage.isPro
-        ? `Tu as atteint la limite de ${usage.limit} formations pour cette période de facturation. Le quota se réinitialise à ton prochain renouvellement.`
-        : `Le plan gratuit est limité à ${usage.limit} formation${usage.limit > 1 ? "s" : ""}. Débloque la formation complète pour continuer.`;
-      return NextResponse.json({ error: message }, { status: 403 });
-    }
-  } catch {
-    // ignoré
   }
 
   let topic: string;
@@ -56,6 +43,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sujet trop long." }, { status: 400 });
   }
 
+  // Réservation atomique de la place de génération, côté base de données
+  // (voir supabase/migrations/0007_generation_reservations.sql) — avant tout
+  // appel à l'API Anthropic. Deux requêtes simultanées pour le même
+  // utilisateur ne peuvent jamais consommer la même dernière place : la
+  // fonction SQL sérialise les appels concurrents via un advisory lock.
+  // Un appel direct à cette route ne peut donc pas contourner la limite.
+  let reservationId: string;
+  try {
+    reservationId = await reserveGenerationSlot(supabase, "course");
+  } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
+    // Échec de la réservation elle-même (panne transitoire, etc.) : on
+    // refuse plutôt que de laisser passer une génération sans réservation
+    // valide — la fiabilité du quota prime sur la disponibilité ici.
+    return NextResponse.json(
+      { error: "Impossible de vérifier ton quota pour le moment. Réessaie dans un instant." },
+      { status: 503 },
+    );
+  }
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -74,20 +83,26 @@ export async function POST(request: Request) {
 
         // La formation est générée : on la renvoie même si la sauvegarde
         // échoue (ex. migration SQL pas encore appliquée côté Supabase),
-        // pour ne pas perdre le travail déjà fait.
+        // pour ne pas perdre le travail déjà fait. La réservation n'est
+        // consommée que si la sauvegarde a réellement réussi ; sinon elle
+        // est libérée pour ne pas pénaliser l'utilisateur d'une génération
+        // perdue.
         let courseId: string | null = null;
         let saveWarning: string | null = null;
         try {
           courseId = await saveCourse(supabase, user.id, course);
+          await consumeReservation(supabase, reservationId, courseId);
         } catch (saveError) {
           saveWarning =
             saveError instanceof Error
               ? saveError.message
               : "Échec de l'enregistrement de la formation.";
+          await releaseReservation(supabase, reservationId);
         }
 
         send({ stage: "done", courseId, course, saveWarning });
       } catch (error) {
+        await releaseReservation(supabase, reservationId);
         const message =
           error instanceof CourseGenerationError || error instanceof Error
             ? error.message

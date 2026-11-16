@@ -3,7 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { AnalysisGenerationError, generateDeepAnalysis } from "@/lib/analysis/generate";
 import { saveDeepAnalysis } from "@/lib/analysis/persist";
 import type { DeepAnalysisStage } from "@/lib/analysis/schemas";
-import { getAnalysisUsageStatus } from "@/lib/courses/plan";
+import {
+  QuotaExceededError,
+  consumeReservation,
+  releaseReservation,
+  reserveGenerationSlot,
+} from "@/lib/courses/reservation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,24 +25,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
   }
 
-  // L'analyse approfondie coûte nettement plus cher (recherche web + longue
-  // génération) qu'une formation classique : réservée au plan Pro, avec un
-  // quota mensuel contrôlé côté serveur — pas seulement affiché côté client.
-  try {
-    const usage = await getAnalysisUsageStatus(supabase, user.id);
-    if (usage.remaining <= 0) {
-      const message = !usage.isPro
-        ? "L'analyse approfondie est réservée au plan Pro. Abonne-toi pour y accéder."
-        : `Tu as atteint la limite de ${usage.limit} analyses approfondies pour cette période de facturation. Le quota se réinitialise à ton prochain renouvellement.`;
-      return NextResponse.json({ error: message }, { status: 403 });
-    }
-  } catch {
-    return NextResponse.json(
-      { error: "Impossible de vérifier ton quota pour le moment." },
-      { status: 500 },
-    );
-  }
-
   let topic: string;
   try {
     const body = (await request.json()) as { topic?: unknown };
@@ -51,6 +38,25 @@ export async function POST(request: Request) {
   }
   if (topic.length > MAX_TOPIC_LENGTH) {
     return NextResponse.json({ error: "Sujet trop long." }, { status: 400 });
+  }
+
+  // L'analyse approfondie coûte nettement plus cher (recherche web + longue
+  // génération) qu'une formation classique : réservée au plan Pro, avec un
+  // quota mensuel réservé atomiquement côté base de données (voir
+  // supabase/migrations/0007_generation_reservations.sql) avant tout appel
+  // à l'API Anthropic — pas seulement affiché côté client, et jamais
+  // contournable par deux requêtes simultanées.
+  let reservationId: string;
+  try {
+    reservationId = await reserveGenerationSlot(supabase, "analysis");
+  } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
+    return NextResponse.json(
+      { error: "Impossible de vérifier ton quota pour le moment. Réessaie dans un instant." },
+      { status: 503 },
+    );
   }
 
   const encoder = new TextEncoder();
@@ -71,20 +77,24 @@ export async function POST(request: Request) {
 
         // L'analyse est générée : on la renvoie même si la sauvegarde
         // échoue (ex. migration SQL pas encore appliquée côté Supabase),
-        // pour ne pas perdre le travail déjà fait.
+        // pour ne pas perdre le travail déjà fait. La réservation n'est
+        // consommée que si la sauvegarde a réellement réussi.
         let analysisId: string | null = null;
         let saveWarning: string | null = null;
         try {
           analysisId = await saveDeepAnalysis(supabase, user.id, analysis);
+          await consumeReservation(supabase, reservationId, analysisId);
         } catch (saveError) {
           saveWarning =
             saveError instanceof Error
               ? saveError.message
               : "Échec de l'enregistrement de l'analyse.";
+          await releaseReservation(supabase, reservationId);
         }
 
         send({ stage: "done", analysisId, analysis, saveWarning });
       } catch (error) {
+        await releaseReservation(supabase, reservationId);
         const message =
           error instanceof AnalysisGenerationError || error instanceof Error
             ? error.message
