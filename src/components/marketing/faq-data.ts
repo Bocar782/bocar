@@ -1,6 +1,6 @@
 export const FAQ_ITEMS = [
   {
-    question: "Comment fonctionne le SaaS ?",
+    question: "Comment fonctionne Tavyra ?",
     answer:
       "Tu décris ce que tu veux apprendre, en une phrase. Tavyra analyse ta demande, construit un programme adapté à ton niveau, puis rédige une formation complète : introduction, chapitres progressifs, exemples concrets et quiz final.",
   },
@@ -35,7 +35,7 @@ export const FAQ_ITEMS = [
       "Oui, à tout moment, depuis le bouton « Gérer mon abonnement » du tableau de bord, qui ouvre le portail de gestion sécurisé de notre prestataire de paiement (Stripe).",
   },
   {
-    question: "Puis-je utiliser le SaaS sur téléphone ?",
+    question: "Puis-je utiliser Tavyra sur téléphone ?",
     answer:
       "Oui, l'interface est entièrement responsive : génération, lecture des formations, chat et quiz fonctionnent aussi bien sur mobile, tablette que sur ordinateur.",
   },

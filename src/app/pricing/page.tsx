@@ -68,9 +68,18 @@ export default async function PricingPage() {
               </li>
             </ul>
 
-            <div className="mt-8 rounded-full border border-border-subtle bg-white/[0.03] px-5 py-2.5 text-center text-sm text-foreground-muted">
-              {!user ? "Plan par défaut" : onFreePlan ? "Ton plan actuel" : "Plan précédent"}
-            </div>
+            {!user ? (
+              <Link
+                href="/signup"
+                className="mt-8 block rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-center text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
+              >
+                Commencer gratuitement
+              </Link>
+            ) : (
+              <div className="mt-8 rounded-full border border-border-subtle bg-white/[0.03] px-5 py-2.5 text-center text-sm text-foreground-muted">
+                {onFreePlan ? "Ton plan actuel" : "Plan précédent"}
+              </div>
+            )}
           </div>
 
           <div className="relative rounded-[28px] p-px">

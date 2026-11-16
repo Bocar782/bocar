@@ -21,7 +21,8 @@ const BENEFITS = [
   {
     Icon: IconExample,
     title: "Des exemples concrets",
-    description: "Des cas pratiques réels, avec leurs sources, pour ancrer la théorie dans le réel.",
+    description:
+      "Des cas réels, avec leurs sources, et un exercice à résoudre quand le sujet s'y prête — pour ancrer la théorie dans la pratique.",
   },
   {
     Icon: IconCheck,

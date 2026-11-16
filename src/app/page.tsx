@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { SiteHeader } from "@/components/site-header";
+import { AudienceBenefits } from "@/components/marketing/audience-benefits";
 import { Benefits } from "@/components/marketing/benefits";
 import { ComparisonTable } from "@/components/marketing/comparison-table";
 import { Faq } from "@/components/marketing/faq";
@@ -93,8 +94,8 @@ export default function Home() {
 
         <p className="mt-6 max-w-xl text-balance text-center text-lg text-foreground-muted">
           Décris ce que tu veux apprendre. Tavyra génère une formation complète
-          et structurée — chapitres progressifs, exemples concrets et quiz —
-          adaptée à ton niveau, en quelques minutes.
+          et structurée — chapitres progressifs, exemples concrets, exercices
+          pratiques et quiz — adaptée à ton niveau, en quelques minutes.
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
@@ -197,6 +198,22 @@ export default function Home() {
           <div className="mt-12">
             <Reveal>
               <Benefits />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Pour qui */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="Pour qui"
+              title="Que tu apprennes pour toi ou pour ton business"
+              description="Tavyra s'adapte à ton objectif, pas l'inverse."
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <AudienceBenefits />
             </Reveal>
           </div>
         </section>
@@ -308,12 +325,12 @@ export default function Home() {
             <Link href="/pourquoi-nous" className="transition-colors hover:text-foreground">
               Pourquoi nous existons
             </Link>
-            <a href="#" className="transition-colors hover:text-foreground">
+            <Link href="/confidentialite" className="transition-colors hover:text-foreground">
               Confidentialité
-            </a>
-            <a href="#" className="transition-colors hover:text-foreground">
+            </Link>
+            <Link href="/conditions-utilisation" className="transition-colors hover:text-foreground">
               Conditions d&apos;utilisation
-            </a>
+            </Link>
           </div>
         </div>
       </footer>
