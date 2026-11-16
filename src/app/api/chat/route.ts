@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { createAnthropicClient } from "@/lib/anthropic/client";
 import { buildChatSystemPrompt } from "@/lib/courses/chat-context";
+import { getCourseById } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -11,50 +12,17 @@ const MODEL = "claude-opus-5-5";
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MESSAGES = 40;
 
-const ExampleSchema = z.object({
-  isReal: z.boolean(),
-  description: z.string(),
-  sourceUrl: z.string().nullable(),
-  sourceTitle: z.string().nullable(),
-});
-
-const ChapterSchema = z.object({
-  position: z.number().int(),
-  title: z.string(),
-  explanation: z.string(),
-  keyTakeaway: z.string(),
-  example: ExampleSchema,
-});
-
-const QuizQuestionSchema = z.object({
-  position: z.number().int(),
-  chapterIndex: z.number().int().nullable(),
-  question: z.string(),
-  choices: z.array(z.string()),
-  correctChoiceIndex: z.number().int(),
-  explanation: z.string(),
-});
-
-const CourseSchema = z.object({
-  topic: z.string(),
-  title: z.string(),
-  domain: z.string(),
-  level: z.string(),
-  introduction: z.string(),
-  objectives: z.array(z.string()),
-  chapters: z.array(ChapterSchema).min(1),
-  summary: z.string(),
-  keyPoints: z.array(z.string()),
-  quiz: z.array(QuizQuestionSchema),
-});
-
 const MessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().max(MAX_MESSAGE_LENGTH),
 });
 
+// Le navigateur n'envoie plus que l'identifiant de la formation : le contenu
+// utilisé pour construire le contexte de l'assistant est systématiquement
+// récupéré et vérifié côté serveur (voir plus bas), jamais fait confiance
+// depuis la requête.
 const BodySchema = z.object({
-  course: CourseSchema,
+  courseId: z.string().uuid(),
   currentChapterIndex: z.number().int().min(0),
   messages: z.array(MessageSchema).min(1).max(MAX_MESSAGES),
 });
@@ -74,13 +42,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
 
-  const { course, currentChapterIndex, messages } = parsedBody.data;
+  const { courseId, currentChapterIndex, messages } = parsedBody.data;
 
   if (messages[messages.length - 1].role !== "user") {
     return NextResponse.json(
       { error: "Le dernier message doit venir de l'utilisateur." },
       { status: 400 },
     );
+  }
+
+  // Ne jamais faire confiance au contenu de formation envoyé par le
+  // navigateur : on récupère ici la véritable formation depuis Supabase, via
+  // le client authentifié de l'utilisateur. La policy RLS "courses_owner_all"
+  // (auth.uid() = user_id) garantit qu'une formation inexistante ou
+  // appartenant à un autre utilisateur renvoie `null`, dans les deux cas de
+  // façon identique (pas de distinction qui permettrait de deviner l'existence
+  // d'une formation appartenant à quelqu'un d'autre).
+  let course: Awaited<ReturnType<typeof getCourseById>>;
+  try {
+    course = await getCourseById(supabase, courseId);
+  } catch {
+    return NextResponse.json({ error: "Formation introuvable." }, { status: 404 });
+  }
+
+  if (!course) {
+    return NextResponse.json({ error: "Formation introuvable." }, { status: 404 });
   }
 
   const chapterIndex = Math.min(currentChapterIndex, course.chapters.length - 1);

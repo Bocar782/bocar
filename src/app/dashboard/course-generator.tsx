@@ -132,6 +132,7 @@ export function CourseGenerator({
         </button>
         <ChapterChat
           course={course}
+          courseId={courseId}
           maxChapterIndex={locked ? FREE_PLAN_UNLOCKED_CHAPTERS - 1 : undefined}
         />
       </div>

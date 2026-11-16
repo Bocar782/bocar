@@ -47,7 +47,7 @@ export default async function CourseDetailPage(
         <CourseView course={course} courseId={id} locked={locked} />
       </main>
 
-      <ChapterChat course={course} maxChapterIndex={maxChapterIndex} />
+      <ChapterChat course={course} courseId={id} maxChapterIndex={maxChapterIndex} />
       <ProgressTracker courseId={id} maxChapterIndex={maxChapterIndex} />
     </div>
   );

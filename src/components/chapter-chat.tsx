@@ -16,9 +16,20 @@ const SUGGESTIONS = [
 
 export function ChapterChat({
   course,
+  courseId,
   maxChapterIndex,
 }: {
   course: GeneratedCourse;
+  /**
+   * Identifiant persisté de la formation. Le contenu réel utilisé par
+   * l'assistant est toujours relu et vérifié côté serveur à partir de cet
+   * identifiant (jamais depuis `course`, qui ne sert ici qu'à l'affichage
+   * local). Si la formation n'a pas pu être sauvegardée (ex. erreur
+   * d'enregistrement juste après génération), il n'existe aucune source de
+   * vérité côté serveur à interroger : le chat reste indisponible plutôt que
+   * de faire confiance au contenu du navigateur.
+   */
+  courseId: string | null;
   /** Formation verrouillée : ne pas donner à Tavyra de contexte au-delà du contenu débloqué. */
   maxChapterIndex?: number;
 }) {
@@ -36,6 +47,8 @@ export function ChapterChat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, open]);
 
+  if (!courseId) return null;
+
   async function sendMessage(content: string) {
     const trimmed = content.trim();
     if (!trimmed || isStreaming) return;
@@ -50,7 +63,7 @@ export function ChapterChat({
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ course, currentChapterIndex, messages: newMessages }),
+        body: JSON.stringify({ courseId, currentChapterIndex, messages: newMessages }),
       });
 
       if (!response.ok || !response.body) {
