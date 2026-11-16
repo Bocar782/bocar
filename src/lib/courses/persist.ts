@@ -111,6 +111,22 @@ export async function saveCourse(
   }
 
   if (course.quiz.length > 0) {
+    // Même logique que pour le module par défaut ci-dessus : crée le quiz
+    // final (table `quizzes`, voir 0010_quizzes.sql) dès la sauvegarde,
+    // pour que toute nouvelle formation ait, elle aussi, un quiz
+    // exploitable par le système de tentatives (0011_quiz_attempts.sql).
+    const { data: quizRow, error: quizRowError } = await supabase
+      .from("quizzes")
+      .insert({ course_id: courseId, module_id: null, kind: "final", position: 0 })
+      .select("id")
+      .single();
+
+    if (quizRowError || !quizRow) {
+      throw new Error(`Échec de l'enregistrement du quiz : ${quizRowError?.message}`);
+    }
+
+    const quizId = quizRow.id as string;
+
     const { error: quizError } = await supabase.from("course_quiz_questions").insert(
       course.quiz.map((q) => ({
         course_id: courseId,
@@ -120,6 +136,7 @@ export async function saveCourse(
         choices: q.choices,
         correct_choice_index: q.correctChoiceIndex,
         explanation: q.explanation,
+        quiz_id: quizId,
       })),
     );
 
@@ -227,11 +244,22 @@ export async function getCourseById(
 
   const { data: quizRows, error: quizError } = await supabase
     .from("course_quiz_questions")
-    .select("position, chapter_index, question, choices, correct_choice_index, explanation")
+    .select("id, position, chapter_index, question, choices, correct_choice_index, explanation")
     .eq("course_id", courseId)
     .order("position", { ascending: true });
 
   if (quizError) throw new Error(`Échec du chargement du quiz : ${quizError.message}`);
+
+  const { data: finalQuizRow, error: finalQuizError } = await supabase
+    .from("quizzes")
+    .select("id")
+    .eq("course_id", courseId)
+    .eq("kind", "final")
+    .maybeSingle();
+
+  if (finalQuizError) {
+    throw new Error(`Échec du chargement du quiz final : ${finalQuizError.message}`);
+  }
 
   const chapterIds = (chapters ?? []).map((chapter) => chapter.id as string);
   const { data: progressRows, error: progressError } =
@@ -305,6 +333,7 @@ export async function getCourseById(
     chapters: generatedChapters,
     modules,
     quiz: (quizRows ?? []).map((q) => ({
+      id: q.id as string,
       position: q.position as number,
       chapterIndex: (q.chapter_index as number | null) ?? null,
       question: q.question as string,
@@ -312,5 +341,6 @@ export async function getCourseById(
       correctChoiceIndex: q.correct_choice_index as number,
       explanation: q.explanation as string,
     })),
+    quizId: (finalQuizRow?.id as string | undefined) ?? null,
   };
 }

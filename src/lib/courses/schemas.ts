@@ -154,6 +154,15 @@ export type GeneratedChapter = {
 };
 
 export type QuizQuestion = {
+  /**
+   * Identifiant réel en base. Absent juste après une génération fraîche ;
+   * présent dès que la formation est chargée via `getCourseById`.
+   * Nécessaire pour soumettre une tentative de quiz (`quiz_attempts`,
+   * voir 0011_quiz_attempts.sql) : le serveur recalcule le score à partir
+   * de cet identifiant, jamais à partir d'une valeur envoyée par le
+   * navigateur.
+   */
+  id?: string;
   position: number;
   chapterIndex: number | null;
   question: string;
@@ -194,6 +203,13 @@ export type GeneratedCourse = {
   summary: string;
   keyPoints: string[];
   quiz: QuizQuestion[];
+  /**
+   * Identifiant du quiz FINAL (table `quizzes`, `kind = 'final'`), pour
+   * démarrer/soumettre une tentative (voir 0011_quiz_attempts.sql). `null`
+   * si la formation n'a pas de quiz ; absent juste après une génération
+   * fraîche (même logique que `modules`/`chapter.id`).
+   */
+  quizId?: string | null;
 };
 
 export type GenerationStage =

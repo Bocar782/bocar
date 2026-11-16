@@ -290,7 +290,7 @@ export function CourseView({
         </div>
       )}
       <SummarySection course={course} />
-      <QuizView quiz={course.quiz} courseId={courseId} />
+      <QuizView quiz={course.quiz} quizId={course.quizId ?? null} />
     </>
   );
 

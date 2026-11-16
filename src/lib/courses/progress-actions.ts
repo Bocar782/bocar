@@ -53,6 +53,57 @@ export async function setLessonCompletion(chapterId: string, completed: boolean)
   }
 }
 
+/**
+ * Démarre une tentative de quiz pour l'utilisateur courant, via le RPC
+ * `start_quiz_attempt` (voir 0011_quiz_attempts.sql) : `started_at` est
+ * fixé côté base de données (now()), jamais transmis par ce code ni par
+ * le navigateur. Retourne l'identifiant de la tentative à fournir ensuite
+ * à `submitQuizAttempt`, ou `null` en cas d'échec — un raté ici ne doit
+ * jamais empêcher l'utilisateur de passer le quiz, seul le suivi de
+ * tentative serait alors absent cette fois (cohérent avec le reste du
+ * tracking de progression de l'app).
+ */
+export async function startQuizAttempt(quizId: string): Promise<string | null> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("start_quiz_attempt", { p_quiz_id: quizId });
+    if (error) return null;
+    return (data as string | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Termine une tentative de quiz, via le RPC `submit_quiz_attempt` (voir
+ * 0011_quiz_attempts.sql). Le score et le total ne sont JAMAIS transmis
+ * ici : ils sont recalculés côté base de données à partir des vraies
+ * bonnes réponses stockées dans `course_quiz_questions` — impossible de
+ * falsifier son résultat depuis le navigateur. Si `attemptId` est absent
+ * (ex. `startQuizAttempt` a échoué), ne fait rien : le quiz reste jouable,
+ * seule la tentative ne serait pas enregistrée cette fois. Le RPC lui-même
+ * met à jour `courses.quiz_score`/`quiz_total`/`quiz_completed_at` quand
+ * il s'agit du quiz final — `recordQuizScore` ci-dessous n'a donc plus
+ * besoin d'être appelée depuis ce chemin, mais reste définie et exportée
+ * (compatibilité, au cas où un autre appelant en dépendrait).
+ */
+export async function submitQuizAttempt(
+  attemptId: string | null,
+  answers: { questionId: string; selectedChoiceIndex: number | null }[],
+): Promise<{ score: number; total: number } | null> {
+  if (!attemptId) return null;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .rpc("submit_quiz_attempt", { p_attempt_id: attemptId, p_answers: answers })
+      .single<{ score: number; total: number }>();
+    if (error || !data) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export async function recordQuizScore(
   courseId: string,
   score: number,

@@ -2,17 +2,24 @@
 
 import { useState } from "react";
 import type { QuizQuestion } from "@/lib/courses/schemas";
-import { recordQuizScore } from "@/lib/courses/progress-actions";
+import { startQuizAttempt, submitQuizAttempt } from "@/lib/courses/progress-actions";
 
 type Phase = "intro" | "active" | "results";
 type ReviewFilter = "all" | "mistakes";
 
 export function QuizView({
   quiz,
-  courseId = null,
+  quizId = null,
 }: {
   quiz: QuizQuestion[];
-  courseId?: string | null;
+  /**
+   * Identifiant du quiz (table `quizzes`) à fournir aux RPC
+   * start_quiz_attempt/submit_quiz_attempt (voir 0011_quiz_attempts.sql).
+   * `null` si la formation n'a pas encore été sauvegardée/relue depuis la
+   * base (génération fraîche) : dans ce cas, le quiz reste jouable mais
+   * aucune tentative n'est enregistrée.
+   */
+  quizId?: string | null;
 }) {
   const [phase, setPhase] = useState<Phase>("intro");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -20,6 +27,10 @@ export function QuizView({
     Array(quiz.length).fill(null),
   );
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
+  // Identifiant de la tentative en cours (créée côté serveur au moment où
+  // l'utilisateur clique sur "Commencer le quiz"). `started_at` est donc
+  // toujours fixé par le serveur, jamais transmis par ce composant.
+  const [attemptId, setAttemptId] = useState<string | null>(null);
 
   if (quiz.length === 0) return null;
 
@@ -35,17 +46,32 @@ export function QuizView({
     });
   }
 
+  function start() {
+    setPhase("active");
+    if (quizId) {
+      // Fire-and-forget, comme le reste du tracking de progression de
+      // l'app : ne bloque jamais le démarrage visuel du quiz.
+      startQuizAttempt(quizId).then(setAttemptId);
+    }
+  }
+
   function goNext() {
     if (currentIndex < quiz.length - 1) {
       setCurrentIndex((i) => i + 1);
     } else {
       setPhase("results");
-      if (courseId) {
-        const finalScore = answers.filter(
-          (answer, i) => answer !== null && answer === quiz[i].correctChoiceIndex,
-        ).length;
-        recordQuizScore(courseId, finalScore, quiz.length);
-      }
+      // Le score affiché ci-dessus reste calculé localement (comportement
+      // visuel inchangé). Ce qui est enregistré en base est entièrement
+      // recalculé côté serveur à partir des vraies bonnes réponses — les
+      // réponses envoyées ici ne contiennent jamais de score ni de total.
+      const submittedAnswers = quiz
+        .map((question, i) =>
+          question.id
+            ? { questionId: question.id, selectedChoiceIndex: answers[i] }
+            : null,
+        )
+        .filter((a): a is { questionId: string; selectedChoiceIndex: number | null } => a !== null);
+      submitQuizAttempt(attemptId, submittedAnswers);
     }
   }
 
@@ -53,6 +79,7 @@ export function QuizView({
     setAnswers(Array(quiz.length).fill(null));
     setCurrentIndex(0);
     setReviewFilter("all");
+    setAttemptId(null);
     setPhase("intro");
   }
 
@@ -79,7 +106,7 @@ export function QuizView({
             </p>
             <button
               type="button"
-              onClick={() => setPhase("active")}
+              onClick={start}
               className="mt-6 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
             >
               Commencer le quiz
