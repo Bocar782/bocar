@@ -1,9 +1,8 @@
 import Link from "next/link";
 import {
-  FREE_PLAN_COURSE_LIMIT,
-  FREE_PLAN_UNLOCKED_CHAPTERS,
-  PRO_PLAN_MONTHLY_ANALYSIS_LIMIT,
-  PRO_PLAN_MONTHLY_COURSE_LIMIT,
+  FREE_PLAN_FEATURES,
+  FREE_PLAN_LIMITATION,
+  PRO_PLAN_FEATURES,
   PRO_PLAN_PRICE_EUR,
 } from "@/lib/courses/plan";
 
@@ -18,17 +17,15 @@ export function PricingSection() {
         <p className="mt-1 text-sm text-foreground-muted">Pour découvrir Tavyra sans engagement.</p>
 
         <ul className="mt-6 space-y-3 text-sm text-foreground">
-          <li className="flex gap-2.5">
-            <span className="mt-0.5 text-accent-violet-light">✓</span>
-            <span>{FREE_PLAN_COURSE_LIMIT} formation complète générée par Tavyra</span>
-          </li>
-          <li className="flex gap-2.5">
-            <span className="mt-0.5 text-accent-violet-light">✓</span>
-            <span>Les {FREE_PLAN_UNLOCKED_CHAPTERS} premiers chapitres en accès libre</span>
-          </li>
+          {FREE_PLAN_FEATURES.map((feature) => (
+            <li key={feature} className="flex gap-2.5">
+              <span className="mt-0.5 text-accent-violet-light">✓</span>
+              <span>{feature}</span>
+            </li>
+          ))}
           <li className="flex gap-2.5">
             <span className="mt-0.5 text-foreground-muted">—</span>
-            <span className="text-foreground-muted">Chapitres suivants et quiz verrouillés</span>
+            <span className="text-foreground-muted">{FREE_PLAN_LIMITATION}</span>
           </li>
         </ul>
 
@@ -56,26 +53,12 @@ export function PricingSection() {
           <p className="mt-1 text-sm text-foreground-muted">Pour aller plus loin, chaque mois.</p>
 
           <ul className="mt-6 space-y-3 text-sm text-foreground">
-            <li className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>{PRO_PLAN_MONTHLY_COURSE_LIMIT} formations générées par mois</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>Accès complet à chaque formation, quiz inclus</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>Tavyra, ton assistant personnel, sur chaque formation</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>{PRO_PLAN_MONTHLY_ANALYSIS_LIMIT} analyses approfondies par mois</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>Historique complet de tes formations</span>
-            </li>
+            {PRO_PLAN_FEATURES.map((feature) => (
+              <li key={feature} className="flex gap-2.5">
+                <span className="mt-0.5 text-accent-violet-light">✓</span>
+                <span>{feature}</span>
+              </li>
+            ))}
           </ul>
 
           <Link

@@ -113,8 +113,8 @@ export default function Home() {
         </div>
 
         <p className="mt-8 text-xs text-foreground-muted">
-          <span className="font-semibold text-foreground">+5 000 utilisateurs</span>{" "}
-          apprennent déjà avec Tavyra
+          <span className="font-semibold text-foreground">Gratuit, sans carte bancaire</span>{" "}
+          pour ta première formation complète
         </p>
 
         {/* Démonstration visuelle */}

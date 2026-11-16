@@ -2,10 +2,10 @@ import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { BrandMark } from "@/components/brand-mark";
 import {
-  FREE_PLAN_COURSE_LIMIT,
-  FREE_PLAN_UNLOCKED_CHAPTERS,
+  FREE_PLAN_FEATURES,
+  FREE_PLAN_LIMITATION,
   isOnFreePlan,
-  PRO_PLAN_MONTHLY_COURSE_LIMIT,
+  PRO_PLAN_FEATURES,
   PRO_PLAN_PRICE_EUR,
 } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
@@ -56,24 +56,15 @@ export default async function PricingPage() {
             </p>
 
             <ul className="mt-6 space-y-3 text-sm text-foreground">
-              <li className="flex gap-2.5">
-                <span className="mt-0.5 text-accent-violet-light">✓</span>
-                <span>
-                  {FREE_PLAN_COURSE_LIMIT} formation complète générée par Tavyra
-                </span>
-              </li>
-              <li className="flex gap-2.5">
-                <span className="mt-0.5 text-accent-violet-light">✓</span>
-                <span>
-                  Les {FREE_PLAN_UNLOCKED_CHAPTERS} premiers chapitres en
-                  accès libre
-                </span>
-              </li>
+              {FREE_PLAN_FEATURES.map((feature) => (
+                <li key={feature} className="flex gap-2.5">
+                  <span className="mt-0.5 text-accent-violet-light">✓</span>
+                  <span>{feature}</span>
+                </li>
+              ))}
               <li className="flex gap-2.5">
                 <span className="mt-0.5 text-foreground-muted">—</span>
-                <span className="text-foreground-muted">
-                  Chapitres suivants et quiz verrouillés
-                </span>
+                <span className="text-foreground-muted">{FREE_PLAN_LIMITATION}</span>
               </li>
             </ul>
 
@@ -100,21 +91,12 @@ export default async function PricingPage() {
               </p>
 
               <ul className="mt-6 space-y-3 text-sm text-foreground">
-                <li className="flex gap-2.5">
-                  <span className="mt-0.5 text-accent-violet-light">✓</span>
-                  <span>
-                    {PRO_PLAN_MONTHLY_COURSE_LIMIT} formations générées par
-                    mois (quota renouvelé à chaque facturation)
-                  </span>
-                </li>
-                <li className="flex gap-2.5">
-                  <span className="mt-0.5 text-accent-violet-light">✓</span>
-                  <span>Accès complet à chaque formation, du premier au dernier chapitre</span>
-                </li>
-                <li className="flex gap-2.5">
-                  <span className="mt-0.5 text-accent-violet-light">✓</span>
-                  <span>Quiz et suivi de progression sans restriction</span>
-                </li>
+                {PRO_PLAN_FEATURES.map((feature) => (
+                  <li key={feature} className="flex gap-2.5">
+                    <span className="mt-0.5 text-accent-violet-light">✓</span>
+                    <span>{feature}</span>
+                  </li>
+                ))}
               </ul>
 
               {!user && (
