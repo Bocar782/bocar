@@ -1,7 +1,6 @@
 -- Sauvegarde atomique d'une formation générée (correction du Prompt 05.6),
 -- avec consommation vérifiée de la réservation de quota (deuxième
--- correction : faille de contournement de quota), et quiz final à 3 types
--- de question (Prompt 05.8).
+-- correction : faille de contournement de quota).
 -- À exécuter après 0011_quiz_attempts.sql.
 --
 -- Constat corrigé une première fois : jusqu'à présent, `saveCourse()`
@@ -98,12 +97,12 @@
 --
 -- Compatibilité : ne modifie aucune table, aucune policy RLS, aucun
 -- trigger existant, aucune limite Free/Pro. Le quiz final (kind = 'final')
--- enregistre désormais question_type/correct_choice_indexes comme un quiz
--- de module (Prompt 05.8 : le quiz final peut lui aussi comporter les 3
--- types de question) ; les anciennes formations (déjà enregistrées avant
--- cette migration, par l'ancien chemin séquentiel) ne sont pas affectées :
--- cette fonction ne fait qu'ajouter un nouveau chemin d'écriture pour les
--- formations futures.
+-- est enregistré exactement comme avant (question_type/
+-- correct_choice_indexes non renseignés, donc valeurs par défaut
+-- 'single_choice'/null comme aujourd'hui). Les anciennes formations (déjà
+-- enregistrées avant cette migration, par l'ancien chemin séquentiel) ne
+-- sont pas affectées : cette fonction ne fait qu'ajouter un nouveau chemin
+-- d'écriture pour les formations futures.
 --
 -- Cette fonction n'ayant encore jamais été exécutée sur Supabase, cette
 -- migration remplace directement le fichier 0012 (plutôt que d'ajouter une
@@ -271,10 +270,9 @@ begin
     end if;
   end loop;
 
-  -- Quiz final (Prompt 05.8) : enregistre désormais question_type et
-  -- correct_choice_indexes comme pour un quiz de module — le générateur
-  -- produit maintenant les 3 types de question pour le quiz final aussi,
-  -- plus seulement single_choice comme avant ce prompt.
+  -- Quiz final : comportement inchangé, y compris le fait de ne pas
+  -- renseigner question_type/correct_choice_indexes (les valeurs par
+  -- défaut de colonne s'appliquent, comme avant cette migration).
   v_final_quiz := p_course->'quiz';
   if jsonb_typeof(v_final_quiz) = 'array' and jsonb_array_length(v_final_quiz) > 0 then
     insert into public.quizzes (course_id, module_id, kind, position)
@@ -285,7 +283,7 @@ begin
     loop
       insert into public.course_quiz_questions (
         course_id, quiz_id, position, chapter_index, question, choices,
-        correct_choice_index, correct_choice_indexes, question_type, explanation
+        correct_choice_index, explanation
       ) values (
         v_course_id,
         v_quiz_id,
@@ -294,8 +292,6 @@ begin
         v_question->>'question',
         coalesce(v_question->'choices', '[]'::jsonb),
         (v_question->>'correctChoiceIndex')::int,
-        nullif(v_question->'correctChoiceIndexes', 'null'::jsonb),
-        coalesce(v_question->>'questionType', 'single_choice'),
         v_question->>'explanation'
       );
     end loop;
