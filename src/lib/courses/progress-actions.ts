@@ -87,9 +87,17 @@ export async function startQuizAttempt(quizId: string): Promise<string | null> {
  * besoin d'être appelée depuis ce chemin, mais reste définie et exportée
  * (compatibilité, au cas où un autre appelant en dépendrait).
  */
+export type SubmittedQuizAnswer = {
+  questionId: string;
+  /** Pour `single_choice`/`true_false`. Absent pour `multiple_choice`. */
+  selectedChoiceIndex?: number | null;
+  /** Pour `multiple_choice` uniquement. Absent pour les deux autres types. */
+  selectedChoiceIndexes?: number[] | null;
+};
+
 export async function submitQuizAttempt(
   attemptId: string | null,
-  answers: { questionId: string; selectedChoiceIndex: number | null }[],
+  answers: SubmittedQuizAnswer[],
 ): Promise<{ score: number; total: number } | null> {
   if (!attemptId) return null;
   try {

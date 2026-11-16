@@ -153,6 +153,15 @@ export type GeneratedChapter = {
   completed?: boolean;
 };
 
+/**
+ * Les trois types prévus par 0010_quizzes.sql. `single_choice` et
+ * `true_false` utilisent `correctChoiceIndex` ; `multiple_choice` utilise
+ * `correctChoiceIndexes` (toutes les bonnes réponses, sans réponse
+ * supplémentaire, exactement comme le vérifie déjà `submit_quiz_attempt`
+ * côté base de données).
+ */
+export type QuestionType = "single_choice" | "multiple_choice" | "true_false";
+
 export type QuizQuestion = {
   /**
    * Identifiant réel en base. Absent juste après une génération fraîche ;
@@ -168,6 +177,19 @@ export type QuizQuestion = {
   question: string;
   choices: string[];
   correctChoiceIndex: number;
+  /**
+   * Uniquement pour `questionType === "multiple_choice"` ; `null`/absent
+   * pour les deux autres types. Toutes les bonnes réponses, dans n'importe
+   * quel ordre.
+   */
+  correctChoiceIndexes?: number[] | null;
+  /**
+   * Absent pour une formation fraîchement générée (le générateur IA ne
+   * produit encore que des questions à choix unique, non modifié par
+   * cette évolution) : traiter comme `"single_choice"` dans ce cas, comme
+   * le fait déjà la colonne SQL correspondante (défaut `'single_choice'`).
+   */
+  questionType?: QuestionType;
   explanation: string;
 };
 

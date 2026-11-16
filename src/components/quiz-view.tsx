@@ -2,11 +2,47 @@
 
 import { useState } from "react";
 import type { QuizQuestion } from "@/lib/courses/schemas";
-import { startQuizAttempt, submitQuizAttempt } from "@/lib/courses/progress-actions";
+import {
+  startQuizAttempt,
+  submitQuizAttempt,
+  type SubmittedQuizAnswer,
+} from "@/lib/courses/progress-actions";
 import { QuizHistory } from "./quiz-history";
 
 type Phase = "intro" | "active" | "results";
 type ReviewFilter = "all" | "mistakes";
+
+function isMultipleChoice(question: QuizQuestion): boolean {
+  return question.questionType === "multiple_choice";
+}
+
+function sortedUnique(values: number[]): number[] {
+  return [...values].sort((a, b) => a - b);
+}
+
+function sameChoiceSet(a: number[], b: number[]): boolean {
+  const sortedA = sortedUnique(a);
+  const sortedB = sortedUnique(b);
+  return sortedA.length === sortedB.length && sortedA.every((v, i) => v === sortedB[i]);
+}
+
+/**
+ * Même logique de correction que `submit_quiz_attempt` côté base de
+ * données (0011_quiz_attempts.sql) : pour `multiple_choice`, égalité
+ * stricte de l'ensemble des réponses sélectionnées avec l'ensemble des
+ * bonnes réponses — une réponse partiellement correcte ou avec une
+ * réponse supplémentaire ne compte pas comme correcte. Pour les deux
+ * autres types, une seule réponse sélectionnée doit correspondre à
+ * `correctChoiceIndex`. Exportée pour être testable isolément ; ce calcul
+ * local ne sert qu'à l'affichage immédiat, jamais à ce qui est persisté
+ * (toujours recalculé côté serveur).
+ */
+export function isAnswerCorrect(question: QuizQuestion, selected: number[]): boolean {
+  if (isMultipleChoice(question)) {
+    return sameChoiceSet(selected, question.correctChoiceIndexes ?? []);
+  }
+  return selected.length === 1 && selected[0] === question.correctChoiceIndex;
+}
 
 export function QuizView({
   quiz,
@@ -24,8 +60,11 @@ export function QuizView({
 }) {
   const [phase, setPhase] = useState<Phase>("intro");
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>(
-    Array(quiz.length).fill(null),
+  // Un tableau de choix sélectionnés par question (vide = rien sélectionné
+  // encore). Pour les types à réponse unique (single_choice, true_false),
+  // ce tableau ne contient jamais plus d'un élément.
+  const [answers, setAnswers] = useState<number[][]>(
+    Array.from({ length: quiz.length }, () => []),
   );
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
   // Identifiant de la tentative en cours (créée côté serveur au moment où
@@ -39,14 +78,21 @@ export function QuizView({
 
   if (quiz.length === 0) return null;
 
-  const score = answers.filter(
-    (answer, i) => answer !== null && answer === quiz[i].correctChoiceIndex,
-  ).length;
+  const score = answers.filter((selected, i) => isAnswerCorrect(quiz[i], selected)).length;
 
-  function selectChoice(choiceIndex: number) {
+  function toggleChoice(choiceIndex: number) {
+    const question = quiz[currentIndex];
     setAnswers((prev) => {
       const next = [...prev];
-      next[currentIndex] = choiceIndex;
+      if (isMultipleChoice(question)) {
+        const current = next[currentIndex];
+        next[currentIndex] = current.includes(choiceIndex)
+          ? current.filter((i) => i !== choiceIndex)
+          : sortedUnique([...current, choiceIndex]);
+      } else {
+        // single_choice / true_false : une sélection remplace la précédente.
+        next[currentIndex] = [choiceIndex];
+      }
       return next;
     });
   }
@@ -70,12 +116,14 @@ export function QuizView({
       // recalculé côté serveur à partir des vraies bonnes réponses — les
       // réponses envoyées ici ne contiennent jamais de score ni de total.
       const submittedAnswers = quiz
-        .map((question, i) =>
-          question.id
-            ? { questionId: question.id, selectedChoiceIndex: answers[i] }
-            : null,
-        )
-        .filter((a): a is { questionId: string; selectedChoiceIndex: number | null } => a !== null);
+        .map((question, i): SubmittedQuizAnswer | null => {
+          if (!question.id) return null;
+          if (isMultipleChoice(question)) {
+            return { questionId: question.id, selectedChoiceIndexes: answers[i] };
+          }
+          return { questionId: question.id, selectedChoiceIndex: answers[i][0] ?? null };
+        })
+        .filter((a): a is SubmittedQuizAnswer => a !== null);
       submitQuizAttempt(attemptId, submittedAnswers).then((result) => {
         if (result) setHistoryRefreshToken((t) => t + 1);
       });
@@ -83,7 +131,7 @@ export function QuizView({
   }
 
   function restart() {
-    setAnswers(Array(quiz.length).fill(null));
+    setAnswers(Array.from({ length: quiz.length }, () => []));
     setCurrentIndex(0);
     setReviewFilter("all");
     setAttemptId(null);
@@ -92,10 +140,7 @@ export function QuizView({
 
   const visibleQuestions = quiz
     .map((question, i) => ({ question, i }))
-    .filter(
-      ({ i }) =>
-        reviewFilter === "all" || answers[i] !== quiz[i].correctChoiceIndex,
-    );
+    .filter(({ question, i }) => reviewFilter === "all" || !isAnswerCorrect(question, answers[i]));
 
   return (
     <>
@@ -128,7 +173,7 @@ export function QuizView({
               index={currentIndex}
               total={quiz.length}
               selected={answers[currentIndex]}
-              onSelect={selectChoice}
+              onToggle={toggleChoice}
               onNext={goNext}
             />
           )}
@@ -219,16 +264,19 @@ function QuestionCard({
   index,
   total,
   selected,
-  onSelect,
+  onToggle,
   onNext,
 }: {
   question: QuizQuestion;
   index: number;
   total: number;
-  selected: number | null;
-  onSelect: (choiceIndex: number) => void;
+  selected: number[];
+  onToggle: (choiceIndex: number) => void;
   onNext: () => void;
 }) {
+  const multiple = isMultipleChoice(question);
+  const trueFalse = question.questionType === "true_false";
+
   return (
     <div>
       <span className="text-xs font-mono text-accent-violet-light">
@@ -237,29 +285,75 @@ function QuestionCard({
       <h3 className="mt-2 text-lg font-semibold leading-snug text-foreground">
         {question.question}
       </h3>
+      {multiple && (
+        <p className="mt-1.5 text-xs font-medium uppercase tracking-wide text-accent-blue-light">
+          Plusieurs réponses possibles
+        </p>
+      )}
 
-      <div className="mt-5 space-y-2.5">
-        {question.choices.map((choice, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onSelect(i)}
-            className={`block w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
-              selected === i
-                ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
-                : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
-            }`}
-          >
-            {choice}
-          </button>
-        ))}
-      </div>
+      {trueFalse ? (
+        <div className="mt-5 grid grid-cols-2 gap-2.5">
+          {question.choices.map((choice, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onToggle(i)}
+              className={`rounded-xl border px-4 py-4 text-center text-sm font-medium transition-colors ${
+                selected.includes(i)
+                  ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
+                  : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
+              }`}
+            >
+              {choice}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 space-y-2.5">
+          {question.choices.map((choice, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onToggle(i)}
+              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                selected.includes(i)
+                  ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
+                  : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
+              }`}
+            >
+              {multiple && (
+                <span
+                  aria-hidden
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                    selected.includes(i)
+                      ? "border-accent-violet bg-accent-violet"
+                      : "border-border-subtle"
+                  }`}
+                >
+                  {selected.includes(i) && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path
+                        d="M1.5 5l2.5 2.5 4.5-5"
+                        stroke="white"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </span>
+              )}
+              <span>{choice}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mt-6 flex justify-end">
         <button
           type="button"
           onClick={onNext}
-          disabled={selected === null}
+          disabled={selected.length === 0}
           className="rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {index === total - 1 ? "Voir mon score" : "Suivant"}
@@ -276,9 +370,14 @@ function ReviewQuestion({
 }: {
   question: QuizQuestion;
   index: number;
-  selected: number | null;
+  selected: number[];
 }) {
-  const isCorrect = selected === question.correctChoiceIndex;
+  const multiple = isMultipleChoice(question);
+  const correctIndexes = new Set(
+    multiple ? question.correctChoiceIndexes ?? [] : [question.correctChoiceIndex],
+  );
+  const selectedIndexes = new Set(selected);
+  const isCorrect = isAnswerCorrect(question, selected);
 
   return (
     <div className="rounded-2xl border border-border-subtle bg-white/[0.02] p-5">
@@ -299,8 +398,8 @@ function ReviewQuestion({
 
       <div className="mt-3 space-y-1.5">
         {question.choices.map((choice, i) => {
-          const isCorrectChoice = i === question.correctChoiceIndex;
-          const isUserChoice = i === selected;
+          const isCorrectChoice = correctIndexes.has(i);
+          const isUserChoice = selectedIndexes.has(i);
           return (
             <p
               key={i}

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { GeneratedCourse, GeneratedModule } from "./schemas";
+import type { GeneratedCourse, GeneratedModule, QuestionType } from "./schemas";
 
 // Le pipeline de génération (generate.ts) produit encore une formation
 // "plate" (une seule liste de chapitres, sans notion de module). À la
@@ -244,7 +244,9 @@ export async function getCourseById(
 
   const { data: quizRows, error: quizError } = await supabase
     .from("course_quiz_questions")
-    .select("id, position, chapter_index, question, choices, correct_choice_index, explanation")
+    .select(
+      "id, position, chapter_index, question, choices, correct_choice_index, correct_choice_indexes, question_type, explanation",
+    )
     .eq("course_id", courseId)
     .order("position", { ascending: true });
 
@@ -339,6 +341,8 @@ export async function getCourseById(
       question: q.question as string,
       choices: (q.choices ?? []) as string[],
       correctChoiceIndex: q.correct_choice_index as number,
+      correctChoiceIndexes: (q.correct_choice_indexes as number[] | null) ?? null,
+      questionType: (q.question_type as QuestionType) ?? "single_choice",
       explanation: q.explanation as string,
     })),
     quizId: (finalQuizRow?.id as string | undefined) ?? null,
