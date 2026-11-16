@@ -22,7 +22,7 @@ export const AnalysisSchema = z.object({
     .number()
     .int()
     .describe(
-      "Nombre de modules recommandé selon la complexité réelle du sujet, entre 1 et 4 (1 pour un sujet étroit, 4 pour un sujet riche qui justifie une progression en plusieurs étapes)",
+      "Nombre de modules recommandé selon la complexité réelle du sujet, entre 2 et 4 (2 pour un sujet plus étroit, 4 pour un sujet riche qui justifie une progression en plusieurs étapes)",
     ),
 });
 export type Analysis = z.infer<typeof AnalysisSchema>;
@@ -62,11 +62,12 @@ export const ProgrammeSchema = z.object({
     .describe("Ce que l'utilisateur saura faire après la formation"),
   modules: z.array(
     z.object({
-      title: z.string().describe("Titre précis de ce module"),
+      title: z.string().min(1).describe("Titre précis de ce module (jamais vide)"),
       objective: z
         .string()
+        .min(1)
         .describe(
-          "Objectif pédagogique clair de ce module : ce que l'apprenant saura faire précisément après l'avoir terminé",
+          "Véritable objectif pédagogique de ce module (jamais vide) : ce que l'apprenant saura faire précisément après l'avoir terminé",
         ),
       chapters: z.array(
         z.object({
@@ -82,10 +83,10 @@ export const ProgrammeSchema = z.object({
               "Index de l'exemple vérifié à utiliser (parmi ceux fournis), ou null si aucun ne convient",
             ),
         }),
-      ).describe("2 à 4 leçons cohérentes et suffisamment développées pour ce module"),
+      ).describe("Entre 3 et 5 leçons cohérentes et suffisamment développées pour ce module"),
     }),
   ).describe(
-    "1 à 4 modules en progression pédagogique logique, sans répétition de contenu entre eux",
+    "Entre 2 et 4 modules en progression pédagogique logique, sans répétition de contenu entre eux",
   ),
   summaryAngle: z
     .string()

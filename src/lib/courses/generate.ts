@@ -30,6 +30,51 @@ export class CourseGenerationError extends Error {}
 
 type Progress = (stage: GenerationStage, detail?: string) => void;
 
+// --- Règles de structure garanties en code (Prompt 05.9, corrigé) — ne
+// jamais se fier uniquement au texte envoyé à l'IA pour ces limites, voir
+// `validateProgrammeStructure` ci-dessous. ---
+const MIN_MODULE_COUNT = 2;
+const MAX_MODULE_COUNT = 4;
+const MIN_CHAPTERS_PER_MODULE = 3;
+const MAX_CHAPTERS_PER_MODULE = 5;
+
+// Nombre maximal d'appels IA réellement en vol en même temps, tous types
+// confondus (rédaction de leçons, quiz de module, résumé). Protège contre
+// une limite de débit côté API et borne le coût/la charge instantanés
+// d'une génération, quel que soit le nombre de modules/leçons.
+const MAX_CONCURRENT_AI_CALLS = 4;
+
+/**
+ * Limite le nombre d'appels passés à `run()` qui s'exécutent réellement en
+ * parallèle à un instant donné, sans rien changer d'autre : `run(fn)`
+ * attend qu'une place se libère si la limite est atteinte, puis appelle
+ * `fn()` et libère sa place une fois `fn()` terminée (succès OU échec).
+ * Une erreur de `fn()` se propage normalement à travers `run()` — rien
+ * n'est avalé, le comportement "tout ou rien" de la génération reste
+ * intact. Sémaphore à compteur minimal : pas de nouvelle dépendance pour
+ * un besoin aussi simple (pas de p-limit, etc.).
+ */
+class ConcurrencyLimiter {
+  private active = 0;
+  private readonly queue: (() => void)[] = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.active += 1;
+    try {
+      return await fn();
+    } finally {
+      this.active -= 1;
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+
 function requireContent<T extends { stop_reason: string | null }>(
   response: T,
 ): T {
@@ -81,14 +126,17 @@ async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis>
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
-    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre 1 et 4 selon la richesse réelle du sujet : 1 pour un sujet étroit qui ne justifie pas d'être découpé, jusqu'à 4 pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
+    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
     schema: AnalysisSchema,
     maxTokens: 2048,
   });
 
+  // Simple normalisation d'une VALEUR INDICATIVE envoyée ensuite dans le
+  // prompt de buildProgramme — ne garantit rien sur la structure réelle
+  // produite : c'est validateProgrammeStructure() qui fait foi.
   return {
     ...result,
-    moduleCount: Math.min(4, Math.max(1, Math.round(result.moduleCount))),
+    moduleCount: Math.min(MAX_MODULE_COUNT, Math.max(MIN_MODULE_COUNT, Math.round(result.moduleCount))),
   };
 }
 
@@ -183,6 +231,53 @@ async function extractVerifiedExamples(
 
 // --- Étape 3 : construction du programme ---
 
+/**
+ * Vérifie en CODE (pas seulement dans le texte envoyé à l'IA) que la
+ * structure produite respecte les règles garanties : nombre de modules,
+ * nombre de leçons par module, titre et objectif pédagogique non vides
+ * pour chaque module. Retourne la liste des violations constatées (vide
+ * si la structure est valide) — jamais un simple booléen, pour pouvoir
+ * fournir à l'IA un message de correction précis si besoin.
+ */
+function validateProgrammeStructure(programme: Programme): string[] {
+  const errors: string[] = [];
+
+  const moduleCount = programme.modules.length;
+  if (moduleCount < MIN_MODULE_COUNT || moduleCount > MAX_MODULE_COUNT) {
+    errors.push(
+      `Nombre de modules invalide : ${moduleCount} (attendu entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT}).`,
+    );
+  }
+
+  programme.modules.forEach((m, i) => {
+    const label = `Module ${i + 1}${m.title ? ` ("${m.title}")` : ""}`;
+    const chapterCount = m.chapters.length;
+    if (chapterCount < MIN_CHAPTERS_PER_MODULE || chapterCount > MAX_CHAPTERS_PER_MODULE) {
+      errors.push(
+        `${label} : ${chapterCount} leçon(s) (attendu entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE}).`,
+      );
+    }
+    if (!m.title || !m.title.trim()) {
+      errors.push(`${label} : titre manquant ou vide.`);
+    }
+    if (!m.objective || !m.objective.trim()) {
+      errors.push(`${label} : objectif pédagogique manquant ou vide.`);
+    }
+  });
+
+  return errors;
+}
+
+/**
+ * Construit le plan détaillé de la formation, puis VÉRIFIE en code que le
+ * nombre de modules et de leçons par module respecte les règles garanties
+ * (voir `validateProgrammeStructure`). Si la structure est invalide, une
+ * seule tentative de correction est faite auprès de l'IA, avec le détail
+ * exact des violations constatées. Si elle reste invalide après cette
+ * tentative, la génération s'arrête ici — avant tout appel de rédaction de
+ * leçon, de quiz ou de résumé — avec une erreur explicite : on n'accepte
+ * jamais silencieusement une structure hors limites.
+ */
 async function buildProgramme(
   client: Anthropic,
   analysis: Analysis,
@@ -195,22 +290,64 @@ async function buildProgramme(
           .join("\n")
       : "Aucun exemple réel vérifié disponible — tous les chapitres utiliseront des exemples fictifs/illustratifs, clairement indiqués comme tels.";
 
-  return parseStructured(client, {
-    system:
-      "Tu es Tavyra. Tu construis le plan détaillé d'une formation structurée en modules : introduction, objectifs pédagogiques, et une liste de modules progressifs, chacun avec un titre précis, un objectif pédagogique clair et plusieurs leçons cohérentes. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire) ; le découpage en modules et en leçons doit refléter la complexité réelle du sujet, jamais un gabarit fixe imposé artificiellement. Chaque module doit apporter des notions distinctes : évite toute répétition de contenu entre modules.",
-    user: `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} module${analysis.moduleCount > 1 ? "s" : ""}, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Pour chaque module : un titre précis, un objectif pédagogique clair (ce que l'apprenant saura faire précisément après ce module), et 2 à 4 leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`,
+  const system =
+    "Tu es Tavyra. Tu construis le plan détaillé d'une formation structurée en modules : introduction, objectifs pédagogiques, et une liste de modules progressifs, chacun avec un titre précis, un objectif pédagogique clair et plusieurs leçons cohérentes. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire) ; le découpage en modules et en leçons doit refléter la complexité réelle du sujet, jamais un gabarit fixe imposé artificiellement. Chaque module doit apporter des notions distinctes : évite toute répétition de contenu entre modules.";
+
+  const baseUser = `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} modules, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Règles STRICTES à respecter : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules au total, chacun avec un titre précis, un véritable objectif pédagogique (jamais vide, ce que l'apprenant saura faire précisément après ce module), et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`;
+
+  let programme = await parseStructured(client, {
+    system,
+    user: baseUser,
     schema: ProgrammeSchema,
     maxTokens: 14000,
   });
+  let errors = validateProgrammeStructure(programme);
+
+  if (errors.length > 0) {
+    // Une seule tentative de correction, avec le détail exact de ce qui ne
+    // va pas, pour donner à l'IA sa meilleure chance de s'auto-corriger
+    // sans deviner. Jamais de boucle de nouvelles tentatives au-delà.
+    const correctionUser = `${baseUser}\n\n---\nTa réponse précédente ne respecte PAS les règles strictes ci-dessus :\n${errors.map((e) => `- ${e}`).join("\n")}\n\nRenvoie un plan ENTIÈREMENT corrigé (pas un correctif partiel) qui respecte exactement : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules, chacun avec un titre non vide, un objectif pédagogique non vide, et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons.`;
+
+    programme = await parseStructured(client, {
+      system,
+      user: correctionUser,
+      schema: ProgrammeSchema,
+      maxTokens: 14000,
+    });
+    errors = validateProgrammeStructure(programme);
+  }
+
+  if (errors.length > 0) {
+    // Arrêt propre AVANT tout appel coûteux de rédaction de leçon, de quiz
+    // ou de résumé : jamais de structure invalide acceptée silencieusement.
+    throw new CourseGenerationError(
+      `Impossible de construire un programme valide après correction : ${errors.join(" ")}`,
+    );
+  }
+
+  return programme;
 }
 
 // --- Étape 4 : rédaction des chapitres ---
 
-/** Une leçon planifiée, repérée par sa position globale (0..N-1 sur toute la formation) ET son module d'origine. */
+/**
+ * Une leçon planifiée, repérée par sa position globale (0..N-1 sur toute
+ * la formation) ET son module d'origine — `moduleObjective`,
+ * `positionInModule` et `chaptersInModule` sont transmis explicitement à
+ * `writeChapter` (correction de l'audit du Prompt 05.9) plutôt que de ne
+ * dépendre que de leur lecture indirecte dans `buildModuleOutline`.
+ */
 type FlatChapterPlan = {
   globalIndex: number;
   moduleIndex: number;
+  totalModules: number;
   moduleTitle: string;
+  moduleObjective: string;
+  /** Rang (0-based) de cette leçon au sein de son module. */
+  positionInModule: number;
+  /** Nombre total de leçons de ce module. */
+  chaptersInModule: number;
   title: string;
   summary: string;
   exampleIndex: number | null;
@@ -227,11 +364,15 @@ type FlatChapterPlan = {
 function flattenModulePlans(modules: ProgrammeModule[]): FlatChapterPlan[] {
   const flat: FlatChapterPlan[] = [];
   modules.forEach((m, moduleIndex) => {
-    m.chapters.forEach((c) => {
+    m.chapters.forEach((c, positionInModule) => {
       flat.push({
         globalIndex: flat.length,
         moduleIndex,
+        totalModules: modules.length,
         moduleTitle: m.title,
+        moduleObjective: m.objective,
+        positionInModule,
+        chaptersInModule: m.chapters.length,
         title: c.title,
         summary: c.summary,
         exampleIndex: c.exampleIndex,
@@ -277,10 +418,17 @@ async function writeChapter(
     ? `Utilise CET exemple réel, sans en changer les faits ni la source : "${assignedExample.description}" (source : ${assignedExample.sourceUrl}, "${assignedExample.sourceTitle}"). Mets isReal à true et recopie l'URL exactement.`
     : "Aucun exemple réel vérifié n'est disponible pour cette leçon : invente un exemple fictif ou une simulation clairement illustrative, mets isReal à false et laisse sourceUrl/sourceTitle à null. Ne présente jamais cet exemple comme réel.";
 
+  // Transmis explicitement (correction de l'audit du Prompt 05.9) plutôt
+  // que de ne dépendre que de leur lecture indirecte dans `outline`
+  // ci-dessus : titre du module, SON objectif pédagogique, titre de la
+  // leçon, et sa place dans la progression (numéro du module sur le
+  // total, numéro de la leçon dans ce module sur le total de ce module).
+  const moduleContext = `Module de cette leçon : "${plan.moduleTitle}" (module ${plan.moduleIndex + 1}/${plan.totalModules} de la formation).\nObjectif pédagogique de ce module : ${plan.moduleObjective}\nCette leçon est la ${plan.positionInModule + 1}ᵉ sur ${plan.chaptersInModule} de ce module.`;
+
   return parseStructured(client, {
     system:
       "Tu es Tavyra. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
-    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\nCette leçon fait partie du module "${plan.moduleTitle}".\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\n\n${exampleInstruction}`,
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus.\n\n${exampleInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 20000,
   });
@@ -515,16 +663,21 @@ export async function generateCourse(
   const totalChapters = flatPlans.length;
   let completedChapters = 0;
 
-  // Rédigées en parallèle : chaque leçon est indépendante (elle reçoit le
-  // plan complet, groupé par module, pour se situer), ce qui ramène la
-  // latence totale de "N leçons séquentielles" à "1 leçon" au lieu de N —
-  // quel que soit le nombre de modules.
+  // Un seul limiteur partagé pour TOUTE cette génération (leçons, quiz de
+  // module, résumé) : au plus `MAX_CONCURRENT_AI_CALLS` appels IA en vol en
+  // même temps, quel que soit le nombre de modules/leçons — protège contre
+  // une limite de débit côté API et borne le coût instantané. Les leçons
+  // restent rédigées en parallèle (latence), seulement plafonnées.
+  const limiter = new ConcurrencyLimiter(MAX_CONCURRENT_AI_CALLS);
+
   const chapters: GeneratedChapter[] = await Promise.all(
     flatPlans.map(async (plan) => {
       const assignedExample =
         plan.exampleIndex !== null ? verifiedExamples[plan.exampleIndex] ?? null : null;
 
-      const content = await writeChapter(client, analysis, programme.modules, plan, assignedExample);
+      const content = await limiter.run(() =>
+        writeChapter(client, analysis, programme.modules, plan, assignedExample),
+      );
 
       completedChapters += 1;
       onProgress(
@@ -571,10 +724,10 @@ export async function generateCourse(
   // chaque appel ne reçoit que le contenu de SON module, jamais celui des
   // autres, exactement comme son fonctionnement l'a toujours garanti.
   const [summary, moduleQuizResults] = await Promise.all([
-    writeSummary(client, analysis, programme, chapters),
+    limiter.run(() => writeSummary(client, analysis, programme, chapters)),
     Promise.all(
       programme.modules.map((m, moduleIndex) =>
-        writeModuleQuiz(client, analysis, m.title, chaptersByModule[moduleIndex]),
+        limiter.run(() => writeModuleQuiz(client, analysis, m.title, chaptersByModule[moduleIndex])),
       ),
     ),
   ]);

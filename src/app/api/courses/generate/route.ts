@@ -10,7 +10,24 @@ import {
 import type { GenerationStage } from "@/lib/courses/schemas";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Portée à 540s (Prompt 05.9, corrigé) : la génération est maintenant
+// bornée à `MAX_CONCURRENT_AI_CALLS = 4` appels IA simultanés (voir
+// generate.ts), alors qu'une formation peut compter jusqu'à 4 modules × 5
+// leçons = 20 leçons. La phase de rédaction des leçons se fait donc
+// désormais par vagues successives (≈5 vagues dans le pire cas, au lieu
+// d'un seul aller-retour totalement parallèle pour 20 leçons), ce qui
+// allonge la durée totale par rapport à l'ancienne limite de 300s — estimé
+// ici, non mesuré (aucun appel payant réel effectué pour cette correction),
+// en comptant aussi : l'analyse, la recherche/vérification d'exemples, la
+// construction du programme (jusqu'à 2 appels avec la tentative de
+// correction), le résumé + les quiz de module (par vagues de 4 également),
+// puis le quiz final (séquentiel, après les quiz de module). 540s reste
+// cohérent avec le timeout de 120s par appel individuel côté client
+// Anthropic (voir src/lib/anthropic/client.ts) : même avec ses retries,
+// aucun appel ne peut à lui seul dépasser une fraction raisonnable de ce
+// budget. Vercel plafonne silencieusement cette valeur au maximum autorisé
+// par le plan si celui-ci est inférieur, sans erreur.
+export const maxDuration = 540;
 
 const MAX_TOPIC_LENGTH = 500;
 
