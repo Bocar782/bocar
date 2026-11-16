@@ -4,7 +4,6 @@ import { CourseGenerationError, generateCourse } from "@/lib/courses/generate";
 import { saveCourse } from "@/lib/courses/persist";
 import {
   QuotaExceededError,
-  consumeReservation,
   releaseReservation,
   reserveGenerationSlot,
 } from "@/lib/courses/reservation";
@@ -83,15 +82,18 @@ export async function POST(request: Request) {
 
         // La formation est générée : on la renvoie même si la sauvegarde
         // échoue (ex. migration SQL pas encore appliquée côté Supabase),
-        // pour ne pas perdre le travail déjà fait. La réservation n'est
-        // consommée que si la sauvegarde a réellement réussi ; sinon elle
-        // est libérée pour ne pas pénaliser l'utilisateur d'une génération
-        // perdue.
+        // pour ne pas perdre le travail déjà fait. `saveCourse` transmet
+        // `reservationId` au RPC `save_generated_course`, qui vérifie,
+        // verrouille et marque lui-même cette réservation `completed`
+        // dans la MÊME transaction que l'enregistrement de la formation
+        // (voir 0012_save_generated_course_atomic.sql) : il ne faut donc
+        // PAS appeler `consumeReservation` ici (double consommation). Si la
+        // sauvegarde échoue, la réservation reste `pending` (annulée avec
+        // le reste par cette même transaction) et doit être libérée ici.
         let courseId: string | null = null;
         let saveWarning: string | null = null;
         try {
-          courseId = await saveCourse(supabase, course);
-          await consumeReservation(supabase, reservationId, courseId);
+          courseId = await saveCourse(supabase, course, reservationId);
         } catch (saveError) {
           saveWarning =
             saveError instanceof Error

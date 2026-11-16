@@ -44,10 +44,26 @@ type CourseListItem = {
  * 0008_course_modules.sql). Le RPC lui-même accepte une liste de modules
  * (pas seulement un), pour rester correct si la génération produit un jour
  * plusieurs modules sans nécessiter de nouvelle migration.
+ *
+ * `reservationId` doit être une réservation `generation_reservations`
+ * (0007_generation_reservations.sql) de type `course`, encore `pending`,
+ * appartenant à l'utilisateur courant — obtenue via `reserveGenerationSlot`
+ * AVANT d'appeler cette fonction (voir route.ts). Le RPC vérifie et
+ * verrouille lui-même cette réservation, puis la marque `completed` dans
+ * la MÊME transaction que l'enregistrement de la formation : il est donc
+ * impossible d'appeler ce RPC sans réservation valide, avec la réservation
+ * d'un autre utilisateur, une réservation déjà consommée/libérée, ou une
+ * réservation de type `analysis` — et impossible que deux formations
+ * soient créées à partir d'une seule réservation. L'appelant (route.ts) ne
+ * doit PAS appeler `consumeReservation` après le succès de cette fonction :
+ * ce serait une double consommation (sans effet, la réservation étant déjà
+ * `completed`, mais inutile et trompeur) — seul `releaseReservation` reste
+ * nécessaire, en cas d'échec de cet appel.
  */
 export async function saveCourse(
   supabase: SupabaseClient,
   course: GeneratedCourse,
+  reservationId: string,
 ): Promise<string> {
   const moduleQuiz = course.moduleQuizzes?.find(
     (mq) => mq.modulePosition === DEFAULT_MODULE_POSITION,
@@ -104,6 +120,7 @@ export async function saveCourse(
 
   const { data, error } = await supabase.rpc("save_generated_course", {
     p_course: payload,
+    p_reservation_id: reservationId,
   });
 
   if (error || !data) {

@@ -1,18 +1,20 @@
--- Sauvegarde atomique d'une formation générée (correction du Prompt 05.6).
+-- Sauvegarde atomique d'une formation générée (correction du Prompt 05.6),
+-- avec consommation vérifiée de la réservation de quota (deuxième
+-- correction : faille de contournement de quota).
 -- À exécuter après 0011_quiz_attempts.sql.
 --
--- Constat corrigé ici : jusqu'à présent, `saveCourse()` (persist.ts)
--- enregistrait une formation via une SÉQUENCE d'appels REST indépendants
--- (courses -> course_modules -> course_chapters -> course_examples ->
--- quizzes/course_quiz_questions pour le quiz final -> idem pour le(s)
--- quiz de module). Aucune transaction n'englobait cette séquence : une
--- erreur en cours de route (ex. panne réseau transitoire, contrainte
--- violée sur une étape tardive) laissait les étapes déjà réussies commitées
--- en base — une formation partiellement enregistrée (orpheline), que rien
--- ne venait ensuite nettoyer.
+-- Constat corrigé une première fois : jusqu'à présent, `saveCourse()`
+-- (persist.ts) enregistrait une formation via une SÉQUENCE d'appels REST
+-- indépendants (courses -> course_modules -> course_chapters ->
+-- course_examples -> quizzes/course_quiz_questions pour le quiz final ->
+-- idem pour le(s) quiz de module). Aucune transaction n'englobait cette
+-- séquence : une erreur en cours de route (ex. panne réseau transitoire,
+-- contrainte violée sur une étape tardive) laissait les étapes déjà
+-- réussies commitées en base — une formation partiellement enregistrée
+-- (orpheline), que rien ne venait ensuite nettoyer.
 --
--- Solution : une seule fonction SECURITY DEFINER qui reçoit toute la
--- formation déjà générée et validée côté application (Zod, voir
+-- Solution (inchangée) : une seule fonction SECURITY DEFINER qui reçoit
+-- toute la formation déjà générée et validée côté application (Zod, voir
 -- generate.ts) sous forme d'un unique paramètre JSONB, et effectue TOUTES
 -- les insertions en une seule invocation. Comme toute fonction PL/pgSQL
 -- invoquée comme une instruction unique, une exception non interceptée
@@ -23,6 +25,41 @@
 -- entière (modules, leçons, exemples, quiz final, quiz de module,
 -- questions) est enregistrée, soit rien ne l'est.
 --
+-- FAILLE CORRIGÉE ICI (identifiée avant toute exécution réelle sur
+-- Supabase — cette fonction n'avait encore jamais tourné en production) :
+-- la version précédente de `save_generated_course` était accordée au rôle
+-- `authenticated` sans jamais vérifier l'existence d'une réservation de
+-- quota (`generation_reservations`, voir 0007_generation_reservations.sql).
+-- Un utilisateur pouvait donc appeler ce RPC directement depuis le
+-- navigateur (avec son propre JWT, exactement comme reserve_generation_slot
+-- l'est déjà) autant de fois qu'il le souhaitait, créant une formation à
+-- chaque appel sans jamais passer par reserve_generation_slot() — donc sans
+-- jamais être compté dans son quota Free/Pro. La route applicative
+-- (/api/courses/generate) réservait bien une place avant génération, mais
+-- rien côté base n'empêchait un appel DIRECT au RPC de sauvegarde de s'en
+-- dispenser : la réservation n'était qu'une convention côté client, jamais
+-- une condition vérifiée côté serveur par la fonction qui écrit réellement
+-- les données.
+--
+-- Correction : `save_generated_course` exige désormais un second paramètre
+-- `p_reservation_id`, et vérifie — dans la MÊME transaction que le reste —
+-- que cette réservation :
+--   1. existe,
+--   2. appartient à auth.uid() (jamais à un autre utilisateur),
+--   3. est de type 'course' (jamais 'analysis'),
+--   4. est encore au statut 'pending' (jamais déjà 'completed' ni
+--      'released').
+-- La ligne est verrouillée dès sa lecture (`for update`), exactement comme
+-- `submit_quiz_attempt` (0011) verrouille sa tentative : si deux appels
+-- concurrents visent la même réservation, le second attend que le premier
+-- ait committé (donc déjà fait passer le statut à 'completed') avant de la
+-- lire à son tour — il la trouve alors déjà 'completed' et est rejeté.
+-- Impossible que deux formations soient créées à partir d'une seule
+-- réservation. La réservation est marquée 'completed' (avec
+-- resource_id = id de la formation créée) tout à la fin, dans cette même
+-- invocation : si quoi que ce soit échoue avant, y compris cette dernière
+-- écriture, TOUT est annulé ensemble — formation et réservation incluses.
+--
 -- Sécurité :
 -- * `auth.uid()` est l'unique source de l'identité du propriétaire — le
 --   paramètre JSON ne contient et n'accepte aucun user_id, aucun id de
@@ -32,12 +69,22 @@
 --   plus strict que la protection RLS + trigger de 0010, qui restait
 --   nécessaire pour un chemin d'écriture par id existant — chemin qui
 --   n'existe plus du tout ici).
--- * SECURITY DEFINER, exactement comme reserve_generation_slot (0007) et
---   start_quiz_attempt/submit_quiz_attempt (0011) : aucune policy RLS
---   existante n'est modifiée ni affaiblie (elles restent actives pour tout
---   autre chemin d'écriture direct, par exemple une future évolution qui
---   insérerait encore via l'API REST) ; cette fonction s'ajoute à côté,
---   elle ne les remplace pas.
+-- * SECURITY DEFINER, exactement comme reserve_generation_slot /
+--   resolve_generation_slot (0007) et start_quiz_attempt/
+--   submit_quiz_attempt (0011) : aucune policy RLS existante n'est
+--   modifiée ni affaiblie (elles restent actives pour tout autre chemin
+--   d'écriture direct, par exemple une future évolution qui insérerait
+--   encore via l'API REST) ; cette fonction s'ajoute à côté, elle ne les
+--   remplace pas. Les limites Free/Pro elles-mêmes (reserve_generation_slot)
+--   ne sont pas modifiées par cette migration.
+-- * `set search_path = pg_catalog, public` (et non simplement `public`) :
+--   épingle explicitement pg_catalog en premier, pour ne dépendre d'aucun
+--   schéma dont la position dans un search_path serait contrôlable par un
+--   appelant non fiable, même si PostgreSQL recherche déjà pg_catalog en
+--   priorité de façon implicite. Tous les objets de table sont en outre
+--   explicitement qualifiés (`public.courses`, `public.quizzes`,
+--   `public.generation_reservations`, etc.), jamais résolus par recherche
+--   implicite dans le schéma courant.
 -- * Validation de forme minimale ici (présence des champs obligatoires,
 --   au moins un module) en défense en profondeur ; la validation complète
 --   du contenu (Zod, types de question, bornes d'index...) reste faite
@@ -49,21 +96,34 @@
 --   détectée explicitement ici.
 --
 -- Compatibilité : ne modifie aucune table, aucune policy RLS, aucun
--- trigger existant. Le quiz final (kind = 'final') est enregistré
--- exactement comme avant (question_type/correct_choice_indexes non
--- renseignés, donc valeurs par défaut 'single_choice'/null comme
--- aujourd'hui). Les anciennes formations (déjà enregistrées avant cette
--- migration, par l'ancien chemin séquentiel) ne sont pas affectées : cette
--- fonction ne fait qu'ajouter un nouveau chemin d'écriture pour les
--- formations futures.
-create or replace function public.save_generated_course(p_course jsonb)
+-- trigger existant, aucune limite Free/Pro. Le quiz final (kind = 'final')
+-- est enregistré exactement comme avant (question_type/
+-- correct_choice_indexes non renseignés, donc valeurs par défaut
+-- 'single_choice'/null comme aujourd'hui). Les anciennes formations (déjà
+-- enregistrées avant cette migration, par l'ancien chemin séquentiel) ne
+-- sont pas affectées : cette fonction ne fait qu'ajouter un nouveau chemin
+-- d'écriture pour les formations futures.
+--
+-- Cette fonction n'ayant encore jamais été exécutée sur Supabase, cette
+-- migration remplace directement le fichier 0012 (plutôt que d'ajouter une
+-- migration 0013) : il n'existe aucune donnée réelle dépendant de
+-- l'ancienne signature à un seul paramètre.
+drop function if exists public.save_generated_course(jsonb);
+
+create or replace function public.save_generated_course(
+  p_course jsonb,
+  p_reservation_id uuid
+)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = pg_catalog, public
 as $$
 declare
   v_user_id uuid := auth.uid();
+  v_reservation_user_id uuid;
+  v_reservation_kind text;
+  v_reservation_status text;
   v_course_id uuid;
   v_module jsonb;
   v_module_id uuid;
@@ -76,6 +136,36 @@ declare
 begin
   if v_user_id is null then
     raise exception 'not_authenticated';
+  end if;
+
+  if p_reservation_id is null then
+    raise exception 'missing_reservation';
+  end if;
+
+  -- Verrouille la ligne de réservation dès sa lecture : un second appel
+  -- concurrent avec le même p_reservation_id attend ici que cette
+  -- transaction committe (ou s'annule) avant de pouvoir la lire à son
+  -- tour — jamais deux formations créées pour la même réservation.
+  select user_id, kind, status
+    into v_reservation_user_id, v_reservation_kind, v_reservation_status
+  from public.generation_reservations
+  where id = p_reservation_id
+  for update;
+
+  if v_reservation_user_id is null then
+    raise exception 'reservation_not_found';
+  end if;
+
+  if v_reservation_user_id <> v_user_id then
+    raise exception 'reservation_not_owned';
+  end if;
+
+  if v_reservation_kind <> 'course' then
+    raise exception 'reservation_wrong_kind';
+  end if;
+
+  if v_reservation_status <> 'pending' then
+    raise exception 'reservation_not_pending';
   end if;
 
   if p_course->>'topic' is null or p_course->>'title' is null
@@ -207,9 +297,27 @@ begin
     end loop;
   end if;
 
+  -- Consomme la réservation, dans la MÊME invocation que tout le reste :
+  -- si une erreur survient n'importe où au-dessus (y compris ici), cette
+  -- écriture est annulée avec tout le reste — la réservation reste alors
+  -- 'pending', et la route appelante peut la libérer normalement (voir
+  -- route.ts). Ce `where` répète volontairement les mêmes conditions que
+  -- le `select ... for update` ci-dessus (ceinture-bretelles) ; elles sont
+  -- déjà garanties vraies à ce stade puisque la ligne est verrouillée
+  -- depuis le début de cette transaction et qu'aucune autre transaction
+  -- n'a pu la modifier entre-temps.
+  update public.generation_reservations
+  set status = 'completed',
+      resolved_at = now(),
+      resource_id = v_course_id
+  where id = p_reservation_id
+    and user_id = v_user_id
+    and kind = 'course'
+    and status = 'pending';
+
   return v_course_id;
 end;
 $$;
 
-revoke all on function public.save_generated_course(jsonb) from public;
-grant execute on function public.save_generated_course(jsonb) to authenticated;
+revoke all on function public.save_generated_course(jsonb, uuid) from public;
+grant execute on function public.save_generated_course(jsonb, uuid) to authenticated;
