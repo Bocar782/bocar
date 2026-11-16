@@ -233,11 +233,28 @@ export async function getCourseById(
 
   if (quizError) throw new Error(`Échec du chargement du quiz : ${quizError.message}`);
 
+  const chapterIds = (chapters ?? []).map((chapter) => chapter.id as string);
+  const { data: progressRows, error: progressError } =
+    chapterIds.length > 0
+      ? await supabase
+          .from("lesson_progress")
+          .select("chapter_id")
+          .in("chapter_id", chapterIds)
+      : { data: [] as { chapter_id: string }[], error: null };
+
+  if (progressError) {
+    throw new Error(`Échec du chargement de la progression : ${progressError.message}`);
+  }
+
+  const completedChapterIds = new Set((progressRows ?? []).map((r) => r.chapter_id as string));
+
   const generatedChapters = (chapters ?? []).map((chapter) => {
     const example = Array.isArray(chapter.course_examples)
       ? chapter.course_examples[0]
       : chapter.course_examples;
+    const id = chapter.id as string;
     return {
+      id,
       position: chapter.position as number,
       title: chapter.title as string,
       explanation: chapter.explanation as string,
@@ -248,6 +265,7 @@ export async function getCourseById(
         sourceUrl: (example?.source_url as string | null) ?? null,
         sourceTitle: (example?.source_title as string | null) ?? null,
       },
+      completed: completedChapterIds.has(id),
     };
   });
 

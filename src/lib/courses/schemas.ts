@@ -127,6 +127,13 @@ export type Quiz = z.infer<typeof QuizSchema>;
 // --- Formation assemblée, prête à être affichée / persistée ---
 
 export type GeneratedChapter = {
+  /**
+   * Identifiant réel en base. Absent juste après une génération fraîche
+   * (pas encore sauvegardée/relue) ; présent dès que la formation est
+   * chargée via `getCourseById`. Nécessaire pour marquer une leçon comme
+   * terminée (`lesson_progress.chapter_id`).
+   */
+  id?: string;
   position: number;
   title: string;
   explanation: string;
@@ -137,6 +144,13 @@ export type GeneratedChapter = {
     sourceUrl: string | null;
     sourceTitle: string | null;
   };
+  /**
+   * Leçon marquée comme terminée par l'utilisateur (table
+   * `lesson_progress`). Toujours `false` juste après une génération
+   * fraîche ; reflète l'état réel dès que la formation est relue depuis la
+   * base.
+   */
+  completed?: boolean;
 };
 
 export type QuizQuestion = {
