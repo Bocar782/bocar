@@ -1,5 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { GeneratedCourse } from "./schemas";
+import type { GeneratedCourse, GeneratedModule } from "./schemas";
+
+// Le pipeline de génération (generate.ts) produit encore une formation
+// "plate" (une seule liste de chapitres, sans notion de module). À la
+// sauvegarde, on l'organise systématiquement sous un module unique : c'est
+// la même architecture que celle utilisée pour migrer les formations
+// existantes (voir 0008_course_modules.sql), appliquée dès l'écriture pour
+// que toute nouvelle formation ait, elle aussi, un module dès sa création.
+const DEFAULT_MODULE_TITLE = "Module 1";
+const DEFAULT_MODULE_POSITION = 0;
 
 type CourseListItem = {
   id: string;
@@ -42,6 +51,22 @@ export async function saveCourse(
 
   const courseId = courseRow.id as string;
 
+  const { data: moduleRow, error: moduleError } = await supabase
+    .from("course_modules")
+    .insert({
+      course_id: courseId,
+      position: DEFAULT_MODULE_POSITION,
+      title: DEFAULT_MODULE_TITLE,
+    })
+    .select("id")
+    .single();
+
+  if (moduleError || !moduleRow) {
+    throw new Error(`Échec de l'enregistrement du module : ${moduleError?.message}`);
+  }
+
+  const moduleId = moduleRow.id as string;
+
   const { data: chapterRows, error: chaptersError } = await supabase
     .from("course_chapters")
     .insert(
@@ -51,6 +76,8 @@ export async function saveCourse(
         title: chapter.title,
         explanation: chapter.explanation,
         key_takeaway: chapter.keyTakeaway,
+        module_id: moduleId,
+        position_in_module: chapter.position,
       })),
     )
     .select("id, position");
@@ -182,11 +209,21 @@ export async function getCourseById(
 
   const { data: chapters, error: chaptersError } = await supabase
     .from("course_chapters")
-    .select("id, position, title, explanation, key_takeaway, course_examples(description, is_real, source_url, source_title)")
+    .select(
+      "id, position, title, explanation, key_takeaway, module_id, position_in_module, course_examples(description, is_real, source_url, source_title)",
+    )
     .eq("course_id", courseId)
     .order("position", { ascending: true });
 
   if (chaptersError) throw new Error(`Échec du chargement des chapitres : ${chaptersError.message}`);
+
+  const { data: moduleRows, error: modulesError } = await supabase
+    .from("course_modules")
+    .select("id, position, title")
+    .eq("course_id", courseId)
+    .order("position", { ascending: true });
+
+  if (modulesError) throw new Error(`Échec du chargement des modules : ${modulesError.message}`);
 
   const { data: quizRows, error: quizError } = await supabase
     .from("course_quiz_questions")
@@ -195,6 +232,48 @@ export async function getCourseById(
     .order("position", { ascending: true });
 
   if (quizError) throw new Error(`Échec du chargement du quiz : ${quizError.message}`);
+
+  const generatedChapters = (chapters ?? []).map((chapter) => {
+    const example = Array.isArray(chapter.course_examples)
+      ? chapter.course_examples[0]
+      : chapter.course_examples;
+    return {
+      position: chapter.position as number,
+      title: chapter.title as string,
+      explanation: chapter.explanation as string,
+      keyTakeaway: chapter.key_takeaway as string,
+      example: {
+        isReal: Boolean(example?.is_real),
+        description: (example?.description as string) ?? "",
+        sourceUrl: (example?.source_url as string | null) ?? null,
+        sourceTitle: (example?.source_title as string | null) ?? null,
+      },
+    };
+  });
+
+  // Regroupement par module, purement additif : `generatedChapters`
+  // ci-dessus (exposé comme `chapters`) reste la liste plate faisant
+  // autorité pour tout le reste de l'application (chat, progression, quiz,
+  // verrouillage du plan gratuit).
+  const chapterModuleLinks = (chapters ?? []).map((chapter, i) => ({
+    moduleId: (chapter.module_id as string | null) ?? null,
+    positionInModule:
+      (chapter.position_in_module as number | null) ?? generatedChapters[i].position,
+    chapter: generatedChapters[i],
+  }));
+
+  const modules: GeneratedModule[] = (moduleRows ?? []).map((m) => {
+    const moduleId = m.id as string;
+    const moduleChapters = chapterModuleLinks
+      .filter((link) => link.moduleId === moduleId)
+      .sort((a, b) => a.positionInModule - b.positionInModule)
+      .map((link) => link.chapter);
+    return {
+      position: m.position as number,
+      title: m.title as string,
+      chapters: moduleChapters,
+    };
+  });
 
   return {
     topic: course.topic,
@@ -205,23 +284,8 @@ export async function getCourseById(
     objectives: (course.objectives ?? []) as string[],
     summary: course.summary,
     keyPoints: (course.key_points ?? []) as string[],
-    chapters: (chapters ?? []).map((chapter) => {
-      const example = Array.isArray(chapter.course_examples)
-        ? chapter.course_examples[0]
-        : chapter.course_examples;
-      return {
-        position: chapter.position as number,
-        title: chapter.title as string,
-        explanation: chapter.explanation as string,
-        keyTakeaway: chapter.key_takeaway as string,
-        example: {
-          isReal: Boolean(example?.is_real),
-          description: (example?.description as string) ?? "",
-          sourceUrl: (example?.source_url as string | null) ?? null,
-          sourceTitle: (example?.source_title as string | null) ?? null,
-        },
-      };
-    }),
+    chapters: generatedChapters,
+    modules,
     quiz: (quizRows ?? []).map((q) => ({
       position: q.position as number,
       chapterIndex: (q.chapter_index as number | null) ?? null,

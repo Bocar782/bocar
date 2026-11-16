@@ -148,6 +148,20 @@ export type QuizQuestion = {
   explanation: string;
 };
 
+/**
+ * Regroupement pédagogique de leçons (= chapitres) au sein d'une formation.
+ * `chapters` référence les mêmes objets que `GeneratedCourse.chapters`
+ * (même position globale, même contenu) — ce n'est qu'un regroupement, pas
+ * une structure parallèle : `GeneratedCourse.chapters` reste la liste plate
+ * faisant autorité pour tout le code existant (chat, progression, quiz,
+ * verrouillage du plan gratuit).
+ */
+export type GeneratedModule = {
+  position: number;
+  title: string;
+  chapters: GeneratedChapter[];
+};
+
 export type GeneratedCourse = {
   topic: string;
   title: string;
@@ -156,6 +170,13 @@ export type GeneratedCourse = {
   introduction: string;
   objectives: string[];
   chapters: GeneratedChapter[];
+  /**
+   * Regroupement par modules, pour la nouvelle architecture pédagogique.
+   * Absent juste après une génération fraîche (le pipeline IA n'est pas
+   * modifié par cette architecture) ; présent dès que la formation est
+   * relue depuis la base via `getCourseById`, une fois sauvegardée.
+   */
+  modules?: GeneratedModule[];
   summary: string;
   keyPoints: string[];
   quiz: QuizQuestion[];
