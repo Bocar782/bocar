@@ -22,198 +22,95 @@ type CourseListItem = {
   quizTotal: number | null;
 };
 
+/**
+ * Enregistre une formation complète (modules, leçons, exemples, quiz final,
+ * quiz de module, questions) en UN SEUL appel au RPC SECURITY DEFINER
+ * `save_generated_course` (voir 0012_save_generated_course_atomic.sql),
+ * plutôt qu'en une séquence d'appels REST indépendants. Cette fonction SQL
+ * s'exécute comme une instruction unique : si une erreur survient à
+ * n'importe quelle étape (contrainte violée, donnée incohérente...), TOUT
+ * ce qu'elle a déjà écrit durant cet appel est annulé automatiquement —
+ * jamais de formation partiellement enregistrée. `auth.uid()` (jamais un
+ * id transmis par ce code) détermine le propriétaire côté serveur, et
+ * aucun identifiant de ressource existante n'est accepté en entrée : il
+ * est donc structurellement impossible d'associer un module ou un quiz à
+ * une autre formation.
+ *
+ * Le pipeline de génération (generate.ts) produit encore une formation
+ * "plate" (une seule liste de chapitres, sans notion de module) : on
+ * l'organise ici sous un module unique avant l'appel, comme le faisait déjà
+ * l'ancienne version de cette fonction — même architecture que celle
+ * utilisée pour migrer les formations existantes (voir
+ * 0008_course_modules.sql). Le RPC lui-même accepte une liste de modules
+ * (pas seulement un), pour rester correct si la génération produit un jour
+ * plusieurs modules sans nécessiter de nouvelle migration.
+ */
 export async function saveCourse(
   supabase: SupabaseClient,
-  userId: string,
   course: GeneratedCourse,
 ): Promise<string> {
-  const { data: courseRow, error: courseError } = await supabase
-    .from("courses")
-    .insert({
-      user_id: userId,
-      topic: course.topic,
-      title: course.title,
-      domain: course.domain,
-      level: course.level,
-      introduction: course.introduction,
-      objectives: course.objectives,
-      summary: course.summary,
-      key_points: course.keyPoints,
-    })
-    .select("id")
-    .single();
-
-  if (courseError || !courseRow) {
-    throw new Error(
-      `Échec de l'enregistrement de la formation : ${courseError?.message}`,
-    );
-  }
-
-  const courseId = courseRow.id as string;
-
-  const { data: moduleRow, error: moduleError } = await supabase
-    .from("course_modules")
-    .insert({
-      course_id: courseId,
-      position: DEFAULT_MODULE_POSITION,
-      title: DEFAULT_MODULE_TITLE,
-    })
-    .select("id")
-    .single();
-
-  if (moduleError || !moduleRow) {
-    throw new Error(`Échec de l'enregistrement du module : ${moduleError?.message}`);
-  }
-
-  const moduleId = moduleRow.id as string;
-
-  const { data: chapterRows, error: chaptersError } = await supabase
-    .from("course_chapters")
-    .insert(
-      course.chapters.map((chapter) => ({
-        course_id: courseId,
-        position: chapter.position,
-        title: chapter.title,
-        explanation: chapter.explanation,
-        key_takeaway: chapter.keyTakeaway,
-        module_id: moduleId,
-        position_in_module: chapter.position,
-      })),
-    )
-    .select("id, position");
-
-  if (chaptersError || !chapterRows) {
-    throw new Error(
-      `Échec de l'enregistrement des chapitres : ${chaptersError?.message}`,
-    );
-  }
-
-  const examples = course.chapters.map((chapter) => {
-    const row = chapterRows.find((r) => r.position === chapter.position);
-    if (!row) throw new Error("Chapitre introuvable après insertion.");
-    return {
-      chapter_id: row.id as string,
-      description: chapter.example.description,
-      is_real: chapter.example.isReal,
-      source_url: chapter.example.sourceUrl,
-      source_title: chapter.example.sourceTitle,
-    };
-  });
-
-  const { error: examplesError } = await supabase
-    .from("course_examples")
-    .insert(examples);
-
-  if (examplesError) {
-    throw new Error(
-      `Échec de l'enregistrement des exemples : ${examplesError.message}`,
-    );
-  }
-
-  if (course.quiz.length > 0) {
-    // Même logique que pour le module par défaut ci-dessus : crée le quiz
-    // final (table `quizzes`, voir 0010_quizzes.sql) dès la sauvegarde,
-    // pour que toute nouvelle formation ait, elle aussi, un quiz
-    // exploitable par le système de tentatives (0011_quiz_attempts.sql).
-    const { data: quizRow, error: quizRowError } = await supabase
-      .from("quizzes")
-      .insert({ course_id: courseId, module_id: null, kind: "final", position: 0 })
-      .select("id")
-      .single();
-
-    if (quizRowError || !quizRow) {
-      throw new Error(`Échec de l'enregistrement du quiz : ${quizRowError?.message}`);
-    }
-
-    const quizId = quizRow.id as string;
-
-    const { error: quizError } = await supabase.from("course_quiz_questions").insert(
-      course.quiz.map((q) => ({
-        course_id: courseId,
-        position: q.position,
-        chapter_index: q.chapterIndex,
-        question: q.question,
-        choices: q.choices,
-        correct_choice_index: q.correctChoiceIndex,
-        explanation: q.explanation,
-        quiz_id: quizId,
-      })),
-    );
-
-    if (quizError) {
-      throw new Error(`Échec de l'enregistrement du quiz : ${quizError.message}`);
-    }
-  }
-
-  // Quiz de module (Prompt 05.6), créé après le quiz final : si cette partie
-  // échoue, la formation reste malgré tout utilisable avec son quiz final
-  // (même profil de risque qu'aujourd'hui — voir la note sur l'absence de
-  // transaction globale ci-dessous).
-  //
-  // Associé sans ambiguïté au module qui vient d'être créé via sa position
-  // (`DEFAULT_MODULE_POSITION`), qui l'identifie de façon unique au sein de
-  // cette formation : un seul module existe aujourd'hui, donc une seule
-  // entrée possible dans `course.moduleQuizzes`. Si le pipeline de
-  // génération produit un jour plusieurs modules, cette correspondance par
-  // position devra être étendue à une boucle sur chaque module réellement
-  // créé — elle n'est volontairement pas généralisée par avance ici.
-  //
-  // IMPORTANT (transactionnalité) : comme pour le reste de cette fonction,
-  // chaque étape est un appel REST indépendant, sans transaction de base de
-  // données englobante. Une formation sans quiz de module (si cette étape
-  // échoue après les précédentes) reste donc possible — limitation
-  // préexistante de `saveCourse`, non introduite par cette évolution, et
-  // documentée dans le compte-rendu de ce prompt plutôt que corrigée ici
-  // (hors périmètre).
   const moduleQuiz = course.moduleQuizzes?.find(
     (mq) => mq.modulePosition === DEFAULT_MODULE_POSITION,
   );
 
-  if (moduleQuiz && moduleQuiz.questions.length > 0) {
-    const { data: moduleQuizRow, error: moduleQuizRowError } = await supabase
-      .from("quizzes")
-      .insert({
-        course_id: courseId,
-        module_id: moduleId,
-        kind: "module",
+  const payload = {
+    topic: course.topic,
+    title: course.title,
+    domain: course.domain,
+    level: course.level,
+    introduction: course.introduction,
+    objectives: course.objectives,
+    summary: course.summary,
+    keyPoints: course.keyPoints,
+    // Quiz final : mêmes champs qu'avant cette évolution (question_type /
+    // correct_choice_indexes ne sont pas transmis, le RPC applique les
+    // mêmes valeurs par défaut que les anciennes insertions directes).
+    quiz: course.quiz.map((q) => ({
+      position: q.position,
+      chapterIndex: q.chapterIndex,
+      question: q.question,
+      choices: q.choices,
+      correctChoiceIndex: q.correctChoiceIndex,
+      explanation: q.explanation,
+    })),
+    modules: [
+      {
         position: DEFAULT_MODULE_POSITION,
-      })
-      .select("id")
-      .single();
-
-    if (moduleQuizRowError || !moduleQuizRow) {
-      throw new Error(
-        `Échec de l'enregistrement du quiz de module : ${moduleQuizRowError?.message}`,
-      );
-    }
-
-    const moduleQuizId = moduleQuizRow.id as string;
-
-    const { error: moduleQuizQuestionsError } = await supabase
-      .from("course_quiz_questions")
-      .insert(
-        moduleQuiz.questions.map((q) => ({
-          course_id: courseId,
+        title: DEFAULT_MODULE_TITLE,
+        chapters: course.chapters.map((chapter) => ({
+          position: chapter.position,
+          title: chapter.title,
+          explanation: chapter.explanation,
+          keyTakeaway: chapter.keyTakeaway,
+          example: {
+            isReal: chapter.example.isReal,
+            description: chapter.example.description,
+            sourceUrl: chapter.example.sourceUrl,
+            sourceTitle: chapter.example.sourceTitle,
+          },
+        })),
+        quiz: (moduleQuiz?.questions ?? []).map((q) => ({
           position: q.position,
-          chapter_index: q.chapterIndex,
           question: q.question,
           choices: q.choices,
-          correct_choice_index: q.correctChoiceIndex,
-          correct_choice_indexes: q.correctChoiceIndexes,
-          question_type: q.questionType,
+          correctChoiceIndex: q.correctChoiceIndex,
+          correctChoiceIndexes: q.correctChoiceIndexes ?? null,
+          questionType: q.questionType ?? "single_choice",
           explanation: q.explanation,
-          quiz_id: moduleQuizId,
         })),
-      );
+      },
+    ],
+  };
 
-    if (moduleQuizQuestionsError) {
-      throw new Error(
-        `Échec de l'enregistrement des questions du quiz de module : ${moduleQuizQuestionsError.message}`,
-      );
-    }
+  const { data, error } = await supabase.rpc("save_generated_course", {
+    p_course: payload,
+  });
+
+  if (error || !data) {
+    throw new Error(`Échec de l'enregistrement de la formation : ${error?.message}`);
   }
 
-  return courseId;
+  return data as string;
 }
 
 export async function listCourses(

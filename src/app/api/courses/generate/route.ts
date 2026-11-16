@@ -90,7 +90,7 @@ export async function POST(request: Request) {
         let courseId: string | null = null;
         let saveWarning: string | null = null;
         try {
-          courseId = await saveCourse(supabase, user.id, course);
+          courseId = await saveCourse(supabase, course);
           await consumeReservation(supabase, reservationId, courseId);
         } catch (saveError) {
           saveWarning =
