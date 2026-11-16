@@ -32,17 +32,20 @@ type Progress = (stage: GenerationStage, detail?: string) => void;
 
 // --- Règles de structure garanties en code (Prompt 05.9, corrigé) — ne
 // jamais se fier uniquement au texte envoyé à l'IA pour ces limites, voir
-// `validateProgrammeStructure` ci-dessous. ---
-const MIN_MODULE_COUNT = 2;
-const MAX_MODULE_COUNT = 4;
-const MIN_CHAPTERS_PER_MODULE = 3;
-const MAX_CHAPTERS_PER_MODULE = 5;
+// `validateProgrammeStructure` ci-dessous. Exportées (avec les fonctions
+// pures ci-dessous) uniquement pour permettre aux tests automatisés
+// (src/lib/courses/__tests__/) d'importer les vraies valeurs/fonctions du
+// projet plutôt que de les recopier — aucun changement de comportement. ---
+export const MIN_MODULE_COUNT = 2;
+export const MAX_MODULE_COUNT = 4;
+export const MIN_CHAPTERS_PER_MODULE = 3;
+export const MAX_CHAPTERS_PER_MODULE = 5;
 
 // Nombre maximal d'appels IA réellement en vol en même temps, tous types
 // confondus (rédaction de leçons, quiz de module, résumé). Protège contre
 // une limite de débit côté API et borne le coût/la charge instantanés
 // d'une génération, quel que soit le nombre de modules/leçons.
-const MAX_CONCURRENT_AI_CALLS = 4;
+export const MAX_CONCURRENT_AI_CALLS = 4;
 
 /**
  * Limite le nombre d'appels passés à `run()` qui s'exécutent réellement en
@@ -54,7 +57,7 @@ const MAX_CONCURRENT_AI_CALLS = 4;
  * intact. Sémaphore à compteur minimal : pas de nouvelle dépendance pour
  * un besoin aussi simple (pas de p-limit, etc.).
  */
-class ConcurrencyLimiter {
+export class ConcurrencyLimiter {
   private active = 0;
   private readonly queue: (() => void)[] = [];
 
@@ -239,7 +242,7 @@ async function extractVerifiedExamples(
  * si la structure est valide) — jamais un simple booléen, pour pouvoir
  * fournir à l'IA un message de correction précis si besoin.
  */
-function validateProgrammeStructure(programme: Programme): string[] {
+export function validateProgrammeStructure(programme: Programme): string[] {
   const errors: string[] = [];
 
   const moduleCount = programme.modules.length;
@@ -338,7 +341,7 @@ async function buildProgramme(
  * `writeChapter` (correction de l'audit du Prompt 05.9) plutôt que de ne
  * dépendre que de leur lecture indirecte dans `buildModuleOutline`.
  */
-type FlatChapterPlan = {
+export type FlatChapterPlan = {
   globalIndex: number;
   moduleIndex: number;
   totalModules: number;
@@ -361,7 +364,7 @@ type FlatChapterPlan = {
  * avant cette évolution, juste reconstruit à partir de la hiérarchie par
  * modules plutôt que d'une liste plate produite directement par l'IA.
  */
-function flattenModulePlans(modules: ProgrammeModule[]): FlatChapterPlan[] {
+export function flattenModulePlans(modules: ProgrammeModule[]): FlatChapterPlan[] {
   const flat: FlatChapterPlan[] = [];
   modules.forEach((m, moduleIndex) => {
     m.chapters.forEach((c, positionInModule) => {
@@ -402,7 +405,7 @@ function buildModuleOutline(modules: ProgrammeModule[], currentGlobalIndex: numb
   return lines.join("\n");
 }
 
-async function writeChapter(
+export async function writeChapter(
   client: Anthropic,
   analysis: Analysis,
   modules: ProgrammeModule[],
