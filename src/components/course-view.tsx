@@ -19,6 +19,7 @@ function ChapterCard({
   totalChapters,
   completed,
   onToggleComplete,
+  nextOverride,
 }: {
   chapter: GeneratedCourse["chapters"][number];
   index: number;
@@ -26,9 +27,20 @@ function ChapterCard({
   completed: boolean;
   /** Absent si la leçon n'a pas encore d'identifiant persisté (génération fraîche, pas encore sauvegardée). */
   onToggleComplete?: (chapterId: string, completed: boolean) => void;
+  /**
+   * Remplace la cible par défaut du bouton "Leçon suivante" (chapitre
+   * suivant, ou résumé pour la toute dernière leçon). Fourni par
+   * `CourseView` uniquement pour la dernière leçon d'un module qui possède
+   * un quiz : le bouton doit alors mener à CE quiz avant de passer au
+   * module suivant. Absent dans tous les autres cas — comportement
+   * inchangé, y compris pour une formation sans aucun quiz de module.
+   */
+  nextOverride?: { id: string; label: string };
 }) {
   const isFirst = index === 0;
   const isLast = index === totalChapters - 1;
+  const nextId = nextOverride?.id ?? (isLast ? "resume-section" : `chapitre-${index + 1}`);
+  const nextLabel = nextOverride?.label ?? (isLast ? "Passer au résumé" : "Leçon suivante");
 
   return (
     <article
@@ -121,10 +133,10 @@ function ChapterCard({
         )}
         <button
           type="button"
-          onClick={() => scrollToId(isLast ? "resume-section" : `chapitre-${index + 1}`)}
+          onClick={() => scrollToId(nextId)}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-violet-light transition-colors hover:text-accent-blue-light"
         >
-          {isLast ? "Passer au résumé" : "Leçon suivante"} →
+          {nextLabel} →
         </button>
       </div>
     </article>
@@ -332,6 +344,22 @@ export function CourseView({
   const lockedChapterCount = restBlocks.filter((b) => b.kind === "chapter").length;
   const isLockedForThisCourse = locked && lockedChapterCount + course.quiz.length > 0;
 
+  // Pour la DERNIÈRE leçon de chaque module qui a un quiz : le bouton
+  // "Leçon suivante" de cette leçon doit mener à ce quiz plutôt qu'au
+  // module suivant (ou au résumé, si c'est aussi la toute dernière leçon
+  // de la formation). Un module sans quiz n'a aucune entrée ici, donc son
+  // comportement reste exactement celui d'aujourd'hui.
+  const nextOverrideByChapterPosition = new Map<number, { id: string; label: string }>();
+  for (const courseModule of modules) {
+    if (!courseModule.quiz || courseModule.quiz.length === 0) continue;
+    const lastChapter = courseModule.chapters[courseModule.chapters.length - 1];
+    if (!lastChapter) continue;
+    nextOverrideByChapterPosition.set(lastChapter.position, {
+      id: `module-quiz-${courseModule.position}`,
+      label: "Faire le quiz du module",
+    });
+  }
+
   function renderBlock(block: RenderBlock) {
     if (block.kind === "chapter") {
       return (
@@ -342,6 +370,7 @@ export function CourseView({
           totalChapters={totalChapters}
           completed={isChapterCompleted(block.chapter)}
           onToggleComplete={handleToggleComplete}
+          nextOverride={nextOverrideByChapterPosition.get(block.chapter.position)}
         />
       );
     }
