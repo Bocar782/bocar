@@ -121,12 +121,26 @@ grant execute on function public.start_quiz_attempt(uuid) to authenticated;
 -- - La tentative doit exister ET appartenir à l'utilisateur courant
 --   (`qa.user_id = v_user_id`), sinon exception — impossible de terminer
 --   la tentative de quelqu'un d'autre.
+-- - `select ... for update` verrouille la ligne dès sa lecture : si deux
+--   soumissions simultanées visent la même tentative, la seconde attend
+--   que la première ait committé (donc posé completed_at) avant de lire
+--   quoi que ce soit — élimine la course condition "lire pending, lire
+--   pending, écrire, écrire" entre deux appels parallèles. Sous cette
+--   protection, une tentative terminée est définitivement immuable et
+--   deux soumissions concurrentes ne peuvent jamais produire deux
+--   résultats différents pour la même tentative.
 -- - Toute entrée de p_answers dont le questionId n'appartient pas
 --   réellement à ce quiz est ignorée de fait : le calcul part de
 --   `course_quiz_questions` (filtré sur ce quiz) en jointure gauche vers
 --   les réponses soumises, jamais l'inverse — une réponse pour une
 --   question d'un autre quiz n'est donc jamais prise en compte, ni comptée
 --   ni stockée.
+-- - `answer_map` est dédupliquée par questionId (`distinct on`, la
+--   première réponse soumise dans le tableau l'emporte de façon
+--   déterministe) : plusieurs entrées pour le même questionId — doublons
+--   involontaires ou réponses contradictoires volontairement envoyées —
+--   ne peuvent jamais compter plus d'une fois ni fausser le total, qui
+--   reste toujours exactement le nombre réel de questions du quiz.
 -- - Rejouer cette fonction sur une tentative déjà terminée est un no-op
 --   qui renvoie le résultat déjà enregistré (idempotent face à une double
 --   soumission), sans jamais recalculer ni écraser un score déjà posé.
@@ -161,7 +175,8 @@ begin
     into v_quiz_id, v_already_completed, v_existing_score, v_existing_total
   from public.quiz_attempts qa
   where qa.id = p_attempt_id
-    and qa.user_id = v_user_id;
+    and qa.user_id = v_user_id
+  for update;
 
   if v_quiz_id is null then
     raise exception 'attempt_not_found';
@@ -177,13 +192,27 @@ begin
   from public.quizzes
   where quizzes.id = v_quiz_id;
 
-  with answer_map as (
+  with raw_answers as (
+    -- `with ordinality` donne un rang stable (ordre d'apparition dans le
+    -- tableau JSON reçu) pour pouvoir départager de façon déterministe
+    -- plusieurs entrées pour le même questionId.
     select
-      (elem ->> 'questionId') as question_id,
+      elem ->> 'questionId' as question_id,
       (elem ->> 'selectedChoiceIndex')::int as selected_choice_index,
-      (elem -> 'selectedChoiceIndexes') as selected_choice_indexes
-    from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb)) as elem
+      (elem -> 'selectedChoiceIndexes') as selected_choice_indexes,
+      ord
+    from jsonb_array_elements(coalesce(p_answers, '[]'::jsonb)) with ordinality as t(elem, ord)
     where elem ->> 'questionId' is not null
+  ),
+  answer_map as (
+    -- Une seule réponse retenue par question : la première soumise dans
+    -- le tableau (plus petit `ord`). Tout doublon suivant pour le même
+    -- questionId — même avec un choix différent — est ignoré, jamais
+    -- compté en double.
+    select distinct on (question_id)
+      question_id, selected_choice_index, selected_choice_indexes
+    from raw_answers
+    order by question_id, ord
   ),
   graded as (
     select
