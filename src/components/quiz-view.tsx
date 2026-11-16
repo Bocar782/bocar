@@ -7,6 +7,8 @@ import {
   submitQuizAttempt,
   type SubmittedQuizAnswer,
 } from "@/lib/courses/progress-actions";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
 import { QuizHistory } from "./quiz-history";
 
 type Phase = "intro" | "active" | "results";
@@ -155,25 +157,17 @@ export function QuizView({
 
   return (
     <>
-      <section className="relative mt-8 rounded-[28px] p-px">
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-        />
-        <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
+      <section className="mt-8">
+        <Card variant="elevated">
           {phase === "intro" && (
             <div className="flex flex-col items-center py-6 text-center">
               <h2 className="text-lg font-semibold text-foreground">{title}</h2>
               <p className="mt-2 max-w-sm text-sm text-foreground-muted">
                 {quiz.length} questions {description}
               </p>
-              <button
-                type="button"
-                onClick={start}
-                className="mt-6 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-              >
+              <Button onClick={start} className="mt-6">
                 Commencer le quiz
-              </button>
+              </Button>
             </div>
           )}
 
@@ -249,17 +243,13 @@ export function QuizView({
               </div>
 
               <div className="mt-8 flex justify-center">
-                <button
-                  type="button"
-                  onClick={restart}
-                  className="rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/10"
-                >
+                <Button variant="secondary" onClick={restart}>
                   Refaire le quiz
-                </button>
+                </Button>
               </div>
             </div>
           )}
-        </div>
+        </Card>
       </section>
 
       {phase !== "active" && (
@@ -360,14 +350,9 @@ function QuestionCard({
       )}
 
       <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={selected.length === 0}
-          className="rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-        >
+        <Button onClick={onNext} disabled={selected.length === 0}>
           {index === total - 1 ? "Voir mon score" : "Suivant"}
-        </button>
+        </Button>
       </div>
     </div>
   );

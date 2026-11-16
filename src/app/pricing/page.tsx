@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { BrandMark } from "@/components/brand-mark";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   FREE_PLAN_FEATURES,
   FREE_PLAN_LIMITATION,
@@ -69,12 +71,9 @@ export default async function PricingPage() {
             </ul>
 
             {!user ? (
-              <Link
-                href="/signup"
-                className="mt-8 block rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-center text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
-              >
+              <Button href="/signup" variant="secondary" fullWidth className="mt-8">
                 Commencer gratuitement
-              </Link>
+              </Button>
             ) : (
               <div className="mt-8 rounded-full border border-border-subtle bg-white/[0.03] px-5 py-2.5 text-center text-sm text-foreground-muted">
                 {onFreePlan ? "Ton plan actuel" : "Plan précédent"}
@@ -82,67 +81,52 @@ export default async function PricingPage() {
             )}
           </div>
 
-          <div className="relative rounded-[28px] p-px">
-            <div
-              aria-hidden
-              className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-white/10 to-accent-violet/50"
-            />
-            <div className="relative h-full rounded-[28px] bg-background-elevated/95 p-6 sm:p-8">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
-                Pro
-              </h2>
-              <p className="mt-3 text-3xl font-semibold text-foreground">
-                {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
-                <span className="text-base font-normal text-foreground-muted"> / mois</span>
-              </p>
-              <p className="mt-1 text-sm text-foreground-muted">
-                Pour aller plus loin, chaque mois.
-              </p>
+          <Card variant="elevated" className="h-full">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
+              Pro
+            </h2>
+            <p className="mt-3 text-3xl font-semibold text-foreground">
+              {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
+              <span className="text-base font-normal text-foreground-muted"> / mois</span>
+            </p>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Pour aller plus loin, chaque mois.
+            </p>
 
-              <ul className="mt-6 space-y-3 text-sm text-foreground">
-                {PRO_PLAN_FEATURES.map((feature) => (
-                  <li key={feature} className="flex gap-2.5">
-                    <span className="mt-0.5 text-accent-violet-light">✓</span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
+            <ul className="mt-6 space-y-3 text-sm text-foreground">
+              {PRO_PLAN_FEATURES.map((feature) => (
+                <li key={feature} className="flex gap-2.5">
+                  <span className="mt-0.5 text-accent-violet-light">✓</span>
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
 
-              {!user && (
-                <Link
-                  href="/login"
-                  className="mt-8 block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-                >
-                  Se connecter pour s&apos;abonner
-                </Link>
-              )}
-              {user && onFreePlan && (
-                <form action="/api/stripe/checkout" method="POST">
-                  <button
-                    type="submit"
-                    className="mt-8 w-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-                  >
-                    S&apos;abonner
-                  </button>
-                </form>
-              )}
-              {user && !onFreePlan && (
-                <div className="mt-8 space-y-2">
-                  <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
-                    Ton plan actuel
-                  </div>
-                  <form action="/api/stripe/portal" method="POST">
-                    <button
-                      type="submit"
-                      className="w-full rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-center text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
-                    >
-                      Gérer mon abonnement
-                    </button>
-                  </form>
+            {!user && (
+              <Button href="/login" fullWidth className="mt-8">
+                Se connecter pour s&apos;abonner
+              </Button>
+            )}
+            {user && onFreePlan && (
+              <form action="/api/stripe/checkout" method="POST">
+                <Button type="submit" fullWidth className="mt-8">
+                  S&apos;abonner
+                </Button>
+              </form>
+            )}
+            {user && !onFreePlan && (
+              <div className="mt-8 space-y-2">
+                <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
+                  Ton plan actuel
                 </div>
-              )}
-            </div>
-          </div>
+                <form action="/api/stripe/portal" method="POST">
+                  <Button type="submit" variant="secondary" fullWidth>
+                    Gérer mon abonnement
+                  </Button>
+                </form>
+              </div>
+            )}
+          </Card>
         </div>
 
         <p className="mt-10 text-sm text-foreground-muted">

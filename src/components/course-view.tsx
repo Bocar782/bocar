@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import type { GeneratedCourse, GeneratedModule } from "@/lib/courses/schemas";
 import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
 import { setLessonCompletion } from "@/lib/courses/progress-actions";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
 import { CourseSidebar } from "./course-sidebar";
 import { ExerciseBlock } from "./exercise-block";
 import { MarkdownContent } from "./markdown-content";
@@ -90,7 +91,7 @@ function ChapterCard({
         <MarkdownContent content={chapter.explanation} />
       </div>
 
-      <div className="mt-2 rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-white/[0.03] p-4">
+      <Card variant="accent-blue" className="mt-2">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-medium uppercase tracking-wide text-accent-blue-light">
             {chapter.example.isReal ? "Exemple concret" : "Exemple illustratif (fictif)"}
@@ -109,16 +110,16 @@ function ChapterCard({
         <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
           {chapter.example.description}
         </p>
-      </div>
+      </Card>
 
-      <div className="mt-4 rounded-xl border border-accent-violet/25 bg-accent-violet/[0.08] p-4">
+      <Card variant="accent-violet" className="mt-4">
         <span className="text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
           À retenir
         </span>
         <p className="mt-1.5 text-sm leading-relaxed text-foreground">
           {chapter.keyTakeaway}
         </p>
-      </div>
+      </Card>
 
       {chapter.exercise && <ExerciseBlock exercise={chapter.exercise} />}
 
@@ -173,12 +174,8 @@ function ModuleQuizSection({ module }: { module: GeneratedModule }) {
 
 function SummarySection({ course }: { course: GeneratedCourse }) {
   return (
-    <section id="resume-section" className="relative mt-8 scroll-mt-6 rounded-[28px] p-px">
-      <div
-        aria-hidden
-        className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-      />
-      <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
+    <section id="resume-section" className="mt-8 scroll-mt-6">
+      <Card variant="elevated">
         <h2 className="text-lg font-semibold text-foreground">Résumé final</h2>
         <div className="mt-3">
           <MarkdownContent content={course.summary} />
@@ -191,7 +188,7 @@ function SummarySection({ course }: { course: GeneratedCourse }) {
             </li>
           ))}
         </ul>
-      </div>
+      </Card>
     </section>
   );
 }
@@ -214,12 +211,8 @@ function LockedPreview({
 }) {
   return (
     <div className="mt-8">
-      <div className="relative rounded-[28px] p-px">
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-        />
-        <div className="relative flex flex-col items-center gap-3 rounded-[28px] bg-background-elevated/95 p-6 text-center sm:p-8">
+      <Card variant="elevated">
+        <div className="flex flex-col items-center gap-3 text-center">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-violet/15 text-lg">
             🔒
           </span>
@@ -232,14 +225,11 @@ function LockedPreview({
             la version complète pour continuer ta lecture et valider tes
             acquis.
           </p>
-          <Link
-            href="/pricing"
-            className="mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-          >
+          <Button href="/pricing" className="mt-2">
             Débloquer la formation complète
-          </Link>
+          </Button>
         </div>
-      </div>
+      </Card>
 
       <div className="relative mt-6 max-h-[560px] overflow-hidden rounded-[28px]">
         <div

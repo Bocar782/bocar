@@ -1,24 +1,22 @@
 import type { GeneratedDeepAnalysis } from "@/lib/analysis/schemas";
+import { Badge, type BadgeTone } from "./ui/badge";
+import { Card } from "./ui/card";
 import { MarkdownContent } from "./markdown-content";
 
-const OUTCOME_BADGE: Record<string, string> = {
-  "succès": "bg-emerald-500/15 text-emerald-300",
-  "échec": "bg-red-500/15 text-red-300",
-  "mixte": "bg-amber-500/15 text-amber-300",
+const OUTCOME_TONE: Record<string, BadgeTone> = {
+  "succès": "success",
+  "échec": "danger",
+  "mixte": "warning",
 };
 
 function SectionCard({ section }: { section: GeneratedDeepAnalysis["sections"][number] }) {
   return (
-    <article className="rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8">
+    <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-mono text-accent-violet-light">
           Cas {section.position + 1}
         </span>
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-medium ${OUTCOME_BADGE[section.outcome] ?? "bg-white/[0.06] text-foreground-muted"}`}
-        >
-          {section.outcome}
-        </span>
+        <Badge tone={OUTCOME_TONE[section.outcome] ?? "neutral"}>{section.outcome}</Badge>
       </div>
       <h3 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
         {section.name}
@@ -28,7 +26,7 @@ function SectionCard({ section }: { section: GeneratedDeepAnalysis["sections"][n
         <MarkdownContent content={section.content} />
       </div>
 
-      <div className="mt-4 rounded-xl border border-accent-violet/25 bg-accent-violet/[0.08] p-4">
+      <Card variant="accent-violet" className="mt-4">
         <span className="text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
           Enseignements
         </span>
@@ -40,7 +38,7 @@ function SectionCard({ section }: { section: GeneratedDeepAnalysis["sections"][n
             </li>
           ))}
         </ul>
-      </div>
+      </Card>
 
       <a
         href={section.source.url}
@@ -50,7 +48,7 @@ function SectionCard({ section }: { section: GeneratedDeepAnalysis["sections"][n
       >
         Source : {section.source.title} →
       </a>
-    </article>
+    </Card>
   );
 }
 
@@ -80,12 +78,8 @@ export function DeepAnalysisView({ analysis }: { analysis: GeneratedDeepAnalysis
         ))}
       </div>
 
-      <section className="relative mt-8 rounded-[28px] p-px">
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-        />
-        <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
+      <section className="mt-8">
+        <Card variant="elevated">
           <h2 className="text-lg font-semibold text-foreground">Synthèse pédagogique</h2>
           <div className="mt-3">
             <MarkdownContent content={analysis.synthesis} />
@@ -98,7 +92,7 @@ export function DeepAnalysisView({ analysis }: { analysis: GeneratedDeepAnalysis
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       </section>
 
       <section className="mt-8 rounded-2xl border border-border-subtle bg-white/[0.02] p-6">

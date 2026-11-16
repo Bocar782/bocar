@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DeepAnalysisView } from "@/components/deep-analysis-view";
 import { GenerationProgress } from "@/components/generation-progress";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import { DEEP_STAGE_LABELS, type DeepAnalysisStage, type GeneratedDeepAnalysis } from "@/lib/analysis/schemas";
 
 const STAGE_ORDER: DeepAnalysisStage[] = [
@@ -121,18 +123,14 @@ export function AnalysisGenerator({
     return (
       <div className="flex w-full flex-col items-center">
         {saveWarning && (
-          <p className="mb-6 max-w-2xl rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-center text-sm text-amber-300">
+          <Callout tone="warning" className="mb-6 max-w-2xl text-center">
             Ton analyse est prête mais n&apos;a pas pu être sauvegardée ({saveWarning}). Elle ne sera pas visible après avoir quitté cette page.
-          </p>
+          </Callout>
         )}
         <DeepAnalysisView analysis={analysis} />
-        <button
-          type="button"
-          onClick={startOver}
-          className="mt-8 rounded-full border border-border-subtle bg-white/5 px-5 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/10"
-        >
+        <Button type="button" variant="secondary" onClick={startOver} className="mt-8">
           Lancer une autre analyse
-        </button>
+        </Button>
       </div>
     );
   }
@@ -159,43 +157,36 @@ export function AnalysisGenerator({
 
   if (!isPro) {
     return (
-      <div className="w-full max-w-2xl rounded-[28px] border border-border-subtle bg-background-elevated/80 p-6 text-center sm:p-8">
+      <Card variant="panel" className="w-full max-w-2xl text-center">
         <p className="text-sm font-medium text-foreground">Fonctionnalité réservée au plan Pro</p>
         <p className="mt-2 text-sm text-foreground-muted">
           L&apos;analyse approfondie mène des recherches web poussées sur des cas
           réels et produit un contenu bien plus long qu&apos;une formation
           classique — elle est réservée aux abonnés Pro.
         </p>
-        <Link
-          href="/pricing"
-          className="mt-4 inline-block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-        >
+        <Button href="/pricing" className="mt-4">
           Voir les tarifs
-        </Link>
-      </div>
+        </Button>
+      </Card>
     );
   }
 
   if (quotaReached) {
     return (
-      <div className="w-full max-w-2xl rounded-[28px] border border-border-subtle bg-background-elevated/80 p-6 text-center sm:p-8">
+      <Card variant="panel" className="w-full max-w-2xl text-center">
         <p className="text-sm font-medium text-foreground">Limite mensuelle atteinte</p>
         <p className="mt-2 text-sm text-foreground-muted">
           Tu as utilisé tes analyses approfondies pour cette période de
           facturation. Le quota se réinitialise automatiquement à ton
           prochain renouvellement.
         </p>
-      </div>
+      </Card>
     );
   }
 
   return (
     <div className="w-full max-w-2xl">
-      {error && (
-        <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
-          {error}
-        </p>
-      )}
+      {error && <Callout tone="error" className="mb-4">{error}</Callout>}
       <form onSubmit={handleSubmit} className="group relative rounded-[28px] p-px">
         <div
           aria-hidden
@@ -218,13 +209,9 @@ export function AnalysisGenerator({
             <span className="text-xs text-foreground-muted">
               {topic.length}/{MAX_LENGTH}
             </span>
-            <button
-              type="submit"
-              disabled={isEmpty}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-            >
+            <Button type="submit" disabled={isEmpty}>
               Lancer l&apos;analyse
-            </button>
+            </Button>
           </div>
         </div>
       </form>

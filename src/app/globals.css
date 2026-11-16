@@ -10,6 +10,17 @@
   --accent-violet-light: #c4b5fd;
   --accent-blue: #4c7cf3;
   --accent-blue-light: #7fa6ff;
+  /* Couleurs de statut centralisées (Prompt 05.14) : reprennent exactement
+     les teintes déjà utilisées un peu partout dans l'app (emerald/amber/red
+     à 500 pour les accents, 300 pour le texte sur fond sombre) — jamais de
+     nouvelle teinte introduite, seulement un nom partagé pour les
+     composants src/components/ui/*. */
+  --success: #10b981;
+  --success-light: #6ee7b7;
+  --warning: #f59e0b;
+  --warning-light: #fcd34d;
+  --danger: #ef4444;
+  --danger-light: #fca5a5;
 }
 
 @theme inline {
@@ -22,6 +33,12 @@
   --color-accent-violet-light: var(--accent-violet-light);
   --color-accent-blue: var(--accent-blue);
   --color-accent-blue-light: var(--accent-blue-light);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

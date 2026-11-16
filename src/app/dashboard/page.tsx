@@ -4,6 +4,8 @@ import { BackgroundGlow } from "@/components/background-glow";
 import { BrandMark } from "@/components/brand-mark";
 import { CourseListItem } from "@/components/course-list-item";
 import { DeepAnalysisListItem } from "@/components/deep-analysis-list-item";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { listDeepAnalyses } from "@/lib/analysis/persist";
 import { getAnalysisUsageStatus, getUsageStatus } from "@/lib/courses/plan";
 import { listCourses } from "@/lib/courses/persist";
@@ -48,12 +50,9 @@ export default async function DashboardPage() {
         <div className="flex items-center gap-4">
           <span className="text-sm text-foreground-muted">{user.email}</span>
           <form action={signOut}>
-            <button
-              type="submit"
-              className="rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
-            >
+            <Button type="submit" variant="secondary">
               Se déconnecter
-            </button>
+            </Button>
           </form>
         </div>
       </header>
@@ -151,10 +150,10 @@ export default async function DashboardPage() {
         )}
 
         {courses.length === 0 && analyses.length === 0 && (
-          <p className="mt-10 text-sm text-foreground-muted">
-            Aucune formation pour l&apos;instant — lance ta première
-            génération ci-dessus.
-          </p>
+          <EmptyState
+            className="mt-10"
+            description="Aucune formation pour l'instant — lance ta première génération ci-dessus."
+          />
         )}
       </main>
     </div>

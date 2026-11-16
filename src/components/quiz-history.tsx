@@ -5,6 +5,10 @@ import {
   getQuizAttemptHistory,
   type QuizAttemptSummary,
 } from "@/lib/courses/progress-actions";
+import { Badge } from "./ui/badge";
+import { Callout } from "./ui/callout";
+import { Card } from "./ui/card";
+import { EmptyState } from "./ui/empty-state";
 
 type Status = "loading" | "error" | "ready";
 
@@ -86,12 +90,8 @@ export function QuizHistory({
   const best = pickBestAttempt(attempts);
 
   return (
-    <section className="relative mt-6 rounded-[28px] p-px">
-      <div
-        aria-hidden
-        className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
-      />
-      <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
+    <section className="mt-6">
+      <Card variant="elevated">
         <h2 className="text-lg font-semibold text-foreground">Historique des tentatives</h2>
 
         {status === "loading" && (
@@ -106,22 +106,22 @@ export function QuizHistory({
         )}
 
         {status === "error" && (
-          <p className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
+          <Callout tone="error" className="mt-4">
             Impossible de charger l&apos;historique pour le moment.
-          </p>
+          </Callout>
         )}
 
         {status === "ready" && attempts.length === 0 && (
-          <p className="mt-4 text-sm text-foreground-muted">
-            Aucune tentative enregistrée pour l&apos;instant — ton résultat apparaîtra ici
-            après ton premier essai.
-          </p>
+          <EmptyState
+            className="mt-4 text-left"
+            description="Aucune tentative enregistrée pour l'instant — ton résultat apparaîtra ici après ton premier essai."
+          />
         )}
 
         {status === "ready" && attempts.length > 0 && best && (
           <>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border-subtle bg-white/[0.02] p-4">
+              <Card padding="sm">
                 <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
                   Dernier résultat
                 </span>
@@ -129,8 +129,8 @@ export function QuizHistory({
                   {attempts[0].score}/{attempts[0].total}{" "}
                   <span className="text-sm text-foreground-muted">({attempts[0].percent}%)</span>
                 </p>
-              </div>
-              <div className="rounded-xl border border-accent-violet/25 bg-accent-violet/[0.08] p-4">
+              </Card>
+              <Card variant="accent-violet">
                 <span className="text-xs font-medium uppercase tracking-wide text-accent-violet-light">
                   Meilleur score
                 </span>
@@ -138,7 +138,7 @@ export function QuizHistory({
                   {best.score}/{best.total}{" "}
                   <span className="text-sm text-foreground-muted">({best.percent}%)</span>
                 </p>
-              </div>
+              </Card>
             </div>
 
             <ul className="mt-5 space-y-2">
@@ -151,11 +151,7 @@ export function QuizHistory({
                     <span className="text-sm text-foreground-muted">
                       {formatAttemptDate(attempt.completedAt)}
                     </span>
-                    {attempt.id === best.id && (
-                      <span className="rounded-full bg-accent-violet/15 px-2 py-0.5 text-xs font-medium text-accent-violet-light">
-                        Meilleur
-                      </span>
-                    )}
+                    {attempt.id === best.id && <Badge tone="accent">Meilleur</Badge>}
                   </div>
                   <span className="text-sm font-medium text-foreground">
                     {attempt.score}/{attempt.total} · {attempt.percent}%
@@ -165,7 +161,7 @@ export function QuizHistory({
             </ul>
           </>
         )}
-      </div>
+      </Card>
     </section>
   );
 }

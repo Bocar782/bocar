@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "./ui/card";
 import { MarkdownContent } from "./markdown-content";
 
 /**
@@ -15,7 +16,7 @@ import { MarkdownContent } from "./markdown-content";
 export function ExerciseBlock({ exercise }: { exercise: { prompt: string; solution: string } }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <div className="mt-4 rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-white/[0.03] p-4">
+    <Card variant="accent-blue" className="mt-4">
       <span className="text-xs font-semibold uppercase tracking-wide text-accent-blue-light">
         Exercice pratique
       </span>
@@ -35,6 +36,6 @@ export function ExerciseBlock({ exercise }: { exercise: { prompt: string; soluti
           <MarkdownContent content={exercise.solution} />
         </div>
       )}
-    </div>
+    </Card>
   );
 }

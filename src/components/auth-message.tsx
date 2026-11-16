@@ -1,3 +1,6 @@
+import { Callout } from "./ui/callout";
+
+/** Fine couche de compatibilité (Prompt 05.14) : repose sur `Callout`, mêmes points d'appel qu'avant. */
 export function AuthMessage({
   tone,
   children,
@@ -6,15 +9,8 @@ export function AuthMessage({
   children: React.ReactNode;
 }) {
   return (
-    <p
-      role={tone === "error" ? "alert" : undefined}
-      className={
-        tone === "error"
-          ? "mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300"
-          : "mb-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"
-      }
-    >
+    <Callout tone={tone === "error" ? "error" : "success"} role={tone === "error" ? "alert" : undefined} className="mb-4">
       {children}
-    </p>
+    </Callout>
   );
 }
