@@ -45,14 +45,21 @@ create policy "generation_reservations_owner_select"
 
 -- Réserve atomiquement une place de génération pour l'utilisateur courant
 -- (déterminé par auth.uid(), jamais par un paramètre — impossible de réserver
--- au nom de quelqu'un d'autre). p_free_limit/p_pro_limit sont fournis par le
--- serveur applicatif (source de vérité : src/lib/courses/plan.ts) ; le statut
--- Pro/gratuit, lui, est toujours déterminé ici en lisant `subscriptions`,
--- jamais transmis par l'appelant.
+-- au nom de quelqu'un d'autre). Les limites Free/Pro sont fixées en dur
+-- ci-dessous, côté SQL, et ne sont PAS des paramètres de la fonction : cette
+-- fonction est accordée au rôle `authenticated`, donc appelable directement
+-- depuis le navigateur (supabase.rpc(...)) avec le JWT de l'utilisateur — si
+-- les limites étaient transmises par l'appelant, n'importe qui pourrait
+-- contourner le quota en passant des valeurs arbitraires. Le statut
+-- Pro/gratuit est toujours déterminé ici en lisant `subscriptions`, jamais
+-- transmis par l'appelant. Ces constantes doivent rester synchronisées
+-- manuellement avec src/lib/courses/plan.ts (TypeScript n'est pas importable
+-- ici) : course free=1 (à vie) / pro=3 (mensuel) ; analysis free=0 / pro=2
+-- (mensuel).
+drop function if exists public.reserve_generation_slot(text, int, int);
+
 create or replace function public.reserve_generation_slot(
-  p_kind text,
-  p_free_limit int,
-  p_pro_limit int
+  p_kind text
 ) returns table (
   ok boolean,
   reservation_id uuid,
@@ -96,12 +103,19 @@ begin
   if found and v_sub_status in ('active', 'trialing') then
     v_is_pro := true;
     v_window_start := coalesce(v_sub_period_start, '-infinity'::timestamptz);
-    v_limit := p_pro_limit;
   else
     v_is_pro := false;
     v_window_start := '-infinity'::timestamptz;
-    v_limit := p_free_limit;
   end if;
+
+  -- Limites fixées en dur (voir le commentaire au-dessus de la fonction) :
+  -- jamais transmises par l'appelant.
+  v_limit := case
+    when p_kind = 'course' and v_is_pro then 3
+    when p_kind = 'course' and not v_is_pro then 1
+    when p_kind = 'analysis' and v_is_pro then 2
+    else 0
+  end;
 
   -- Réservations abandonnées (requête interrompue, redémarrage serveur...) :
   -- au-delà d'un délai très supérieur à la durée max d'une génération, elles
@@ -133,8 +147,8 @@ begin
 end;
 $$;
 
-revoke all on function public.reserve_generation_slot(text, int, int) from public;
-grant execute on function public.reserve_generation_slot(text, int, int) to authenticated;
+revoke all on function public.reserve_generation_slot(text) from public;
+grant execute on function public.reserve_generation_slot(text) to authenticated;
 
 -- Résout une réservation existante ('completed' si la génération a été
 -- sauvegardée avec succès, 'released' sinon). Toujours scopé à

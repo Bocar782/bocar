@@ -1,10 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  FREE_PLAN_ANALYSIS_LIMIT,
-  FREE_PLAN_COURSE_LIMIT,
-  PRO_PLAN_MONTHLY_ANALYSIS_LIMIT,
-  PRO_PLAN_MONTHLY_COURSE_LIMIT,
-} from "./plan";
 
 export type ReservationKind = "course" | "analysis";
 
@@ -17,11 +11,6 @@ export class QuotaExceededError extends Error {
     super(message);
   }
 }
-
-const LIMITS: Record<ReservationKind, { free: number; pro: number }> = {
-  course: { free: FREE_PLAN_COURSE_LIMIT, pro: PRO_PLAN_MONTHLY_COURSE_LIMIT },
-  analysis: { free: FREE_PLAN_ANALYSIS_LIMIT, pro: PRO_PLAN_MONTHLY_ANALYSIS_LIMIT },
-};
 
 type ReserveRpcRow = {
   ok: boolean;
@@ -44,10 +33,14 @@ function quotaExceededMessage(kind: ReservationKind, isPro: boolean, limitCount:
 /**
  * Réserve de façon atomique une place de génération (formation classique ou
  * analyse approfondie), avant tout appel à l'API Anthropic. Le plan
- * (gratuit/Pro) de l'utilisateur est systématiquement déterminé côté base de
- * données par la fonction RPC elle-même (jamais fait confiance au
- * navigateur) ; seules les limites numériques — publiques, non sensibles —
- * sont transmises depuis `src/lib/courses/plan.ts`, source de vérité unique.
+ * (gratuit/Pro) de l'utilisateur ET les limites elles-mêmes sont déterminés
+ * entièrement côté base de données, à l'intérieur de la fonction RPC (voir
+ * supabase/migrations/0007_generation_reservations.sql) : rien n'est transmis
+ * depuis ce client. C'est volontaire — cette fonction est accordée au rôle
+ * `authenticated`, donc appelable directement depuis le navigateur avec le
+ * JWT de l'utilisateur ; si les limites étaient des paramètres, n'importe qui
+ * pourrait appeler le RPC directement avec des valeurs arbitraires et
+ * contourner le quota.
  *
  * Lève `QuotaExceededError` si aucune place n'est disponible. Toute autre
  * erreur (échec de la réservation elle-même, ex. panne transitoire) est
@@ -58,14 +51,8 @@ export async function reserveGenerationSlot(
   supabase: SupabaseClient,
   kind: ReservationKind,
 ): Promise<string> {
-  const { free, pro } = LIMITS[kind];
-
   const { data, error } = await supabase
-    .rpc("reserve_generation_slot", {
-      p_kind: kind,
-      p_free_limit: free,
-      p_pro_limit: pro,
-    })
+    .rpc("reserve_generation_slot", { p_kind: kind })
     .single<ReserveRpcRow>();
 
   if (error || !data) {
