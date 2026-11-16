@@ -6,9 +6,9 @@ import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
+  FinalQuizSchema,
   ModuleQuizSchema,
   ProgrammeSchema,
-  QuizSchema,
   ResearchExtractionSchema,
   STAGE_LABELS,
   type Analysis,
@@ -257,65 +257,18 @@ async function writeSummary(
   });
 }
 
-// --- Étape 6 : quiz final ---
-
-const QUESTION_COUNT = 10;
-
-async function writeQuiz(
-  client: Anthropic,
-  analysis: Analysis,
-  chapters: GeneratedChapter[],
-): Promise<QuizQuestion[]> {
-  const fullContent = chapters
-    .map(
-      (c, i) =>
-        `--- Chapitre ${i + 1} : ${c.title} ---\n${c.explanation}\n\nExemple : ${c.example.description}\n\nÀ retenir : ${c.keyTakeaway}`,
-    )
-    .join("\n\n");
-
-  const result = await parseStructured(client, {
-    system:
-      "Tu es Tavyra. Tu crées un quiz de validation des acquis à partir du contenu RÉEL d'une formation. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni. N'utilise aucune connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs.",
-    user: `Contenu complet de la formation "${analysis.title}" (niveau ${analysis.level}) :\n\n${fullContent}\n\nGénère un quiz de ${QUESTION_COUNT} questions à choix multiples (4 choix chacune, une seule bonne réponse), qui couvre l'ensemble de la formation de façon équilibrée entre les chapitres — pas seulement le premier. Pour chaque question, donne une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus, et indique l'index (0-based) du chapitre dont elle est tirée.`,
-    schema: QuizSchema,
-    maxTokens: 8000,
-  });
-
-  // Filet de sécurité : écarte toute question malformée plutôt que de
-  // laisser planter l'interface sur un quiz.
-  return result.questions
-    .filter(
-      (q) =>
-        q.choices.length >= 2 &&
-        q.correctChoiceIndex >= 0 &&
-        q.correctChoiceIndex < q.choices.length,
-    )
-    .map((q, i) => ({
-      position: i,
-      chapterIndex:
-        q.chapterIndex !== null && q.chapterIndex >= 0 && q.chapterIndex < chapters.length
-          ? q.chapterIndex
-          : null,
-      question: q.question,
-      choices: q.choices,
-      correctChoiceIndex: q.correctChoiceIndex,
-      explanation: q.explanation,
-    }));
-}
-
-// --- Étape 7 : quiz de module (Prompt 05.6) ---
-
-const MODULE_QUIZ_QUESTION_COUNT = 5;
+// --- Validation stricte partagée des questions à 3 types (quiz final et de
+// module) ---
 
 /**
- * Validation stricte, question par question, de la sortie IA du quiz de
- * module — séparée du schéma `ModuleQuizSchema` utilisé pour l'appel
- * structuré (volontairement permissif, voir son commentaire dans
- * schemas.ts). Une question qui échoue ici est REJETÉE, jamais corrigée ni
- * complétée : on ne fabrique jamais une bonne réponse pour compenser une
- * génération invalide.
+ * Validation stricte, question par question, de la sortie IA d'un quiz à
+ * 3 types (final comme de module) — séparée des schémas `FinalQuizSchema`/
+ * `ModuleQuizSchema` utilisés pour l'appel structuré (volontairement
+ * permissifs, voir leurs commentaires dans schemas.ts). Une question qui
+ * échoue ici est REJETÉE, jamais corrigée ni complétée : on ne fabrique
+ * jamais une bonne réponse pour compenser une génération invalide.
  */
-const StrictModuleQuestionSchema = z
+const StrictQuizQuestionSchema = z
   .object({
     questionType: z.enum(["single_choice", "multiple_choice", "true_false"]),
     question: z.string().min(1),
@@ -350,6 +303,96 @@ const StrictModuleQuestionSchema = z
   });
 
 /**
+ * Normalise un texte de question pour la comparaison anti-doublon
+ * ci-dessous : minuscules, accents retirés, ponctuation réduite à des
+ * espaces. Ne détecte que les doublons littéraux ou quasi littéraux
+ * (reformulation triviale avec la même ponctuation/accentuation) — la
+ * vraie garantie contre la répétition de notions est le prompt envoyé au
+ * modèle (qui reçoit la liste des questions déjà posées), ce filtre n'est
+ * qu'un filet de sécurité mécanique et vérifiable en plus.
+ */
+function normalizeQuestionText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// --- Étape 6 : quiz final (Prompt 05.8) ---
+
+const QUESTION_COUNT = 10;
+
+/**
+ * Génère le quiz FINAL : une évaluation globale de toute la formation,
+ * tenant compte des objectifs pédagogiques et des questions déjà posées
+ * dans le(s) quiz de module (`moduleQuestions`) pour limiter les
+ * répétitions. Les questions qui ne passent pas la validation stricte, ou
+ * qui reprennent littéralement une question déjà posée dans un module,
+ * sont écartées plutôt que corrigées.
+ */
+async function writeQuiz(
+  client: Anthropic,
+  analysis: Analysis,
+  objectives: string[],
+  chapters: GeneratedChapter[],
+  moduleQuestions: QuizQuestion[],
+): Promise<QuizQuestion[]> {
+  const fullContent = chapters
+    .map(
+      (c, i) =>
+        `--- Chapitre ${i + 1} : ${c.title} ---\n${c.explanation}\n\nExemple : ${c.example.description}\n\nÀ retenir : ${c.keyTakeaway}`,
+    )
+    .join("\n\n");
+
+  const objectivesList = objectives.map((o) => `- ${o}`).join("\n");
+
+  const moduleQuestionsList =
+    moduleQuestions.length > 0
+      ? moduleQuestions.map((q) => `- ${q.question}`).join("\n")
+      : "Aucune (aucun quiz de module n'a encore été généré pour cette formation).";
+
+  const result = await parseStructured(client, {
+    system:
+      "Tu es Tavyra. Tu crées le quiz FINAL d'une formation : une évaluation globale qui doit couvrir l'ensemble des modules et des leçons, pas seulement les premiers. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni — jamais une connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs. Privilégie des questions qui testent la compréhension, le raisonnement ou la capacité à appliquer une notion (mise en situation, comparaison, conséquence logique) plutôt que la pure mémorisation d'un fait isolé, tout en restant strictement dans les limites du contenu fourni. Choisis pour chaque question le type (single_choice, multiple_choice, true_false) le plus adapté, sans chercher à imposer une répartition fixe. Ne pose jamais une question déjà posée dans un quiz de module (liste fournie), ni une simple reformulation de celle-ci avec quelques mots changés : choisis un autre angle ou une autre notion du même contenu.",
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\n\nObjectifs pédagogiques de la formation :\n${objectivesList}\n\nContenu complet de la formation :\n\n${fullContent}\n\nQuestions déjà posées dans un quiz de module (à NE PAS reposer, ni reformuler) :\n${moduleQuestionsList}\n\nGénère un quiz final de ${QUESTION_COUNT} questions qui couvre l'ensemble de la formation de façon équilibrée — chaque module/chapitre important doit être représenté, pas seulement les premiers. Pour "multiple_choice" : fournis TOUS les index corrects (0-based, au moins 2) dans correctChoiceIndexes et laisse correctChoiceIndex à null. Pour "single_choice" et "true_false" : fournis un seul index correct dans correctChoiceIndex et laisse correctChoiceIndexes à null (pour "true_false", exactement 2 choix). Donne pour chaque question une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus, et indique l'index (0-based) du chapitre principalement concerné (ou null si la question porte sur plusieurs chapitres à la fois).`,
+    schema: FinalQuizSchema,
+    maxTokens: 10000,
+  });
+
+  const moduleQuestionTextSet = new Set(
+    moduleQuestions.map((q) => normalizeQuestionText(q.question)),
+  );
+
+  const validQuestions: QuizQuestion[] = [];
+  for (const raw of result.questions) {
+    const parsed = StrictQuizQuestionSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    if (moduleQuestionTextSet.has(normalizeQuestionText(parsed.data.question))) continue;
+    const q = parsed.data;
+    validQuestions.push({
+      position: validQuestions.length,
+      chapterIndex:
+        raw.chapterIndex !== null && raw.chapterIndex >= 0 && raw.chapterIndex < chapters.length
+          ? raw.chapterIndex
+          : null,
+      question: q.question,
+      choices: q.choices,
+      correctChoiceIndex: q.correctChoiceIndex ?? 0,
+      correctChoiceIndexes: q.correctChoiceIndexes,
+      questionType: q.questionType,
+      explanation: q.explanation,
+    });
+  }
+  return validQuestions;
+}
+
+// --- Étape 7 : quiz de module (Prompt 05.6) ---
+
+const MODULE_QUIZ_QUESTION_COUNT = 5;
+
+/**
  * Génère le quiz d'UN module, à partir du contenu réel de ses seules leçons
  * (jamais celui des autres modules). Les questions qui ne passent pas la
  * validation stricte ci-dessus sont écartées plutôt que corrigées.
@@ -377,7 +420,7 @@ async function writeModuleQuiz(
 
   const validQuestions: QuizQuestion[] = [];
   for (const raw of result.questions) {
-    const parsed = StrictModuleQuestionSchema.safeParse(raw);
+    const parsed = StrictQuizQuestionSchema.safeParse(raw);
     if (!parsed.success) continue;
     const q = parsed.data;
     validQuestions.push({
@@ -461,20 +504,33 @@ export async function generateCourse(
     }),
   );
 
-  // Résumé, quiz final et quiz de module sont indépendants les uns des
-  // autres (tous ne dépendent que des chapitres déjà écrits) : les lancer
-  // en parallèle évite d'ajouter leurs latences les unes aux autres.
+  // Résumé et quiz de module sont indépendants l'un de l'autre (tous deux
+  // ne dépendent que des chapitres déjà écrits) : les lancer en parallèle
+  // évite d'ajouter leurs latences l'une à l'autre.
   //
   // Le pipeline ne produit encore qu'un seul module couvrant tous les
   // chapitres (voir le commentaire en tête de persist.ts) : un seul quiz de
   // module est donc généré ici, sur la même étendue de contenu que ce
   // module unique (DEFAULT_MODULE_TITLE/DEFAULT_MODULE_POSITION), afin
   // d'associer sans ambiguïté ce quiz au module que `saveCourse` créera.
-  const [summary, quiz, moduleQuizQuestions] = await Promise.all([
+  const [summary, moduleQuizQuestions] = await Promise.all([
     writeSummary(client, analysis, programme, chapters),
-    writeQuiz(client, analysis, chapters),
     writeModuleQuiz(client, analysis, DEFAULT_MODULE_TITLE, chapters),
   ]);
+
+  // Le quiz final est généré APRÈS le(s) quiz de module (Prompt 05.8), et
+  // non plus en parallèle : il a besoin de connaître les questions déjà
+  // posées dans ces quiz pour éviter de les reposer. Ce séquencement
+  // ajoute une latence (un aller-retour IA de plus), coût accepté pour
+  // garantir une réelle non-répétition plutôt qu'un simple filtrage a
+  // posteriori sans contexte.
+  const quiz = await writeQuiz(
+    client,
+    analysis,
+    programme.objectives,
+    chapters,
+    moduleQuizQuestions,
+  );
 
   const moduleQuizzes: GeneratedModuleQuiz[] =
     moduleQuizQuestions.length > 0

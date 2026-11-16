@@ -78,15 +78,18 @@ export async function saveCourse(
     objectives: course.objectives,
     summary: course.summary,
     keyPoints: course.keyPoints,
-    // Quiz final : mêmes champs qu'avant cette évolution (question_type /
-    // correct_choice_indexes ne sont pas transmis, le RPC applique les
-    // mêmes valeurs par défaut que les anciennes insertions directes).
+    // Quiz final (Prompt 05.8) : questionType/correctChoiceIndexes sont
+    // désormais transmis comme pour un quiz de module — le générateur
+    // produit maintenant les 3 types pour le quiz final aussi, plus
+    // seulement single_choice.
     quiz: course.quiz.map((q) => ({
       position: q.position,
       chapterIndex: q.chapterIndex,
       question: q.question,
       choices: q.choices,
       correctChoiceIndex: q.correctChoiceIndex,
+      correctChoiceIndexes: q.correctChoiceIndexes ?? null,
+      questionType: q.questionType ?? "single_choice",
       explanation: q.explanation,
     })),
     modules: [

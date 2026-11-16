@@ -98,22 +98,45 @@ export const CourseSummarySchema = z.object({
 });
 export type CourseSummary = z.infer<typeof CourseSummarySchema>;
 
-export const QuizSchema = z.object({
+/**
+ * Schéma de sortie IA pour le quiz FINAL (Prompt 05.8), évaluation globale
+ * de toute la formation. Délibérément permissif (mêmes raisons que
+ * `ModuleQuizSchema` ci-dessous) : la validation stricte est faite
+ * séparément, côté application, après réception — voir `generate.ts`.
+ * `chapterIndex` reste une métadonnée additive (non affichée côté
+ * interface aujourd'hui, voir `QuizQuestion`), conservée pour ne rien
+ * retirer du fonctionnement existant.
+ */
+export const FinalQuizSchema = z.object({
   questions: z.array(
     z.object({
       chapterIndex: z
         .number()
         .int()
         .nullable()
-        .describe("Index (0-based) du chapitre dont la question est tirée"),
+        .describe(
+          "Index (0-based) du chapitre principalement concerné par la question, ou null si elle porte sur plusieurs chapitres/modules à la fois",
+        ),
+      questionType: z
+        .enum(["single_choice", "multiple_choice", "true_false"])
+        .describe("Le type le plus adapté à cette question précise"),
       question: z.string(),
       choices: z
         .array(z.string())
-        .describe("4 choix de réponse, une seule bonne réponse parmi eux"),
+        .describe("2 choix pour true_false, sinon 4 choix"),
       correctChoiceIndex: z
         .number()
         .int()
-        .describe("Index (0-based) du choix correct dans `choices`"),
+        .nullable()
+        .describe(
+          "Index (0-based) du choix correct, pour single_choice/true_false uniquement ; null pour multiple_choice",
+        ),
+      correctChoiceIndexes: z
+        .array(z.number().int())
+        .nullable()
+        .describe(
+          "TOUS les index corrects (0-based), pour multiple_choice uniquement ; null pour les deux autres types",
+        ),
       explanation: z
         .string()
         .describe(
@@ -122,7 +145,7 @@ export const QuizSchema = z.object({
     }),
   ),
 });
-export type Quiz = z.infer<typeof QuizSchema>;
+export type FinalQuiz = z.infer<typeof FinalQuizSchema>;
 
 /**
  * Schéma de sortie IA pour le quiz d'un module (Prompt 05.6), délibérément
