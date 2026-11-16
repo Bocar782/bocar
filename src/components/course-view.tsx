@@ -131,6 +131,31 @@ function ChapterCard({
   );
 }
 
+/**
+ * Quiz propre à un module (Prompt 05.7), affiché juste après la dernière
+ * leçon de ce module. Réutilise intégralement `QuizView` (mêmes types de
+ * question, même système de tentatives/historique) — seul un titre propre
+ * au module lui est passé ; `quizId` (jamais déduit par position, voir
+ * `getCourseById`) lui donne son propre historique, totalement indépendant
+ * de celui du quiz final et de celui des autres modules.
+ */
+function ModuleQuizSection({ module }: { module: GeneratedModule }) {
+  if (!module.quiz || module.quiz.length === 0) return null;
+  return (
+    <div id={`module-quiz-${module.position}`} className="scroll-mt-6">
+      <span className="text-xs font-mono text-accent-violet-light">
+        Fin du module — {module.title}
+      </span>
+      <QuizView
+        quiz={module.quiz}
+        quizId={module.quizId ?? null}
+        title={`Quiz du module « ${module.title} »`}
+        description="pour vérifier ce que tu as retenu de ce module."
+      />
+    </div>
+  );
+}
+
 function SummarySection({ course }: { course: GeneratedCourse }) {
   return (
     <section id="resume-section" className="relative mt-8 scroll-mt-6 rounded-[28px] p-px">
@@ -268,26 +293,65 @@ export function CourseView({
   const unlockedCount = locked
     ? Math.min(FREE_PLAN_UNLOCKED_CHAPTERS, course.chapters.length)
     : course.chapters.length;
-  const unlockedChapters = course.chapters.slice(0, unlockedCount);
-  const lockedChapters = course.chapters.slice(unlockedCount);
-  const isLockedForThisCourse = locked && lockedChapters.length + course.quiz.length > 0;
   const maxChapterIndex = locked ? unlockedCount - 1 : undefined;
+
+  // Séquence de blocs à afficher, module par module : les leçons de ce
+  // module suivies (si ce module a un quiz) de son propre bloc quiz, pour
+  // que chaque quiz de module apparaisse juste après la dernière leçon de
+  // CE module — jamais à un autre endroit. `chapter.position` (position
+  // globale, inchangée) reste l'identifiant utilisé pour la numérotation,
+  // le scrollspy et le verrouillage : regrouper par module ne change rien
+  // à ces mécanismes existants.
+  type RenderBlock =
+    | { kind: "chapter"; chapter: GeneratedCourse["chapters"][number] }
+    | { kind: "moduleQuiz"; module: GeneratedModule };
+
+  const blocks: RenderBlock[] = modules.flatMap((module) => [
+    ...module.chapters.map((chapter): RenderBlock => ({ kind: "chapter", chapter })),
+    ...(module.quiz && module.quiz.length > 0
+      ? [{ kind: "moduleQuiz" as const, module }]
+      : []),
+  ]);
+
+  // Même seuil de verrouillage qu'aujourd'hui (plan gratuit = les N
+  // premiers chapitres), appliqué à cette séquence de blocs plutôt qu'à la
+  // liste plate : dès le premier chapitre verrouillé rencontré, ce
+  // chapitre ET tout ce qui suit (y compris le quiz du module en cours)
+  // basculent dans la section floutée — un quiz de module n'est donc
+  // jamais visible avant que toutes ses leçons ne le soient.
+  let crossedLockBoundary = false;
+  const unlockedBlocks: RenderBlock[] = [];
+  const restBlocks: RenderBlock[] = [];
+  for (const block of blocks) {
+    if (block.kind === "chapter" && block.chapter.position >= unlockedCount) {
+      crossedLockBoundary = true;
+    }
+    (crossedLockBoundary ? restBlocks : unlockedBlocks).push(block);
+  }
+
+  const lockedChapterCount = restBlocks.filter((b) => b.kind === "chapter").length;
+  const isLockedForThisCourse = locked && lockedChapterCount + course.quiz.length > 0;
+
+  function renderBlock(block: RenderBlock) {
+    if (block.kind === "chapter") {
+      return (
+        <ChapterCard
+          key={`chapitre-${block.chapter.position}`}
+          chapter={block.chapter}
+          index={block.chapter.position}
+          totalChapters={totalChapters}
+          completed={isChapterCompleted(block.chapter)}
+          onToggleComplete={handleToggleComplete}
+        />
+      );
+    }
+    return <ModuleQuizSection key={`module-quiz-${block.module.position}`} module={block.module} />;
+  }
 
   const rest = (
     <>
-      {lockedChapters.length > 0 && (
-        <div className="space-y-6">
-          {lockedChapters.map((chapter, i) => (
-            <ChapterCard
-              key={unlockedCount + i}
-              chapter={chapter}
-              index={unlockedCount + i}
-              totalChapters={totalChapters}
-              completed={isChapterCompleted(chapter)}
-              onToggleComplete={handleToggleComplete}
-            />
-          ))}
-        </div>
+      {restBlocks.length > 0 && (
+        <div className="space-y-6">{restBlocks.map(renderBlock)}</div>
       )}
       <SummarySection course={course} />
       <QuizView quiz={course.quiz} quizId={course.quizId ?? null} />
@@ -342,22 +406,11 @@ export function CourseView({
           </ul>
         </section>
 
-        <div className="mt-8 space-y-6">
-          {unlockedChapters.map((chapter, i) => (
-            <ChapterCard
-              key={i}
-              chapter={chapter}
-              index={i}
-              totalChapters={totalChapters}
-              completed={isChapterCompleted(chapter)}
-              onToggleComplete={handleToggleComplete}
-            />
-          ))}
-        </div>
+        <div className="mt-8 space-y-6">{unlockedBlocks.map(renderBlock)}</div>
 
         {isLockedForThisCourse ? (
           <LockedPreview
-            remainingChapters={lockedChapters.length}
+            remainingChapters={lockedChapterCount}
             hasQuiz={course.quiz.length > 0}
           >
             {rest}

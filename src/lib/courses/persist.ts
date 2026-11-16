@@ -224,26 +224,66 @@ export async function getCourseById(
 
   if (modulesError) throw new Error(`Échec du chargement des modules : ${modulesError.message}`);
 
-  const { data: quizRows, error: quizError } = await supabase
+  // Un seul aller-retour pour TOUS les quiz de la formation (le final ET
+  // chaque quiz de module) : chacun porte son `kind` et, pour un quiz de
+  // module, son `module_id` réel — c'est cet identifiant, jamais une
+  // position, qui relie un quiz à son module ci-dessous.
+  const { data: quizRows, error: quizzesError } = await supabase
+    .from("quizzes")
+    .select("id, module_id, kind")
+    .eq("course_id", courseId);
+
+  if (quizzesError) throw new Error(`Échec du chargement des quiz : ${quizzesError.message}`);
+
+  // De même, un seul aller-retour pour TOUTES les questions de la
+  // formation, qu'elles appartiennent au quiz final ou à un quiz de
+  // module : `quiz_id` (ajouté par 0010_quizzes.sql) permet de les
+  // répartir correctement ci-dessous. Avant cette correction, ce
+  // chargement ne filtrait que par `course_id` et mélangeait par erreur
+  // les questions du quiz final avec celles de tout quiz de module —
+  // sans conséquence tant qu'aucun quiz de module n'existait encore en
+  // base, mais qui aurait faussé le quiz final dès le premier quiz de
+  // module réellement sauvegardé (0012).
+  const { data: questionRows, error: questionsError } = await supabase
     .from("course_quiz_questions")
     .select(
-      "id, position, chapter_index, question, choices, correct_choice_index, correct_choice_indexes, question_type, explanation",
+      "id, quiz_id, position, chapter_index, question, choices, correct_choice_index, correct_choice_indexes, question_type, explanation",
     )
     .eq("course_id", courseId)
     .order("position", { ascending: true });
 
-  if (quizError) throw new Error(`Échec du chargement du quiz : ${quizError.message}`);
-
-  const { data: finalQuizRow, error: finalQuizError } = await supabase
-    .from("quizzes")
-    .select("id")
-    .eq("course_id", courseId)
-    .eq("kind", "final")
-    .maybeSingle();
-
-  if (finalQuizError) {
-    throw new Error(`Échec du chargement du quiz final : ${finalQuizError.message}`);
+  if (questionsError) {
+    throw new Error(`Échec du chargement des questions de quiz : ${questionsError.message}`);
   }
+
+  const questionsByQuizId = new Map<string, GeneratedCourse["quiz"]>();
+  for (const q of questionRows ?? []) {
+    // Toute question réelle est rattachée à un quiz depuis le backfill de
+    // 0010_quizzes.sql ; ce garde-fou évite seulement qu'une ligne héritée
+    // sans quiz_id ne fasse planter l'affichage.
+    const quizId = q.quiz_id as string | null;
+    if (!quizId) continue;
+    const list = questionsByQuizId.get(quizId) ?? [];
+    list.push({
+      id: q.id as string,
+      position: q.position as number,
+      chapterIndex: (q.chapter_index as number | null) ?? null,
+      question: q.question as string,
+      choices: (q.choices ?? []) as string[],
+      correctChoiceIndex: q.correct_choice_index as number,
+      correctChoiceIndexes: (q.correct_choice_indexes as number[] | null) ?? null,
+      questionType: (q.question_type as QuestionType) ?? "single_choice",
+      explanation: q.explanation as string,
+    });
+    questionsByQuizId.set(quizId, list);
+  }
+
+  const finalQuizRow = (quizRows ?? []).find((z) => z.kind === "final") ?? null;
+  const moduleQuizRowByModuleId = new Map(
+    (quizRows ?? [])
+      .filter((z) => z.kind === "module" && z.module_id)
+      .map((z) => [z.module_id as string, z]),
+  );
 
   const chapterIds = (chapters ?? []).map((chapter) => chapter.id as string);
   const { data: progressRows, error: progressError } =
@@ -298,12 +338,18 @@ export async function getCourseById(
       .filter((link) => link.moduleId === moduleId)
       .sort((a, b) => a.positionInModule - b.positionInModule)
       .map((link) => link.chapter);
+    const moduleQuizRow = moduleQuizRowByModuleId.get(moduleId) ?? null;
+    const moduleQuizId = (moduleQuizRow?.id as string | undefined) ?? null;
     return {
       position: m.position as number,
       title: m.title as string,
       chapters: moduleChapters,
+      quizId: moduleQuizId,
+      quiz: moduleQuizId ? questionsByQuizId.get(moduleQuizId) ?? [] : [],
     };
   });
+
+  const finalQuizId = (finalQuizRow?.id as string | undefined) ?? null;
 
   return {
     topic: course.topic,
@@ -316,17 +362,7 @@ export async function getCourseById(
     keyPoints: (course.key_points ?? []) as string[],
     chapters: generatedChapters,
     modules,
-    quiz: (quizRows ?? []).map((q) => ({
-      id: q.id as string,
-      position: q.position as number,
-      chapterIndex: (q.chapter_index as number | null) ?? null,
-      question: q.question as string,
-      choices: (q.choices ?? []) as string[],
-      correctChoiceIndex: q.correct_choice_index as number,
-      correctChoiceIndexes: (q.correct_choice_indexes as number[] | null) ?? null,
-      questionType: (q.question_type as QuestionType) ?? "single_choice",
-      explanation: q.explanation as string,
-    })),
-    quizId: (finalQuizRow?.id as string | undefined) ?? null,
+    quiz: finalQuizId ? questionsByQuizId.get(finalQuizId) ?? [] : [],
+    quizId: finalQuizId,
   };
 }

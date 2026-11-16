@@ -117,6 +117,18 @@ function SidebarBody({
                       </button>
                     );
                   })}
+                  {module.quiz && module.quiz.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => scrollToId(`module-quiz-${module.position}`)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-accent-violet-light transition-colors hover:bg-white/[0.05] hover:text-accent-blue-light"
+                    >
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[10px]" aria-hidden>
+                        ✎
+                      </span>
+                      <span className="truncate">Quiz du module</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

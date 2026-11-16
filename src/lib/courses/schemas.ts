@@ -245,6 +245,17 @@ export type GeneratedModule = {
   position: number;
   title: string;
   chapters: GeneratedChapter[];
+  /**
+   * Quiz propre à ce module (`quizzes.kind = 'module'`, voir
+   * 0010_quizzes.sql et 0012_save_generated_course_atomic.sql), chargé
+   * depuis la base par `getCourseById` via `quizzes.module_id` — jamais
+   * déduit par position. `null`/absent si ce module n'a pas (encore) de
+   * quiz, ou pour une formation fraîchement générée pas encore relue
+   * depuis la base.
+   */
+  quizId?: string | null;
+  /** Questions de ce quiz de module, vide si `quizId` est `null`. */
+  quiz?: QuizQuestion[];
 };
 
 /**

@@ -47,6 +47,8 @@ export function isAnswerCorrect(question: QuizQuestion, selected: number[]): boo
 export function QuizView({
   quiz,
   quizId = null,
+  title = "Quiz final",
+  description = "pour vérifier ce que tu as retenu de cette formation.",
 }: {
   quiz: QuizQuestion[];
   /**
@@ -57,6 +59,15 @@ export function QuizView({
    * aucune tentative n'est enregistrée.
    */
   quizId?: string | null;
+  /**
+   * Titre affiché en écran d'accueil du quiz. Par défaut "Quiz final"
+   * (comportement inchangé pour le quiz final de la formation, voir
+   * course-view.tsx) ; un quiz de module (Prompt 05.7) passe un titre
+   * propre au module concerné.
+   */
+  title?: string;
+  /** Complète "{N} questions ..." en écran d'accueil. */
+  description?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("intro");
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -152,10 +163,9 @@ export function QuizView({
         <div className="relative rounded-[28px] bg-background-elevated/90 p-6 sm:p-8">
           {phase === "intro" && (
             <div className="flex flex-col items-center py-6 text-center">
-              <h2 className="text-lg font-semibold text-foreground">Quiz final</h2>
+              <h2 className="text-lg font-semibold text-foreground">{title}</h2>
               <p className="mt-2 max-w-sm text-sm text-foreground-muted">
-                {quiz.length} questions pour vérifier ce que tu as retenu de cette
-                formation.
+                {quiz.length} questions {description}
               </p>
               <button
                 type="button"
