@@ -123,7 +123,10 @@ function ChapterCard({
 
       {chapter.exercise && <ExerciseBlock exercise={chapter.exercise} />}
 
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border-subtle pt-4">
+      {/* flex-col sur mobile : le bouton "Leçon suivante" passe sous le
+          précédent plutôt que de rester collé au bord droit, pour ne jamais
+          se retrouver sous le bouton de chat flottant (bottom-right fixe). */}
+      <div className="mt-5 flex flex-col items-start gap-3 border-t border-border-subtle pt-4 sm:flex-row sm:items-center sm:justify-between">
         {!isFirst ? (
           <button
             type="button"
@@ -133,7 +136,7 @@ function ChapterCard({
             ← Leçon précédente
           </button>
         ) : (
-          <span />
+          <span className="hidden sm:inline" />
         )}
         <button
           type="button"

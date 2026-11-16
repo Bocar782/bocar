@@ -105,7 +105,7 @@ export function ChapterChat({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Fermer le chat avec Tavyra" : "Ouvrir le chat avec Tavyra"}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-transform hover:scale-105"
+        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-transform hover:scale-105 sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
       >
         {open ? (
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -129,7 +129,7 @@ export function ChapterChat({
       </button>
 
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex h-[32rem] max-h-[70vh] w-[23rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-border-subtle bg-background-elevated/95 shadow-2xl backdrop-blur-xl">
+        <div className="fixed bottom-20 right-4 z-50 flex h-[32rem] max-h-[70vh] w-[23rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-border-subtle bg-background-elevated/95 shadow-2xl backdrop-blur-xl sm:bottom-24 sm:right-6">
           <header className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3.5">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-xs font-semibold text-white">
               L

@@ -67,7 +67,7 @@ export function MarkdownContent({ content }: { content: string }) {
         ),
         tr: ({ children }) => <tr>{children}</tr>,
         th: ({ children }) => (
-          <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-foreground-muted">
+          <th className="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-foreground-muted">
             {children}
           </th>
         ),

@@ -41,15 +41,15 @@ export default async function DashboardPage() {
     <div className="relative flex min-h-screen flex-1 flex-col">
       <BackgroundGlow />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
-        <div className="flex items-center gap-2">
+      <header className="relative z-10 flex items-center justify-between gap-3 px-6 py-6 sm:px-10">
+        <div className="flex shrink-0 items-center gap-2">
           <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-foreground-muted">{user.email}</span>
-          <form action={signOut}>
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <span className="min-w-0 truncate text-sm text-foreground-muted">{user.email}</span>
+          <form action={signOut} className="shrink-0">
             <Button type="submit" variant="secondary">
               Se déconnecter
             </Button>
