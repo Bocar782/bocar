@@ -78,6 +78,43 @@ export class ConcurrencyLimiter {
   }
 }
 
+// Longueur plancher purement symbolique (Prompt 05.11, suite à l'audit
+// 05.10) : ne sert qu'à détecter une réponse quasiment vide/cassée, jamais
+// à exiger une "profondeur" précise — c'est volontairement le prompt de
+// `writeChapter` qui porte la consigne qualitative de profondeur, jamais
+// un seuil arbitraire en code (cf. consigne explicite : ne jamais rejeter
+// une leçon courte si le sujet ne nécessite pas davantage).
+const MIN_EXPLANATION_LENGTH = 40;
+
+/**
+ * Vérification légère du contenu d'UNE leçon après génération : champs
+ * essentiels non vides, et cohérence de l'exercice facultatif (si présent,
+ * consigne ET correction doivent être renseignées — jamais l'un sans
+ * l'autre). Ne juge jamais la qualité pédagogique elle-même. Retourne la
+ * liste des violations constatées (vide si le contenu est acceptable),
+ * même esprit que `validateProgrammeStructure` (Prompt 05.9) : jamais se
+ * fier uniquement au texte envoyé à l'IA pour ces garanties.
+ */
+export function validateChapterContent(content: ChapterContent, plan: FlatChapterPlan): string[] {
+  const errors: string[] = [];
+  const label = `Leçon "${plan.title}" (module "${plan.moduleTitle}")`;
+
+  if (content.explanation.trim().length < MIN_EXPLANATION_LENGTH) {
+    errors.push(`${label} : explication anormalement vide ou tronquée.`);
+  }
+  if (!content.keyTakeaway.trim()) {
+    errors.push(`${label} : encadré "à retenir" manquant ou vide.`);
+  }
+  if (!content.example.description.trim()) {
+    errors.push(`${label} : exemple manquant ou vide.`);
+  }
+  if (content.exercise && (!content.exercise.prompt.trim() || !content.exercise.solution.trim())) {
+    errors.push(`${label} : exercice présent mais incomplet (consigne ou correction vide).`);
+  }
+
+  return errors;
+}
+
 function requireContent<T extends { stop_reason: string | null }>(
   response: T,
 ): T {
@@ -428,10 +465,16 @@ export async function writeChapter(
   // total, numéro de la leçon dans ce module sur le total de ce module).
   const moduleContext = `Module de cette leçon : "${plan.moduleTitle}" (module ${plan.moduleIndex + 1}/${plan.totalModules} de la formation).\nObjectif pédagogique de ce module : ${plan.moduleObjective}\nCette leçon est la ${plan.positionInModule + 1}ᵉ sur ${plan.chaptersInModule} de ce module.`;
 
+  // Consigne de l'exercice facultatif (Prompt 05.11) : dans ce même appel,
+  // jamais un appel IA séparé — voir `ChapterContentSchema.exercise`
+  // (nullable) pour la garantie que rien n'impose un exercice artificiel.
+  const exerciseInstruction =
+    "Si, et UNIQUEMENT si, cette leçon s'y prête vraiment (une notion qu'on peut concrètement mettre en pratique), ajoute un exercice : une consigne claire posée à partir d'une situation concrète, et une correction détaillée qui explique le raisonnement, pas seulement la réponse. Si le sujet ne s'y prête pas (notion trop abstraite, trop courte, ou déjà entièrement couverte par l'exemple ci-dessus), laisse `exercise` à null plutôt que d'inventer un exercice artificiel.";
+
   return parseStructured(client, {
     system:
-      "Tu es Tavyra. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
-    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus.\n\n${exampleInstruction}`,
+      "Tu es Tavyra. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules : une explication approfondie, progressive et structurée, qui distingue clairement l'essentiel du secondaire, simplifie toute notion complexe avec une analogie ou un contre-exemple quand c'est utile, utilise un tableau comparatif quand il apporte une vraie valeur, un exemple concret, un encadré à retenir, et un exercice pratique quand (et seulement quand) le sujet s'y prête. N'invente jamais un fait présenté comme réel. N'allonge jamais artificiellement une leçon dont le sujet ne justifie pas plus de développement.",
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus. Elle doit apporter des connaissances NOUVELLES par rapport aux autres leçons de ce même module (vois leurs résumés dans le plan ci-dessus) : ne réexplique jamais ce qu'une autre leçon de ce module couvre déjà.\n\n${exampleInstruction}\n\n${exerciseInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 20000,
   });
@@ -682,6 +725,18 @@ export async function generateCourse(
         writeChapter(client, analysis, programme.modules, plan, assignedExample),
       );
 
+      // Validation légère AVANT tout autre traitement de cette leçon
+      // (Prompt 05.11) : un contenu invalide fait échouer cette tâche, qui
+      // se propage normalement via `Promise.all` — aucune sauvegarde,
+      // réservation libérée par route.ts, exactement comme toute autre
+      // erreur de génération (principe "tout ou rien" préservé).
+      const chapterErrors = validateChapterContent(content, plan);
+      if (chapterErrors.length > 0) {
+        throw new CourseGenerationError(
+          `Contenu de leçon invalide : ${chapterErrors.join(" ")}`,
+        );
+      }
+
       completedChapters += 1;
       onProgress(
         "chapitres",
@@ -707,6 +762,9 @@ export async function generateCourse(
           sourceUrl: isReal ? content.example.sourceUrl : null,
           sourceTitle: isReal ? content.example.sourceTitle : null,
         },
+        exercise: content.exercise
+          ? { prompt: content.exercise.prompt, solution: content.exercise.solution }
+          : null,
       };
     }),
   );

@@ -13,11 +13,12 @@ import {
   MIN_MODULE_COUNT,
   flattenModulePlans,
   generateCourse,
+  validateChapterContent,
   validateProgrammeStructure,
   writeChapter,
 } from "@/lib/courses/generate";
 import type { FlatChapterPlan } from "@/lib/courses/generate";
-import type { Analysis, Programme, ProgrammeModule } from "@/lib/courses/schemas";
+import type { Analysis, ChapterContent, Programme, ProgrammeModule } from "@/lib/courses/schemas";
 
 function makeModule(title: string, objective: string, chapterCount: number): ProgrammeModule {
   return {
@@ -301,6 +302,305 @@ describe("generateCourse (vrai code, client Anthropic mocké) — échec de stru
     // leçon, de résumé ou de quiz n'a lieu après l'échec de structure.
     expect(calls).toEqual(["analyse", "programme", "programme"]);
     expect(calls.filter((c) => c === "chapitre")).toHaveLength(0);
+    expect(calls.filter((c) => c === "resume")).toHaveLength(0);
+    expect(calls.filter((c) => c === "quiz_module")).toHaveLength(0);
+    expect(calls.filter((c) => c === "quiz_final")).toHaveLength(0);
+
+    vi.doUnmock("@/lib/anthropic/client");
+    vi.resetModules();
+  });
+});
+
+// ---------------------------------------------------------------------
+// validateChapterContent — vraie fonction importée (Prompt 05.11, LOT D)
+// ---------------------------------------------------------------------
+
+function makePlan(overrides: Partial<FlatChapterPlan> = {}): FlatChapterPlan {
+  return {
+    globalIndex: 0,
+    moduleIndex: 0,
+    totalModules: 1,
+    moduleTitle: "Module",
+    moduleObjective: "Objectif",
+    positionInModule: 0,
+    chaptersInModule: 3,
+    title: "Leçon",
+    summary: "Résumé",
+    exampleIndex: null,
+    ...overrides,
+  };
+}
+
+function makeChapterContent(overrides: Partial<ChapterContent> = {}): ChapterContent {
+  return {
+    explanation: "Une explication suffisamment longue pour passer la validation légère de longueur.",
+    keyTakeaway: "À retenir.",
+    example: { isReal: false, description: "Un exemple.", sourceUrl: null, sourceTitle: null },
+    exercise: null,
+    ...overrides,
+  };
+}
+
+describe("validateChapterContent (vrai code)", () => {
+  it("accepte un contenu valide sans exercice", () => {
+    expect(validateChapterContent(makeChapterContent(), makePlan())).toEqual([]);
+  });
+
+  it("accepte un contenu valide AVEC un exercice cohérent (consigne + correction)", () => {
+    const content = makeChapterContent({ exercise: { prompt: "Fais ceci.", solution: "Voici comment." } });
+    expect(validateChapterContent(content, makePlan())).toEqual([]);
+  });
+
+  it("n'exige pas de longueur artificielle : une explication courte mais au-dessus du plancher est acceptée", () => {
+    const content = makeChapterContent({ explanation: "Une explication courte mais déjà suffisante ici." });
+    expect(validateChapterContent(content, makePlan())).toEqual([]);
+  });
+
+  it("refuse une explication anormalement vide ou tronquée", () => {
+    const content = makeChapterContent({ explanation: "Trop court." });
+    const errors = validateChapterContent(content, makePlan());
+    expect(errors.some((e) => e.includes("explication anormalement"))).toBe(true);
+  });
+
+  it("refuse un encadré à retenir vide", () => {
+    const content = makeChapterContent({ keyTakeaway: "   " });
+    const errors = validateChapterContent(content, makePlan());
+    expect(errors.some((e) => e.includes("à retenir"))).toBe(true);
+  });
+
+  it("refuse un exemple vide", () => {
+    const content = makeChapterContent({
+      example: { isReal: false, description: "   ", sourceUrl: null, sourceTitle: null },
+    });
+    const errors = validateChapterContent(content, makePlan());
+    expect(errors.some((e) => e.includes("exemple manquant ou vide"))).toBe(true);
+  });
+
+  it("refuse un exercice incohérent : consigne présente mais correction vide", () => {
+    const content = makeChapterContent({ exercise: { prompt: "Fais ceci.", solution: "   " } });
+    const errors = validateChapterContent(content, makePlan());
+    expect(errors.some((e) => e.includes("exercice présent mais incomplet"))).toBe(true);
+  });
+
+  it("refuse un exercice incohérent : correction présente mais consigne vide", () => {
+    const content = makeChapterContent({ exercise: { prompt: "", solution: "Voici comment." } });
+    const errors = validateChapterContent(content, makePlan());
+    expect(errors.some((e) => e.includes("exercice présent mais incomplet"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------
+// writeChapter — vérifie la transmission des nouvelles consignes LOT B/C
+// ---------------------------------------------------------------------
+
+describe("writeChapter (vrai code) — nouvelles consignes LOT B/C", () => {
+  it("transmet la consigne anti-répétition inter-leçons et la consigne d'exercice facultatif", async () => {
+    const modules = [makeModule("Module A", "Objectif A", 3)];
+    const plan = flattenModulePlans(modules)[0];
+
+    let capturedSystem = "";
+    let capturedUser = "";
+    const mockClient = {
+      messages: {
+        parse: vi.fn(async (args: { system: string; messages: { content: string }[] }) => {
+          capturedSystem = args.system;
+          capturedUser = args.messages[0].content;
+          return {
+            stop_reason: "end_turn",
+            parsed_output: makeChapterContent(),
+          };
+        }),
+      },
+    };
+
+    await writeChapter(mockClient as never, ANALYSIS, modules, plan, null);
+
+    expect(capturedUser).toMatch(/connaissances NOUVELLES/);
+    expect(capturedUser).toMatch(/ne réexplique jamais/);
+    expect(capturedSystem).toMatch(/analogie ou un contre-exemple/);
+    expect(capturedSystem).toMatch(/tableau comparatif/);
+    expect(capturedSystem).toMatch(/exercice pratique/);
+    expect(capturedUser).toMatch(/laisse `exercise` à null/);
+  });
+});
+
+// ---------------------------------------------------------------------
+// generateCourse — succès complet multi-modules, avec et sans exercice
+// ---------------------------------------------------------------------
+
+describe("generateCourse (vrai code, client Anthropic mocké) — succès complet multi-modules", () => {
+  it("génère 2 modules (3 leçons chacun), transmet l'exercice jusqu'au résultat pour les leçons qui en ont, null pour les autres", async () => {
+    let chapterCallCount = 0;
+
+    const parse = vi.fn(async (args: { system: string }) => {
+      if (systemIncludes(args.system, "ingénierie pédagogique")) {
+        return {
+          stop_reason: "end_turn",
+          parsed_output: { ...ANALYSIS, moduleCount: 2, usesRealWorldExamples: false },
+        };
+      }
+      if (systemIncludes(args.system, "plan détaillé d'une formation structurée en modules")) {
+        return {
+          stop_reason: "end_turn",
+          parsed_output: {
+            introduction: "Intro",
+            objectives: ["Obj"],
+            summaryAngle: "Angle",
+            modules: [
+              {
+                title: "Module A",
+                objective: "Objectif A",
+                chapters: [
+                  { title: "A1", summary: "SA1", exampleIndex: null },
+                  { title: "A2", summary: "SA2", exampleIndex: null },
+                  { title: "A3", summary: "SA3", exampleIndex: null },
+                ],
+              },
+              {
+                title: "Module B",
+                objective: "Objectif B",
+                chapters: [
+                  { title: "B1", summary: "SB1", exampleIndex: null },
+                  { title: "B2", summary: "SB2", exampleIndex: null },
+                  { title: "B3", summary: "SB3", exampleIndex: null },
+                ],
+              },
+            ],
+          },
+        };
+      }
+      if (systemIncludes(args.system, "rédiges une leçon complète et pédagogique")) {
+        chapterCallCount += 1;
+        const hasExercise = chapterCallCount % 2 === 1; // une sur deux a un exercice
+        return {
+          stop_reason: "end_turn",
+          parsed_output: makeChapterContent({
+            explanation: `Explication suffisamment longue pour la leçon numéro ${chapterCallCount}, qui passe la validation.`,
+            exercise: hasExercise ? { prompt: "Consigne.", solution: "Correction." } : null,
+          }),
+        };
+      }
+      if (systemIncludes(args.system, "résumé final d'une formation à partir de ses points clés")) {
+        return { stop_reason: "end_turn", parsed_output: { summary: "Résumé final.", keyPoints: ["Point 1"] } };
+      }
+      if (systemIncludes(args.system, "validation des acquis pour UN SEUL module")) {
+        return { stop_reason: "end_turn", parsed_output: { questions: [] } };
+      }
+      if (systemIncludes(args.system, "quiz FINAL d'une formation")) {
+        return { stop_reason: "end_turn", parsed_output: { questions: [] } };
+      }
+      throw new Error(`system prompt inattendu dans ce test : ${args.system.slice(0, 60)}`);
+    });
+
+    vi.doMock("@/lib/anthropic/client", () => ({
+      createAnthropicClient: () => ({ messages: { parse, create: vi.fn() } }),
+    }));
+    vi.resetModules();
+    const { generateCourse: realGenerateCourse } = await import("@/lib/courses/generate");
+
+    const course = await realGenerateCourse("Sujet multi-modules", () => {});
+
+    expect(course.modules).toHaveLength(2);
+    expect(course.chapters).toHaveLength(6);
+    expect(chapterCallCount).toBe(6);
+
+    const withExercise = course.chapters.filter((c) => c.exercise !== null);
+    const withoutExercise = course.chapters.filter((c) => c.exercise === null);
+    expect(withExercise.length).toBeGreaterThan(0);
+    expect(withoutExercise.length).toBeGreaterThan(0);
+    expect(withExercise[0].exercise).toEqual({ prompt: "Consigne.", solution: "Correction." });
+
+    vi.doUnmock("@/lib/anthropic/client");
+    vi.resetModules();
+  });
+});
+
+// ---------------------------------------------------------------------
+// generateCourse — rejet d'un contenu de leçon invalide (LOT D)
+// ---------------------------------------------------------------------
+
+describe("generateCourse (vrai code, client Anthropic mocké) — rejet d'un contenu de leçon invalide", () => {
+  it("rejette avec CourseGenerationError si une leçon revient avec une explication anormalement vide, sans jamais appeler résumé ni quiz", async () => {
+    const calls: string[] = [];
+
+    const parse = vi.fn(async (args: { system: string }) => {
+      if (systemIncludes(args.system, "ingénierie pédagogique")) {
+        return {
+          stop_reason: "end_turn",
+          parsed_output: { ...ANALYSIS, moduleCount: 2, usesRealWorldExamples: false },
+        };
+      }
+      if (systemIncludes(args.system, "plan détaillé d'une formation structurée en modules")) {
+        return {
+          stop_reason: "end_turn",
+          parsed_output: {
+            introduction: "Intro",
+            objectives: ["Obj"],
+            summaryAngle: "Angle",
+            modules: [
+              {
+                title: "Module A",
+                objective: "Objectif A",
+                chapters: [
+                  { title: "A1", summary: "SA1", exampleIndex: null },
+                  { title: "A2", summary: "SA2", exampleIndex: null },
+                  { title: "A3", summary: "SA3", exampleIndex: null },
+                ],
+              },
+              {
+                title: "Module B",
+                objective: "Objectif B",
+                chapters: [
+                  { title: "B1", summary: "SB1", exampleIndex: null },
+                  { title: "B2", summary: "SB2", exampleIndex: null },
+                  { title: "B3", summary: "SB3", exampleIndex: null },
+                ],
+              },
+            ],
+          },
+        };
+      }
+      if (systemIncludes(args.system, "rédiges une leçon complète et pédagogique")) {
+        calls.push("chapitre");
+        // Explication anormalement vide : doit être rejetée par
+        // validateChapterContent, bien AVANT tout résumé/quiz.
+        return {
+          stop_reason: "end_turn",
+          parsed_output: makeChapterContent({ explanation: "Trop court." }),
+        };
+      }
+      if (systemIncludes(args.system, "résumé final d'une formation à partir de ses points clés")) {
+        calls.push("resume");
+        return { stop_reason: "end_turn", parsed_output: { summary: "x", keyPoints: [] } };
+      }
+      if (systemIncludes(args.system, "validation des acquis pour UN SEUL module")) {
+        calls.push("quiz_module");
+        return { stop_reason: "end_turn", parsed_output: { questions: [] } };
+      }
+      if (systemIncludes(args.system, "quiz FINAL d'une formation")) {
+        calls.push("quiz_final");
+        return { stop_reason: "end_turn", parsed_output: { questions: [] } };
+      }
+      throw new Error(`system prompt inattendu dans ce test : ${args.system.slice(0, 60)}`);
+    });
+
+    vi.doMock("@/lib/anthropic/client", () => ({
+      createAnthropicClient: () => ({ messages: { parse, create: vi.fn() } }),
+    }));
+    vi.resetModules();
+    const { generateCourse: realGenerateCourse, CourseGenerationError: RealError } = await import(
+      "@/lib/courses/generate"
+    );
+
+    let caughtError: unknown;
+    try {
+      await realGenerateCourse("Sujet", () => {});
+    } catch (err) {
+      caughtError = err;
+    }
+
+    expect(caughtError).toBeInstanceOf(RealError);
+    expect((caughtError as Error).message).toMatch(/leçon invalide|explication anormalement/);
     expect(calls.filter((c) => c === "resume")).toHaveLength(0);
     expect(calls.filter((c) => c === "quiz_module")).toHaveLength(0);
     expect(calls.filter((c) => c === "quiz_final")).toHaveLength(0);

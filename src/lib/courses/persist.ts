@@ -119,6 +119,12 @@ export async function saveCourse(
           sourceUrl: chapter.example.sourceUrl,
           sourceTitle: chapter.example.sourceTitle,
         },
+        // Exercice pratique facultatif (Prompt 05.11) : `null` pour une
+        // leçon qui n'en a pas — colonnes nullables (migration 0015), donc
+        // sans aucun impact sur les anciennes formations.
+        exercise: chapter.exercise
+          ? { prompt: chapter.exercise.prompt, solution: chapter.exercise.solution }
+          : null,
       })),
       quiz: (module.quiz ?? []).map((q) => ({
         position: q.position,
@@ -223,7 +229,7 @@ export async function getCourseById(
   const { data: chapters, error: chaptersError } = await supabase
     .from("course_chapters")
     .select(
-      "id, position, title, explanation, key_takeaway, module_id, position_in_module, course_examples(description, is_real, source_url, source_title)",
+      "id, position, title, explanation, key_takeaway, exercise_prompt, exercise_solution, module_id, position_in_module, course_examples(description, is_real, source_url, source_title)",
     )
     .eq("course_id", courseId)
     .order("position", { ascending: true });
@@ -319,6 +325,12 @@ export async function getCourseById(
       ? chapter.course_examples[0]
       : chapter.course_examples;
     const id = chapter.id as string;
+    // `exercise_prompt`/`exercise_solution` (migration 0015) : absentes
+    // (donc `null`) pour toute leçon générée avant le Prompt 05.11 — pas
+    // de cas particulier à gérer, `exercise` devient simplement `null`
+    // exactement comme pour une leçon volontairement sans exercice.
+    const exercisePrompt = (chapter.exercise_prompt as string | null) ?? null;
+    const exerciseSolution = (chapter.exercise_solution as string | null) ?? null;
     return {
       id,
       position: chapter.position as number,
@@ -331,6 +343,10 @@ export async function getCourseById(
         sourceUrl: (example?.source_url as string | null) ?? null,
         sourceTitle: (example?.source_title as string | null) ?? null,
       },
+      exercise:
+        exercisePrompt && exerciseSolution
+          ? { prompt: exercisePrompt, solution: exerciseSolution }
+          : null,
       completed: completedChapterIds.has(id),
     };
   });

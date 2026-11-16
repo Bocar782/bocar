@@ -6,6 +6,7 @@ import type { GeneratedCourse, GeneratedModule } from "@/lib/courses/schemas";
 import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
 import { setLessonCompletion } from "@/lib/courses/progress-actions";
 import { CourseSidebar } from "./course-sidebar";
+import { ExerciseBlock } from "./exercise-block";
 import { MarkdownContent } from "./markdown-content";
 import { QuizView } from "./quiz-view";
 
@@ -118,6 +119,8 @@ function ChapterCard({
           {chapter.keyTakeaway}
         </p>
       </div>
+
+      {chapter.exercise && <ExerciseBlock exercise={chapter.exercise} />}
 
       <div className="mt-5 flex items-center justify-between gap-3 border-t border-border-subtle pt-4">
         {!isFirst ? (

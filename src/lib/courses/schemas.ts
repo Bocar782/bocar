@@ -96,10 +96,13 @@ export type Programme = z.infer<typeof ProgrammeSchema>;
 export type ProgrammeModule = Programme["modules"][number];
 
 export const ChapterContentSchema = z.object({
+  // Consignes de profondeur/structure (Prompt 05.11, suite à l'audit 05.10)
+  // transmises ici, au niveau du schéma : s'appliquent donc à TOUT appelant
+  // de ChapterContentSchema, pas seulement au prompt actuel de writeChapter.
   explanation: z
     .string()
     .describe(
-      "Explication détaillée, pédagogique et progressive du chapitre, en markdown (sous-titres ## autorisés, pas de titre de niveau 1)",
+      "Explication approfondie, progressive et structurée du chapitre, en markdown (sous-titres ## autorisés, pas de titre de niveau 1 ; tableaux au format GFM autorisés quand ils apportent une vraie valeur comparative — jamais systématiques). Pour une notion complexe, simplifie-la avec une analogie ou un contre-exemple quand c'est pertinent. Distingue clairement ce qui est essentiel de ce qui n'est que secondaire (par exemple en mettant l'essentiel en **gras** ou dans un paragraphe dédié). La profondeur doit refléter la complexité réelle du sujet : ni superficielle sur un sujet riche, ni allongée artificiellement sur un sujet simple.",
     ),
   example: z.object({
     isReal: z
@@ -112,6 +115,30 @@ export const ChapterContentSchema = z.object({
   keyTakeaway: z
     .string()
     .describe("Encadré « à retenir » : 2-4 phrases synthétiques"),
+  // Exercice pratique FACULTATIF (Prompt 05.11) : généré dans ce même appel
+  // (jamais un appel IA séparé), uniquement quand le sujet s'y prête
+  // réellement. `null` est le cas attendu et normal pour une notion trop
+  // abstraite ou trop courte pour justifier un exercice — jamais imposé
+  // artificiellement.
+  exercise: z
+    .object({
+      prompt: z
+        .string()
+        .min(1)
+        .describe(
+          "Consigne claire de l'exercice, posée à partir d'une situation concrète à résoudre (jamais vide)",
+        ),
+      solution: z
+        .string()
+        .min(1)
+        .describe(
+          "Correction détaillée et pédagogique de l'exercice : pas seulement la réponse, mais le raisonnement pour l'obtenir (jamais vide)",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Exercice pratique pour cette leçon, UNIQUEMENT si le sujet s'y prête réellement (sinon null) : jamais un exercice artificiel plaqué sur une notion qui ne s'y prête pas",
+    ),
 });
 export type ChapterContent = z.infer<typeof ChapterContentSchema>;
 
@@ -237,6 +264,15 @@ export type GeneratedChapter = {
    * base.
    */
   completed?: boolean;
+  /**
+   * Exercice pratique facultatif (Prompt 05.11) : `null`/absent pour une
+   * leçon qui n'en a pas (cas normal, pas une anomalie — ni généré pour un
+   * sujet qui ne s'y prête pas, ni présent dans une formation générée avant
+   * cette évolution). Colonnes `course_chapters.exercise_prompt`/
+   * `exercise_solution` (migration 0015), nullable, donc toujours
+   * compatible avec les anciennes formations.
+   */
+  exercise?: { prompt: string; solution: string } | null;
 };
 
 /**
