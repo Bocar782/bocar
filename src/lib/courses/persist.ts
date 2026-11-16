@@ -7,8 +7,8 @@ import type { GeneratedCourse, GeneratedModule, QuestionType } from "./schemas";
 // la même architecture que celle utilisée pour migrer les formations
 // existantes (voir 0008_course_modules.sql), appliquée dès l'écriture pour
 // que toute nouvelle formation ait, elle aussi, un module dès sa création.
-const DEFAULT_MODULE_TITLE = "Module 1";
-const DEFAULT_MODULE_POSITION = 0;
+export const DEFAULT_MODULE_TITLE = "Module 1";
+export const DEFAULT_MODULE_POSITION = 0;
 
 type CourseListItem = {
   id: string;
@@ -142,6 +142,74 @@ export async function saveCourse(
 
     if (quizError) {
       throw new Error(`Échec de l'enregistrement du quiz : ${quizError.message}`);
+    }
+  }
+
+  // Quiz de module (Prompt 05.6), créé après le quiz final : si cette partie
+  // échoue, la formation reste malgré tout utilisable avec son quiz final
+  // (même profil de risque qu'aujourd'hui — voir la note sur l'absence de
+  // transaction globale ci-dessous).
+  //
+  // Associé sans ambiguïté au module qui vient d'être créé via sa position
+  // (`DEFAULT_MODULE_POSITION`), qui l'identifie de façon unique au sein de
+  // cette formation : un seul module existe aujourd'hui, donc une seule
+  // entrée possible dans `course.moduleQuizzes`. Si le pipeline de
+  // génération produit un jour plusieurs modules, cette correspondance par
+  // position devra être étendue à une boucle sur chaque module réellement
+  // créé — elle n'est volontairement pas généralisée par avance ici.
+  //
+  // IMPORTANT (transactionnalité) : comme pour le reste de cette fonction,
+  // chaque étape est un appel REST indépendant, sans transaction de base de
+  // données englobante. Une formation sans quiz de module (si cette étape
+  // échoue après les précédentes) reste donc possible — limitation
+  // préexistante de `saveCourse`, non introduite par cette évolution, et
+  // documentée dans le compte-rendu de ce prompt plutôt que corrigée ici
+  // (hors périmètre).
+  const moduleQuiz = course.moduleQuizzes?.find(
+    (mq) => mq.modulePosition === DEFAULT_MODULE_POSITION,
+  );
+
+  if (moduleQuiz && moduleQuiz.questions.length > 0) {
+    const { data: moduleQuizRow, error: moduleQuizRowError } = await supabase
+      .from("quizzes")
+      .insert({
+        course_id: courseId,
+        module_id: moduleId,
+        kind: "module",
+        position: DEFAULT_MODULE_POSITION,
+      })
+      .select("id")
+      .single();
+
+    if (moduleQuizRowError || !moduleQuizRow) {
+      throw new Error(
+        `Échec de l'enregistrement du quiz de module : ${moduleQuizRowError?.message}`,
+      );
+    }
+
+    const moduleQuizId = moduleQuizRow.id as string;
+
+    const { error: moduleQuizQuestionsError } = await supabase
+      .from("course_quiz_questions")
+      .insert(
+        moduleQuiz.questions.map((q) => ({
+          course_id: courseId,
+          position: q.position,
+          chapter_index: q.chapterIndex,
+          question: q.question,
+          choices: q.choices,
+          correct_choice_index: q.correctChoiceIndex,
+          correct_choice_indexes: q.correctChoiceIndexes,
+          question_type: q.questionType,
+          explanation: q.explanation,
+          quiz_id: moduleQuizId,
+        })),
+      );
+
+    if (moduleQuizQuestionsError) {
+      throw new Error(
+        `Échec de l'enregistrement des questions du quiz de module : ${moduleQuizQuestionsError.message}`,
+      );
     }
   }
 

@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import type { z } from "zod";
+import { z } from "zod";
 import { createAnthropicClient } from "@/lib/anthropic/client";
 import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
+  ModuleQuizSchema,
   ProgrammeSchema,
   QuizSchema,
   ResearchExtractionSchema,
@@ -15,11 +16,13 @@ import {
   type CourseSummary,
   type GeneratedChapter,
   type GeneratedCourse,
+  type GeneratedModuleQuiz,
   type GenerationStage,
   type Programme,
   type QuizQuestion,
   type VerifiedExample,
 } from "./schemas";
+import { DEFAULT_MODULE_POSITION, DEFAULT_MODULE_TITLE } from "./persist";
 
 const MODEL = "claude-opus-5-5";
 
@@ -300,6 +303,100 @@ async function writeQuiz(
     }));
 }
 
+// --- Étape 7 : quiz de module (Prompt 05.6) ---
+
+const MODULE_QUIZ_QUESTION_COUNT = 5;
+
+/**
+ * Validation stricte, question par question, de la sortie IA du quiz de
+ * module — séparée du schéma `ModuleQuizSchema` utilisé pour l'appel
+ * structuré (volontairement permissif, voir son commentaire dans
+ * schemas.ts). Une question qui échoue ici est REJETÉE, jamais corrigée ni
+ * complétée : on ne fabrique jamais une bonne réponse pour compenser une
+ * génération invalide.
+ */
+const StrictModuleQuestionSchema = z
+  .object({
+    questionType: z.enum(["single_choice", "multiple_choice", "true_false"]),
+    question: z.string().min(1),
+    choices: z.array(z.string().min(1)).min(2),
+    correctChoiceIndex: z.number().int().nullable(),
+    correctChoiceIndexes: z.array(z.number().int()).nullable(),
+    explanation: z.string().min(1),
+  })
+  .superRefine((q, ctx) => {
+    if (q.questionType === "true_false" && q.choices.length !== 2) {
+      ctx.addIssue({ code: "custom", message: "true_false doit avoir exactement 2 choix" });
+    }
+    if (q.questionType === "multiple_choice") {
+      const indexes = q.correctChoiceIndexes;
+      if (!indexes || indexes.length === 0) {
+        ctx.addIssue({ code: "custom", message: "correctChoiceIndexes requis pour multiple_choice" });
+        return;
+      }
+      if (new Set(indexes).size !== indexes.length) {
+        ctx.addIssue({ code: "custom", message: "correctChoiceIndexes contient des doublons" });
+      }
+      if (indexes.some((idx) => idx < 0 || idx >= q.choices.length)) {
+        ctx.addIssue({ code: "custom", message: "correctChoiceIndexes hors limites" });
+      }
+    } else if (
+      q.correctChoiceIndex === null ||
+      q.correctChoiceIndex < 0 ||
+      q.correctChoiceIndex >= q.choices.length
+    ) {
+      ctx.addIssue({ code: "custom", message: "correctChoiceIndex manquant ou hors limites" });
+    }
+  });
+
+/**
+ * Génère le quiz d'UN module, à partir du contenu réel de ses seules leçons
+ * (jamais celui des autres modules). Les questions qui ne passent pas la
+ * validation stricte ci-dessus sont écartées plutôt que corrigées.
+ */
+async function writeModuleQuiz(
+  client: Anthropic,
+  analysis: Analysis,
+  moduleTitle: string,
+  moduleChapters: GeneratedChapter[],
+): Promise<QuizQuestion[]> {
+  const fullContent = moduleChapters
+    .map(
+      (c, i) =>
+        `--- Leçon ${i + 1} : ${c.title} ---\n${c.explanation}\n\nExemple : ${c.example.description}\n\nÀ retenir : ${c.keyTakeaway}`,
+    )
+    .join("\n\n");
+
+  const result = await parseStructured(client, {
+    system:
+      "Tu es Tavyra. Tu crées un quiz de validation des acquis pour UN SEUL module d'une formation, à partir du contenu RÉEL de ce module uniquement. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni pour ce module — jamais à partir d'une connaissance externe, même correcte, et jamais à partir du contenu d'un autre module. Choisis pour chaque question le type (single_choice, multiple_choice, true_false) le plus adapté à la notion testée, sans chercher à imposer une répartition fixe entre les types. Évite les questions génériques, répétitives entre elles, ou qui ne testent rien de spécifique à ce module.",
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nModule : "${moduleTitle}".\n\nContenu complet de ce module :\n\n${fullContent}\n\nGénère un quiz de ${MODULE_QUIZ_QUESTION_COUNT} questions portant UNIQUEMENT sur ce module, couvrant ses différentes leçons de façon équilibrée. Pour "multiple_choice" : fournis TOUS les index corrects (0-based, au moins 2) dans correctChoiceIndexes et laisse correctChoiceIndex à null. Pour "single_choice" et "true_false" : fournis un seul index correct dans correctChoiceIndex et laisse correctChoiceIndexes à null (pour "true_false", exactement 2 choix, ex. "Vrai"/"Faux"). Donne pour chaque question une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus.`,
+    schema: ModuleQuizSchema,
+    maxTokens: 6000,
+  });
+
+  const validQuestions: QuizQuestion[] = [];
+  for (const raw of result.questions) {
+    const parsed = StrictModuleQuestionSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    const q = parsed.data;
+    validQuestions.push({
+      position: validQuestions.length,
+      chapterIndex: null,
+      question: q.question,
+      choices: q.choices,
+      // Colonne historiquement NOT NULL (0002) : placeholder non significatif
+      // pour multiple_choice, où la bonne réponse est dans
+      // correctChoiceIndexes — jamais lu par submit_quiz_attempt dans ce cas.
+      correctChoiceIndex: q.correctChoiceIndex ?? 0,
+      correctChoiceIndexes: q.correctChoiceIndexes,
+      questionType: q.questionType,
+      explanation: q.explanation,
+    });
+  }
+  return validQuestions;
+}
+
 // --- Orchestration complète ---
 
 export async function generateCourse(
@@ -364,13 +461,25 @@ export async function generateCourse(
     }),
   );
 
-  // Résumé et quiz sont indépendants l'un de l'autre (tous deux ne
-  // dépendent que des chapitres déjà écrits) : les lancer en parallèle
-  // évite d'ajouter leur latence l'une à l'autre.
-  const [summary, quiz] = await Promise.all([
+  // Résumé, quiz final et quiz de module sont indépendants les uns des
+  // autres (tous ne dépendent que des chapitres déjà écrits) : les lancer
+  // en parallèle évite d'ajouter leurs latences les unes aux autres.
+  //
+  // Le pipeline ne produit encore qu'un seul module couvrant tous les
+  // chapitres (voir le commentaire en tête de persist.ts) : un seul quiz de
+  // module est donc généré ici, sur la même étendue de contenu que ce
+  // module unique (DEFAULT_MODULE_TITLE/DEFAULT_MODULE_POSITION), afin
+  // d'associer sans ambiguïté ce quiz au module que `saveCourse` créera.
+  const [summary, quiz, moduleQuizQuestions] = await Promise.all([
     writeSummary(client, analysis, programme, chapters),
     writeQuiz(client, analysis, chapters),
+    writeModuleQuiz(client, analysis, DEFAULT_MODULE_TITLE, chapters),
   ]);
+
+  const moduleQuizzes: GeneratedModuleQuiz[] =
+    moduleQuizQuestions.length > 0
+      ? [{ modulePosition: DEFAULT_MODULE_POSITION, questions: moduleQuizQuestions }]
+      : [];
 
   onProgress("pret", STAGE_LABELS.pret);
 
@@ -385,5 +494,6 @@ export async function generateCourse(
     summary: summary.summary,
     keyPoints: summary.keyPoints,
     quiz,
+    moduleQuizzes,
   };
 }

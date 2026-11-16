@@ -124,6 +124,46 @@ export const QuizSchema = z.object({
 });
 export type Quiz = z.infer<typeof QuizSchema>;
 
+/**
+ * Schéma de sortie IA pour le quiz d'un module (Prompt 05.6), délibérément
+ * permissif (champs nullables plutôt que des règles conditionnelles que
+ * l'API de sortie structurée ne pourrait pas faire respecter de façon
+ * fiable). La validation stricte (bornes d'index, cohérence du type de
+ * question, nombre de choix pour "true_false"...) est faite séparément,
+ * côté application, avec un schéma Zod dédié appliqué question par
+ * question après réception — voir `generate.ts`.
+ */
+export const ModuleQuizSchema = z.object({
+  questions: z.array(
+    z.object({
+      questionType: z
+        .enum(["single_choice", "multiple_choice", "true_false"])
+        .describe("Le type le plus adapté à cette question précise"),
+      question: z.string(),
+      choices: z
+        .array(z.string())
+        .describe("2 choix pour true_false, sinon 4 choix"),
+      correctChoiceIndex: z
+        .number()
+        .int()
+        .nullable()
+        .describe(
+          "Index (0-based) du choix correct, pour single_choice/true_false uniquement ; null pour multiple_choice",
+        ),
+      correctChoiceIndexes: z
+        .array(z.number().int())
+        .nullable()
+        .describe(
+          "TOUS les index corrects (0-based), pour multiple_choice uniquement ; null pour les deux autres types",
+        ),
+      explanation: z
+        .string()
+        .describe("Explication de la bonne réponse, basée uniquement sur le contenu du module fourni"),
+    }),
+  ),
+});
+export type ModuleQuiz = z.infer<typeof ModuleQuizSchema>;
+
 // --- Formation assemblée, prête à être affichée / persistée ---
 
 export type GeneratedChapter = {
@@ -207,6 +247,18 @@ export type GeneratedModule = {
   chapters: GeneratedChapter[];
 };
 
+/**
+ * Quiz généré pour UN module (Prompt 05.6), avant sauvegarde. `modulePosition`
+ * identifie sans ambiguïté le module concerné au sein de la formation (même
+ * valeur que `GeneratedModule.position`/`course_modules.position`) : c'est
+ * cette position, et non un index de tableau, que `saveCourse` utilise pour
+ * associer ce quiz au bon module réellement créé en base.
+ */
+export type GeneratedModuleQuiz = {
+  modulePosition: number;
+  questions: QuizQuestion[];
+};
+
 export type GeneratedCourse = {
   topic: string;
   title: string;
@@ -225,6 +277,15 @@ export type GeneratedCourse = {
   summary: string;
   keyPoints: string[];
   quiz: QuizQuestion[];
+  /**
+   * Un quiz par module (Prompt 05.6). Absent juste après une génération
+   * fraîche faite par un pipeline qui ne les produit pas encore ; présent
+   * dès que le pipeline de génération les produit, avant toute sauvegarde.
+   * `getCourseById` ne les relit pas encore depuis la base (l'intégration
+   * visuelle en lecture viendra dans un prompt séparé) — ce champ ne sert
+   * donc, pour l'instant, qu'entre la génération et `saveCourse`.
+   */
+  moduleQuizzes?: GeneratedModuleQuiz[];
   /**
    * Identifiant du quiz FINAL (table `quizzes`, `kind = 'final'`), pour
    * démarrer/soumettre une tentative (voir 0011_quiz_attempts.sql). `null`
