@@ -104,6 +104,62 @@ export async function submitQuizAttempt(
   }
 }
 
+export type QuizAttemptSummary = {
+  id: string;
+  completedAt: string;
+  score: number;
+  total: number;
+  percent: number;
+};
+
+/**
+ * Récupère l'historique des tentatives (terminées) du quiz indiqué, pour
+ * l'utilisateur connecté UNIQUEMENT — déterminé ici par
+ * `supabase.auth.getUser()`, jamais par un identifiant transmis par
+ * l'appelant. Le filtre explicite `.eq("user_id", user.id)` est redondant
+ * avec la policy RLS `quiz_attempts_owner_select` (0011_quiz_attempts.sql),
+ * mais appliqué quand même en défense en profondeur, comme pour le reste
+ * des actions de ce fichier. Ne sélectionne jamais la colonne `answers`
+ * (qui pourrait indirectement laisser deviner les bonnes réponses) : seuls
+ * date, score, total et pourcentage sont exposés.
+ *
+ * Contrairement aux autres fonctions de ce fichier (tracking fire-and-
+ * forget, échec silencieux), celle-ci lève une erreur en cas d'échec de la
+ * requête : l'interface d'historique a besoin de distinguer "aucune
+ * tentative" de "échec du chargement" pour afficher l'état approprié.
+ */
+export async function getQuizAttemptHistory(quizId: string): Promise<QuizAttemptSummary[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("quiz_attempts")
+    .select("id, score, total, completed_at")
+    .eq("quiz_id", quizId)
+    .eq("user_id", user.id)
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Échec du chargement de l'historique : ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => {
+    const score = row.score as number;
+    const total = row.total as number;
+    return {
+      id: row.id as string,
+      completedAt: row.completed_at as string,
+      score,
+      total,
+      percent: total > 0 ? Math.round((score / total) * 100) : 0,
+    };
+  });
+}
+
 export async function recordQuizScore(
   courseId: string,
   score: number,
