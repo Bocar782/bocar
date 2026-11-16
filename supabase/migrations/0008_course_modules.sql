@@ -95,3 +95,61 @@ set module_id = im.id,
 from inserted_modules im
 where cc.course_id = im.course_id
   and cc.module_id is null;
+
+-- Renforce la policy RLS de `course_chapters` (définie à l'origine dans
+-- 0001_courses.sql, dont le fichier n'est pas modifié ici — cette migration
+-- fait évoluer la policy en base, comme toute migration ultérieure le
+-- ferait). Sans ce renfort, une leçon pouvait être rattachée (en INSERT
+-- comme en UPDATE) au module d'une AUTRE formation — y compris celle d'un
+-- autre utilisateur — car la clause `with check`/`using` d'origine ne
+-- vérifiait que la propriété de `course_id`, jamais la cohérence de
+-- `module_id` avec cette formation. La contrainte de clé étrangère sur
+-- `module_id` ne suffit pas à elle seule : Postgres fait toujours passer
+-- les vérifications de clé étrangère au-dessus de la RLS, donc un module_id
+-- existant mais appartenant à une autre formation (ou un autre utilisateur)
+-- était accepté tant que l'utilisateur restait propriétaire de la leçon.
+-- Testé : une leçon sans module (module_id is null) reste valide ; une
+-- leçon dont le module appartient à une AUTRE formation est désormais
+-- rejetée, aussi bien à la création qu'à la modification.
+drop policy if exists "course_chapters_owner_all" on public.course_chapters;
+create policy "course_chapters_owner_all"
+  on public.course_chapters
+  for all
+  using (
+    exists (
+      select 1 from public.courses
+      where courses.id = course_chapters.course_id
+        and courses.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.courses
+      where courses.id = course_chapters.course_id
+        and courses.user_id = auth.uid()
+    )
+    and (
+      module_id is null
+      or exists (
+        select 1 from public.course_modules
+        where course_modules.id = course_chapters.module_id
+          and course_modules.course_id = course_chapters.course_id
+      )
+    )
+  );
+
+-- Empêche les doublons de position, au niveau base de données (et pas
+-- seulement par convention côté application). Placés après le backfill
+-- ci-dessus pour valider l'état final des données existantes : si, par un
+-- bug antérieur à cette migration, une formation avait déjà deux chapitres
+-- partageant la même `position`, la création de l'index échouerait ici
+-- avec une erreur explicite nommant la ligne en conflit, plutôt que de
+-- laisser l'incohérence passer silencieusement — la migration entière est
+-- alors annulée (un seul bloc transactionnel), sans aucune donnée modifiée
+-- ni perdue.
+create unique index if not exists course_modules_course_id_position_uniq
+  on public.course_modules (course_id, position);
+
+create unique index if not exists course_chapters_module_id_position_in_module_uniq
+  on public.course_chapters (module_id, position_in_module)
+  where module_id is not null;
