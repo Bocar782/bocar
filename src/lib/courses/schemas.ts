@@ -18,10 +18,12 @@ export const AnalysisSchema = z.object({
     .describe(
       "true si de vraies entreprises/personnes/événements sont pertinents pour ce sujet, false sinon (ex: notions mathématiques pures)",
     ),
-  chapterCount: z
+  moduleCount: z
     .number()
     .int()
-    .describe("Nombre de chapitres recommandé, entre 4 et 6"),
+    .describe(
+      "Nombre de modules recommandé selon la complexité réelle du sujet, entre 1 et 4 (1 pour un sujet étroit, 4 pour un sujet riche qui justifie une progression en plusieurs étapes)",
+    ),
 });
 export type Analysis = z.infer<typeof AnalysisSchema>;
 
@@ -44,6 +46,13 @@ export const ResearchExtractionSchema = z.object({
 export type ResearchExtraction = z.infer<typeof ResearchExtractionSchema>;
 export type VerifiedExample = ResearchExtraction["examples"][number];
 
+/**
+ * Plan détaillé d'une formation structurée en modules (Prompt 05.9).
+ * Chaque module a son propre titre, son propre objectif pédagogique, et sa
+ * propre liste de leçons — la formation n'est plus un simple fil de
+ * chapitres, mais une hiérarchie modules → leçons, comme la sauvegarde et
+ * l'interface le supportent déjà depuis 0008/05.6/05.7.
+ */
 export const ProgrammeSchema = z.object({
   introduction: z
     .string()
@@ -51,26 +60,39 @@ export const ProgrammeSchema = z.object({
   objectives: z
     .array(z.string())
     .describe("Ce que l'utilisateur saura faire après la formation"),
-  chapters: z.array(
+  modules: z.array(
     z.object({
-      title: z.string(),
-      summary: z
+      title: z.string().describe("Titre précis de ce module"),
+      objective: z
         .string()
-        .describe("Résumé de ce que ce chapitre doit couvrir, pour guider sa rédaction"),
-      exampleIndex: z
-        .number()
-        .int()
-        .nullable()
         .describe(
-          "Index de l'exemple vérifié à utiliser (parmi ceux fournis), ou null si aucun ne convient",
+          "Objectif pédagogique clair de ce module : ce que l'apprenant saura faire précisément après l'avoir terminé",
         ),
+      chapters: z.array(
+        z.object({
+          title: z.string(),
+          summary: z
+            .string()
+            .describe("Résumé de ce que cette leçon doit couvrir, pour guider sa rédaction"),
+          exampleIndex: z
+            .number()
+            .int()
+            .nullable()
+            .describe(
+              "Index de l'exemple vérifié à utiliser (parmi ceux fournis), ou null si aucun ne convient",
+            ),
+        }),
+      ).describe("2 à 4 leçons cohérentes et suffisamment développées pour ce module"),
     }),
+  ).describe(
+    "1 à 4 modules en progression pédagogique logique, sans répétition de contenu entre eux",
   ),
   summaryAngle: z
     .string()
     .describe("Angle à adopter pour le résumé final"),
 });
 export type Programme = z.infer<typeof ProgrammeSchema>;
+export type ProgrammeModule = Programme["modules"][number];
 
 export const ChapterContentSchema = z.object({
   explanation: z
@@ -269,28 +291,20 @@ export type GeneratedModule = {
   title: string;
   chapters: GeneratedChapter[];
   /**
-   * Quiz propre à ce module (`quizzes.kind = 'module'`, voir
-   * 0010_quizzes.sql et 0012_save_generated_course_atomic.sql), chargé
+   * Identifiant réel du quiz de ce module (`quizzes.kind = 'module'`, voir
+   * 0010_quizzes.sql et 0012/0013_save_generated_course...sql), chargé
    * depuis la base par `getCourseById` via `quizzes.module_id` — jamais
-   * déduit par position. `null`/absent si ce module n'a pas (encore) de
-   * quiz, ou pour une formation fraîchement générée pas encore relue
-   * depuis la base.
+   * déduit par position. Absent juste après une génération fraîche (pas
+   * encore sauvegardée/relue), même logique que `GeneratedChapter.id`.
    */
   quizId?: string | null;
-  /** Questions de ce quiz de module, vide si `quizId` est `null`. */
+  /**
+   * Questions de ce quiz de module. Produites directement par le
+   * générateur (Prompt 05.9, une par module réellement généré) ou
+   * rechargées depuis la base par `getCourseById` — vide si ce module n'a
+   * pas de quiz.
+   */
   quiz?: QuizQuestion[];
-};
-
-/**
- * Quiz généré pour UN module (Prompt 05.6), avant sauvegarde. `modulePosition`
- * identifie sans ambiguïté le module concerné au sein de la formation (même
- * valeur que `GeneratedModule.position`/`course_modules.position`) : c'est
- * cette position, et non un index de tableau, que `saveCourse` utilise pour
- * associer ce quiz au bon module réellement créé en base.
- */
-export type GeneratedModuleQuiz = {
-  modulePosition: number;
-  questions: QuizQuestion[];
 };
 
 export type GeneratedCourse = {
@@ -302,24 +316,18 @@ export type GeneratedCourse = {
   objectives: string[];
   chapters: GeneratedChapter[];
   /**
-   * Regroupement par modules, pour la nouvelle architecture pédagogique.
-   * Absent juste après une génération fraîche (le pipeline IA n'est pas
-   * modifié par cette architecture) ; présent dès que la formation est
-   * relue depuis la base via `getCourseById`, une fois sauvegardée.
+   * Regroupement par modules — un ou plusieurs selon la complexité du
+   * sujet (Prompt 05.9). Produit directement par `generateCourse()`
+   * (chapitres ET quiz de chaque module) ; rechargé depuis la base par
+   * `getCourseById` une fois la formation sauvegardée. `chapters`
+   * ci-dessus reste la liste plate faisant autorité pour le chat, la
+   * progression et le verrouillage du plan gratuit — `modules` n'est qu'un
+   * regroupement, jamais une structure parallèle indépendante.
    */
   modules?: GeneratedModule[];
   summary: string;
   keyPoints: string[];
   quiz: QuizQuestion[];
-  /**
-   * Un quiz par module (Prompt 05.6). Absent juste après une génération
-   * fraîche faite par un pipeline qui ne les produit pas encore ; présent
-   * dès que le pipeline de génération les produit, avant toute sauvegarde.
-   * `getCourseById` ne les relit pas encore depuis la base (l'intégration
-   * visuelle en lecture viendra dans un prompt séparé) — ce champ ne sert
-   * donc, pour l'instant, qu'entre la génération et `saveCourse`.
-   */
-  moduleQuizzes?: GeneratedModuleQuiz[];
   /**
    * Identifiant du quiz FINAL (table `quizzes`, `kind = 'final'`), pour
    * démarrer/soumettre une tentative (voir 0011_quiz_attempts.sql). `null`

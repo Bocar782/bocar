@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { GeneratedCourse, GeneratedModule, QuestionType } from "./schemas";
 
-// Le pipeline de génération (generate.ts) produit encore une formation
-// "plate" (une seule liste de chapitres, sans notion de module). À la
-// sauvegarde, on l'organise systématiquement sous un module unique : c'est
-// la même architecture que celle utilisée pour migrer les formations
-// existantes (voir 0008_course_modules.sql), appliquée dès l'écriture pour
-// que toute nouvelle formation ait, elle aussi, un module dès sa création.
+// Filet de sécurité uniquement : `generateCourse()` (Prompt 05.9) peuple
+// toujours `course.modules` (1 à 4 modules réels). Ce module par défaut ne
+// sert que si `course.modules` est absent/vide — même architecture que
+// celle utilisée pour migrer les formations existantes (voir
+// 0008_course_modules.sql), au cas où un appelant fournirait une formation
+// sans aucun module.
 export const DEFAULT_MODULE_TITLE = "Module 1";
 export const DEFAULT_MODULE_POSITION = 0;
 
@@ -36,14 +36,15 @@ type CourseListItem = {
  * est donc structurellement impossible d'associer un module ou un quiz à
  * une autre formation.
  *
- * Le pipeline de génération (generate.ts) produit encore une formation
- * "plate" (une seule liste de chapitres, sans notion de module) : on
- * l'organise ici sous un module unique avant l'appel, comme le faisait déjà
- * l'ancienne version de cette fonction — même architecture que celle
- * utilisée pour migrer les formations existantes (voir
- * 0008_course_modules.sql). Le RPC lui-même accepte une liste de modules
- * (pas seulement un), pour rester correct si la génération produit un jour
- * plusieurs modules sans nécessiter de nouvelle migration.
+ * Le pipeline de génération (generate.ts, Prompt 05.9) produit désormais
+ * une véritable formation à 1-4 modules, chacun avec ses propres leçons et
+ * son propre quiz (`course.modules`) : cette fonction transmet cette
+ * structure réelle telle quelle au RPC, qui accepte nativement une liste
+ * de modules depuis sa création (0012/0013_save_generated_course...sql,
+ * jamais modifiées par ce prompt). Si `course.modules` est absent ou vide
+ * (filet de sécurité, ne devrait plus arriver en pratique), retombe sur un
+ * module unique couvrant tous les chapitres plats — même logique que la
+ * migration des anciennes formations (0008_course_modules.sql).
  *
  * `reservationId` doit être une réservation `generation_reservations`
  * (0007_generation_reservations.sql) de type `course`, encore `pending`,
@@ -65,9 +66,17 @@ export async function saveCourse(
   course: GeneratedCourse,
   reservationId: string,
 ): Promise<string> {
-  const moduleQuiz = course.moduleQuizzes?.find(
-    (mq) => mq.modulePosition === DEFAULT_MODULE_POSITION,
-  );
+  const modules: GeneratedModule[] =
+    course.modules && course.modules.length > 0
+      ? course.modules
+      : [
+          {
+            position: DEFAULT_MODULE_POSITION,
+            title: DEFAULT_MODULE_TITLE,
+            chapters: course.chapters,
+            quiz: [],
+          },
+        ];
 
   const payload = {
     topic: course.topic,
@@ -92,33 +101,35 @@ export async function saveCourse(
       questionType: q.questionType ?? "single_choice",
       explanation: q.explanation,
     })),
-    modules: [
-      {
-        position: DEFAULT_MODULE_POSITION,
-        title: DEFAULT_MODULE_TITLE,
-        chapters: course.chapters.map((chapter) => ({
-          position: chapter.position,
-          title: chapter.title,
-          explanation: chapter.explanation,
-          keyTakeaway: chapter.keyTakeaway,
-          example: {
-            isReal: chapter.example.isReal,
-            description: chapter.example.description,
-            sourceUrl: chapter.example.sourceUrl,
-            sourceTitle: chapter.example.sourceTitle,
-          },
-        })),
-        quiz: (moduleQuiz?.questions ?? []).map((q) => ({
-          position: q.position,
-          question: q.question,
-          choices: q.choices,
-          correctChoiceIndex: q.correctChoiceIndex,
-          correctChoiceIndexes: q.correctChoiceIndexes ?? null,
-          questionType: q.questionType ?? "single_choice",
-          explanation: q.explanation,
-        })),
-      },
-    ],
+    // Chaque module réel (Prompt 05.9), avec ses propres leçons et son
+    // propre quiz — le RPC associe chaque quiz à SON module via la
+    // position dans ce tableau, jamais par devinette : voir
+    // 0012/0013_save_generated_course...sql.
+    modules: modules.map((module) => ({
+      position: module.position,
+      title: module.title,
+      chapters: module.chapters.map((chapter) => ({
+        position: chapter.position,
+        title: chapter.title,
+        explanation: chapter.explanation,
+        keyTakeaway: chapter.keyTakeaway,
+        example: {
+          isReal: chapter.example.isReal,
+          description: chapter.example.description,
+          sourceUrl: chapter.example.sourceUrl,
+          sourceTitle: chapter.example.sourceTitle,
+        },
+      })),
+      quiz: (module.quiz ?? []).map((q) => ({
+        position: q.position,
+        question: q.question,
+        choices: q.choices,
+        correctChoiceIndex: q.correctChoiceIndex,
+        correctChoiceIndexes: q.correctChoiceIndexes ?? null,
+        questionType: q.questionType ?? "single_choice",
+        explanation: q.explanation,
+      })),
+    })),
   };
 
   const { data, error } = await supabase.rpc("save_generated_course", {

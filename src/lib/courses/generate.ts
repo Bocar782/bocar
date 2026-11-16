@@ -16,13 +16,13 @@ import {
   type CourseSummary,
   type GeneratedChapter,
   type GeneratedCourse,
-  type GeneratedModuleQuiz,
+  type GeneratedModule,
   type GenerationStage,
   type Programme,
+  type ProgrammeModule,
   type QuizQuestion,
   type VerifiedExample,
 } from "./schemas";
-import { DEFAULT_MODULE_POSITION, DEFAULT_MODULE_TITLE } from "./persist";
 
 const MODEL = "claude-opus-5-5";
 
@@ -81,14 +81,14 @@ async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis>
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
-    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Choisis un nombre de chapitres entre 4 et 6 selon la richesse du sujet. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
+    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre 1 et 4 selon la richesse réelle du sujet : 1 pour un sujet étroit qui ne justifie pas d'être découpé, jusqu'à 4 pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
     schema: AnalysisSchema,
     maxTokens: 2048,
   });
 
   return {
     ...result,
-    chapterCount: Math.min(6, Math.max(4, Math.round(result.chapterCount))),
+    moduleCount: Math.min(4, Math.max(1, Math.round(result.moduleCount))),
   };
 }
 
@@ -100,7 +100,7 @@ async function searchRealExamples(
 ): Promise<{ findings: string; realSources: { url: string; title: string }[] }> {
   const system =
     "Tu es Tavyra, chargée de trouver des exemples réels et vérifiables (vraies entreprises, personnes, événements, statistiques) pour illustrer une formation. Utilise l'outil de recherche web pour vérifier chaque fait avant de l'avancer. N'affirme jamais qu'un exemple est réel sans l'avoir confirmé par une recherche.";
-  const user = `Sujet de la formation : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}).\n\nTrouve entre ${Math.min(8, analysis.chapterCount + 2)} et 8 exemples réels et vérifiables pertinents pour illustrer différents aspects de ce sujet. Pour chacun : cherche sur le web pour vérifier les faits, puis décris ce que l'exemple illustre et quel aspect du sujet il concerne. Cite explicitement l'URL exacte de ta source pour chaque exemple.`;
+  const user = `Sujet de la formation : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}).\n\nTrouve entre ${Math.min(8, analysis.moduleCount * 2 + 2)} et 8 exemples réels et vérifiables pertinents pour illustrer différents aspects de ce sujet. Pour chacun : cherche sur le web pour vérifier les faits, puis décris ce que l'exemple illustre et quel aspect du sujet il concerne. Cite explicitement l'URL exacte de ta source pour chaque exemple.`;
 
   let messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
   const tools = [
@@ -197,41 +197,90 @@ async function buildProgramme(
 
   return parseStructured(client, {
     system:
-      "Tu es Tavyra. Tu construis le plan détaillé d'une formation : introduction, objectifs pédagogiques et liste de chapitres. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire).",
-    user: `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis le programme avec exactement ${analysis.chapterCount} chapitres, progressifs (chaque chapitre s'appuie sur les précédents).\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex au chapitre le plus pertinent s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`,
+      "Tu es Tavyra. Tu construis le plan détaillé d'une formation structurée en modules : introduction, objectifs pédagogiques, et une liste de modules progressifs, chacun avec un titre précis, un objectif pédagogique clair et plusieurs leçons cohérentes. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire) ; le découpage en modules et en leçons doit refléter la complexité réelle du sujet, jamais un gabarit fixe imposé artificiellement. Chaque module doit apporter des notions distinctes : évite toute répétition de contenu entre modules.",
+    user: `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} module${analysis.moduleCount > 1 ? "s" : ""}, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Pour chaque module : un titre précis, un objectif pédagogique clair (ce que l'apprenant saura faire précisément après ce module), et 2 à 4 leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`,
     schema: ProgrammeSchema,
-    maxTokens: 12000,
+    maxTokens: 14000,
   });
 }
 
 // --- Étape 4 : rédaction des chapitres ---
 
+/** Une leçon planifiée, repérée par sa position globale (0..N-1 sur toute la formation) ET son module d'origine. */
+type FlatChapterPlan = {
+  globalIndex: number;
+  moduleIndex: number;
+  moduleTitle: string;
+  title: string;
+  summary: string;
+  exampleIndex: number | null;
+};
+
+/**
+ * Aplatit le plan modules → leçons en une liste unique, dans l'ordre des
+ * modules : `globalIndex` est la position qui fait autorité partout
+ * ailleurs dans le pipeline (chat, progression, verrouillage du plan
+ * gratuit, quiz final) — exactement le même rôle que `programme.chapters`
+ * avant cette évolution, juste reconstruit à partir de la hiérarchie par
+ * modules plutôt que d'une liste plate produite directement par l'IA.
+ */
+function flattenModulePlans(modules: ProgrammeModule[]): FlatChapterPlan[] {
+  const flat: FlatChapterPlan[] = [];
+  modules.forEach((m, moduleIndex) => {
+    m.chapters.forEach((c) => {
+      flat.push({
+        globalIndex: flat.length,
+        moduleIndex,
+        moduleTitle: m.title,
+        title: c.title,
+        summary: c.summary,
+        exampleIndex: c.exampleIndex,
+      });
+    });
+  });
+  return flat;
+}
+
+/**
+ * Plan complet affiché à chaque leçon pour qu'elle se situe dans la
+ * progression globale — regroupé par module (titre + objectif) plutôt
+ * qu'en liste plate, pour que chaque leçon perçoive la frontière entre
+ * modules et évite de répéter ce qu'un AUTRE module doit couvrir.
+ */
+function buildModuleOutline(modules: ProgrammeModule[], currentGlobalIndex: number): string {
+  let i = 0;
+  const lines: string[] = [];
+  modules.forEach((m, moduleIndex) => {
+    lines.push(`Module ${moduleIndex + 1} — ${m.title} (objectif : ${m.objective})`);
+    for (const c of m.chapters) {
+      const marker = i === currentGlobalIndex ? " ← cette leçon" : "";
+      lines.push(`  ${i + 1}. ${c.title}${marker} — ${c.summary}`);
+      i += 1;
+    }
+  });
+  return lines.join("\n");
+}
+
 async function writeChapter(
   client: Anthropic,
   analysis: Analysis,
-  programme: Programme,
-  chapterIndex: number,
+  modules: ProgrammeModule[],
+  plan: FlatChapterPlan,
   assignedExample: VerifiedExample | null,
 ): Promise<ChapterContent> {
-  const chapterPlan = programme.chapters[chapterIndex];
-  // Les chapitres sont rédigés en parallèle (latence) : chacun reçoit le plan
-  // complet avec un résumé par chapitre pour situer sa place dans la
-  // progression, plutôt que le contenu déjà écrit des précédents.
-  const outline = programme.chapters
-    .map(
-      (c, i) =>
-        `${i + 1}. ${c.title}${i === chapterIndex ? " ← ce chapitre" : ""} — ${c.summary}`,
-    )
-    .join("\n");
+  // Les leçons sont rédigées en parallèle (latence) : chacune reçoit le
+  // plan complet (groupé par module) pour se situer dans la progression,
+  // plutôt que le contenu déjà écrit des précédentes.
+  const outline = buildModuleOutline(modules, plan.globalIndex);
 
   const exampleInstruction = assignedExample
     ? `Utilise CET exemple réel, sans en changer les faits ni la source : "${assignedExample.description}" (source : ${assignedExample.sourceUrl}, "${assignedExample.sourceTitle}"). Mets isReal à true et recopie l'URL exactement.`
-    : "Aucun exemple réel vérifié n'est disponible pour ce chapitre : invente un exemple fictif ou une simulation clairement illustrative, mets isReal à false et laisse sourceUrl/sourceTitle à null. Ne présente jamais cet exemple comme réel.";
+    : "Aucun exemple réel vérifié n'est disponible pour cette leçon : invente un exemple fictif ou une simulation clairement illustrative, mets isReal à false et laisse sourceUrl/sourceTitle à null. Ne présente jamais cet exemple comme réel.";
 
   return parseStructured(client, {
     system:
-      "Tu es Tavyra. Tu rédiges un chapitre complet et pédagogique d'une formation, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
-    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation (pour situer ce chapitre dans la progression globale, sans répéter ce que les autres couvrent) :\n${outline}\n\nRédige le chapitre ${chapterIndex + 1} : "${chapterPlan.title}".\nCe chapitre doit couvrir : ${chapterPlan.summary}\n\n${exampleInstruction}`,
+      "Tu es Tavyra. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, avec une explication progressive, un exemple concret, et un encadré à retenir. N'invente jamais un fait présenté comme réel.",
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\nCette leçon fait partie du module "${plan.moduleTitle}".\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\n\n${exampleInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 20000,
   });
@@ -462,18 +511,20 @@ export async function generateCourse(
   const programme = await buildProgramme(client, analysis, verifiedExamples);
 
   onProgress("chapitres", STAGE_LABELS.chapitres);
-  const totalChapters = programme.chapters.length;
+  const flatPlans = flattenModulePlans(programme.modules);
+  const totalChapters = flatPlans.length;
   let completedChapters = 0;
 
-  // Rédigés en parallèle : chaque chapitre est indépendant (il reçoit le
-  // plan complet pour se situer), ce qui ramène la latence totale de
-  // "N chapitres séquentiels" à "1 chapitre" au lieu de N.
+  // Rédigées en parallèle : chaque leçon est indépendante (elle reçoit le
+  // plan complet, groupé par module, pour se situer), ce qui ramène la
+  // latence totale de "N leçons séquentielles" à "1 leçon" au lieu de N —
+  // quel que soit le nombre de modules.
   const chapters: GeneratedChapter[] = await Promise.all(
-    programme.chapters.map(async (plan, i) => {
+    flatPlans.map(async (plan) => {
       const assignedExample =
         plan.exampleIndex !== null ? verifiedExamples[plan.exampleIndex] ?? null : null;
 
-      const content = await writeChapter(client, analysis, programme, i, assignedExample);
+      const content = await writeChapter(client, analysis, programme.modules, plan, assignedExample);
 
       completedChapters += 1;
       onProgress(
@@ -490,7 +541,7 @@ export async function generateCourse(
       const isReal = content.example.isReal && matchesVerified;
 
       return {
-        position: i,
+        position: plan.globalIndex,
         title: plan.title,
         explanation: content.explanation,
         keyTakeaway: content.keyTakeaway,
@@ -504,38 +555,51 @@ export async function generateCourse(
     }),
   );
 
-  // Résumé et quiz de module sont indépendants l'un de l'autre (tous deux
-  // ne dépendent que des chapitres déjà écrits) : les lancer en parallèle
-  // évite d'ajouter leurs latences l'une à l'autre.
-  //
-  // Le pipeline ne produit encore qu'un seul module couvrant tous les
-  // chapitres (voir le commentaire en tête de persist.ts) : un seul quiz de
-  // module est donc généré ici, sur la même étendue de contenu que ce
-  // module unique (DEFAULT_MODULE_TITLE/DEFAULT_MODULE_POSITION), afin
-  // d'associer sans ambiguïté ce quiz au module que `saveCourse` créera.
-  const [summary, moduleQuizQuestions] = await Promise.all([
+  // Chapitres déjà écrits regroupés par module d'origine (même ordre que
+  // `programme.modules`), calculé une seule fois et réutilisé ci-dessous
+  // pour générer chaque quiz de module puis construire `modules`.
+  const chaptersByModule: GeneratedChapter[][] = programme.modules.map((_, moduleIndex) =>
+    chapters.filter((_, i) => flatPlans[i].moduleIndex === moduleIndex),
+  );
+
+  // Résumé (sur l'ensemble de la formation) et quiz de CHAQUE module sont
+  // tous indépendants les uns des autres (ne dépendent que des chapitres
+  // déjà écrits) : les lancer en parallèle évite d'ajouter leurs latences
+  // les unes aux autres, qu'il y ait 1 ou 4 modules. `writeModuleQuiz`
+  // (inchangée, voir Prompt 05.6) est simplement appelée une fois par
+  // module réel plutôt qu'une seule fois sur l'unique module d'avant —
+  // chaque appel ne reçoit que le contenu de SON module, jamais celui des
+  // autres, exactement comme son fonctionnement l'a toujours garanti.
+  const [summary, moduleQuizResults] = await Promise.all([
     writeSummary(client, analysis, programme, chapters),
-    writeModuleQuiz(client, analysis, DEFAULT_MODULE_TITLE, chapters),
+    Promise.all(
+      programme.modules.map((m, moduleIndex) =>
+        writeModuleQuiz(client, analysis, m.title, chaptersByModule[moduleIndex]),
+      ),
+    ),
   ]);
 
+  const modules: GeneratedModule[] = programme.modules.map((m, moduleIndex) => ({
+    position: moduleIndex,
+    title: m.title,
+    chapters: chaptersByModule[moduleIndex],
+    quiz: moduleQuizResults[moduleIndex],
+  }));
+
   // Le quiz final est généré APRÈS le(s) quiz de module (Prompt 05.8), et
-  // non plus en parallèle : il a besoin de connaître les questions déjà
-  // posées dans ces quiz pour éviter de les reposer. Ce séquencement
-  // ajoute une latence (un aller-retour IA de plus), coût accepté pour
-  // garantir une réelle non-répétition plutôt qu'un simple filtrage a
-  // posteriori sans contexte.
+  // non en parallèle : il a besoin de connaître les questions déjà posées
+  // dans CHACUN d'eux pour éviter de les reposer. Ce séquencement ajoute
+  // une latence (un aller-retour IA de plus), coût accepté pour garantir
+  // une réelle non-répétition plutôt qu'un simple filtrage a posteriori
+  // sans contexte.
+  const allModuleQuestions = moduleQuizResults.flat();
   const quiz = await writeQuiz(
     client,
     analysis,
     programme.objectives,
     chapters,
-    moduleQuizQuestions,
+    allModuleQuestions,
   );
-
-  const moduleQuizzes: GeneratedModuleQuiz[] =
-    moduleQuizQuestions.length > 0
-      ? [{ modulePosition: DEFAULT_MODULE_POSITION, questions: moduleQuizQuestions }]
-      : [];
 
   onProgress("pret", STAGE_LABELS.pret);
 
@@ -547,9 +611,9 @@ export async function generateCourse(
     introduction: programme.introduction,
     objectives: programme.objectives,
     chapters,
+    modules,
     summary: summary.summary,
     keyPoints: summary.keyPoints,
     quiz,
-    moduleQuizzes,
   };
 }
