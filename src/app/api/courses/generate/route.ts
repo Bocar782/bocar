@@ -3,63 +3,79 @@ import { z } from "zod";
 import { createAnthropicClient } from "@/lib/anthropic/client";
 import { createClient } from "@/lib/supabase/server";
 import {
+  assembleCourseFromProgress,
+  buildCoursePlan,
   CourseGenerationError,
-  generateCourse,
-  generateCourseFromPlan,
+  decideNextCourseStep,
+  EMPTY_COURSE_PROGRESS,
+  flattenModulePlans,
+  performCourseStepUnit,
+  stageForCourseUnit,
   validateProgrammeStructure,
+  type CourseStepInput,
+  type CourseStepProgress,
 } from "@/lib/courses/generate";
 import { saveCourse } from "@/lib/courses/persist";
-import {
-  QuotaExceededError,
-  releaseReservation,
-  reserveGenerationSlot,
-} from "@/lib/courses/reservation";
+import { quotaExceededMessage, releaseReservation } from "@/lib/courses/reservation";
 import {
   AnalysisSchema,
   ProgrammeSchema,
   ResearchExtractionSchema,
-  type GenerationStage,
+  STAGE_LABELS,
 } from "@/lib/courses/schemas";
+import {
+  claimGenerationStep,
+  commitGenerationStep,
+  failGenerationStep,
+  startGenerationTask,
+} from "@/lib/generation/engine";
+import { CourseStepInputSchema, CourseStepProgressSchema } from "@/lib/generation/progress-schemas";
 import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
-// Portée à 540s (Prompt 05.9, corrigé) : la génération est maintenant
-// bornée à `MAX_CONCURRENT_AI_CALLS = 4` appels IA simultanés (voir
-// generate.ts), alors qu'une formation peut compter jusqu'à 4 modules × 5
-// leçons = 20 leçons. La phase de rédaction des leçons se fait donc
-// désormais par vagues successives (≈5 vagues dans le pire cas, au lieu
-// d'un seul aller-retour totalement parallèle pour 20 leçons), ce qui
-// allonge la durée totale par rapport à l'ancienne limite de 300s — estimé
-// ici, non mesuré (aucun appel payant réel effectué pour cette correction),
-// en comptant aussi : l'analyse, la recherche/vérification d'exemples, la
-// construction du programme (jusqu'à 2 appels avec la tentative de
-// correction), le résumé + les quiz de module (par vagues de 4 également),
-// puis le quiz final (séquentiel, après les quiz de module). 540s reste
-// cohérent avec le timeout de 120s par appel individuel côté client
-// Anthropic (voir src/lib/anthropic/client.ts) : même avec ses retries,
-// aucun appel ne peut à lui seul dépasser une fraction raisonnable de ce
-// budget. Vercel plafonne silencieusement cette valeur au maximum autorisé
-// par le plan si celui-ci est inférieur, sans erreur.
-export const maxDuration = 540;
+// Prompt 05.20.1 (remplace le streaming NDJSON d'une seule requête pouvant
+// durer plusieurs minutes, risque critique identifié par l'audit
+// 05.19/05.20 face aux limites réelles des fonctions Netlify synchrones) :
+// chaque appel à cette route effectue au plus UNE unité de travail (un
+// seul appel Anthropic dans la quasi-totalité des cas : une leçon, un quiz
+// de module, le résumé, le quiz final, ou la sauvegarde finale) puis
+// répond — largement sous n'importe quelle limite Netlify plausible. 120s
+// reste une marge très confortable, jamais la garantie structurelle de
+// fiabilité elle-même (c'est l'architecture à étapes courtes qui l'assure).
+export const maxDuration = 120;
 
 const MAX_TOPIC_LENGTH = 500;
 
-// Prompt 05.18.1 : un plan déjà construit et éventuellement modifié par
-// l'utilisateur (parcours "diagnostic guidé") — jamais fait confiance sans
-// revalidation : la forme est vérifiée par ces schémas Zod, PUIS la
-// structure (nombre de modules/leçons) par `validateProgrammeStructure`,
-// avant même de réserver un quota. Absent, le parcours "configuration
-// rapide" (comportement inchangé) s'applique.
 const PlanContextSchema = z.object({
   analysis: AnalysisSchema,
   verifiedExamples: ResearchExtractionSchema.shape.examples,
   programme: ProgrammeSchema,
 });
 
-const BodySchema = z.object({
+const StartBodySchema = z.object({
+  action: z.literal("start"),
+  // Générée une seule fois côté client, AVANT le premier appel réseau, et
+  // persistée en sessionStorage avant même d'envoyer la requête (voir
+  // course-generator.tsx) : si cette requête "start" est rejouée (perte
+  // réseau, rechargement survenu avant même d'avoir reçu la réponse) avec
+  // la MÊME clé, start_generation_task renvoie la réservation déjà créée
+  // au lieu d'en créer une seconde — jamais de double consommation de
+  // quota pour une seule intention de génération.
+  idempotencyKey: z.string().min(1).max(200),
   topic: z.string().optional().default(""),
   plan: PlanContextSchema.optional(),
 });
+
+const StepBodySchema = z.object({
+  action: z.literal("step"),
+  reservationId: z.string().uuid(),
+});
+
+const BodySchema = z.discriminatedUnion("action", [StartBodySchema, StepBodySchema]);
+
+function isCourseProgressEmpty(value: unknown): boolean {
+  return typeof value === "object" && value !== null && Object.keys(value).length === 0;
+}
 
 export async function POST(request: Request) {
   const originError = checkRequestOrigin(request);
@@ -79,27 +95,34 @@ export async function POST(request: Request) {
   if (!parsedBody.success) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
+  const body = parsedBody.data;
 
-  const topic = parsedBody.data.topic.trim();
-  const plan = parsedBody.data.plan;
+  if (body.action === "start") {
+    return handleStart(supabase, body);
+  }
+  return handleStep(supabase, body.reservationId);
+}
 
+async function handleStart(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  body: z.infer<typeof StartBodySchema>,
+) {
+  const topic = body.topic.trim();
   if (!topic) {
-    return NextResponse.json(
-      { error: "Le sujet ne peut pas être vide." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Le sujet ne peut pas être vide." }, { status: 400 });
   }
   if (topic.length > MAX_TOPIC_LENGTH) {
     return NextResponse.json({ error: "Sujet trop long." }, { status: 400 });
   }
 
-  // Un plan transmis par le client (diagnostic guidé, potentiellement
-  // modifié à la main) doit respecter EXACTEMENT les mêmes règles
-  // strictes que celui produit automatiquement — vérifié ici AVANT toute
-  // réservation de quota : jamais la peine de consommer une place pour
-  // une structure qu'on sait déjà invalide.
-  if (plan) {
-    const structureErrors = validateProgrammeStructure(plan.programme);
+  let courseInput: CourseStepInput;
+  if (body.plan) {
+    // Plan transmis par le client (diagnostic guidé, potentiellement
+    // modifié à la main) : doit respecter EXACTEMENT les mêmes règles
+    // strictes que celui produit automatiquement — vérifié AVANT toute
+    // réservation de quota, jamais la peine de consommer une place pour
+    // une structure qu'on sait déjà invalide.
+    const structureErrors = validateProgrammeStructure(body.plan.programme);
     if (structureErrors.length > 0) {
       return NextResponse.json(
         {
@@ -109,122 +132,184 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    courseInput = {
+      topic,
+      analysis: body.plan.analysis,
+      verifiedExamples: body.plan.verifiedExamples,
+      programme: body.plan.programme,
+    };
+  } else {
+    // Parcours "configuration rapide" (comportement inchangé) : construit
+    // le plan ici, synchroniquement — déjà court aujourd'hui (voir
+    // /api/courses/plan, maxDuration=120, non remis en cause par cet
+    // audit) et JAMAIS consommateur de quota, exactement comme avant.
+    try {
+      const { analysis, verifiedExamples, programme } = await buildCoursePlan(
+        createAnthropicClient(),
+        topic,
+        {},
+      );
+      courseInput = { topic, analysis, verifiedExamples, programme };
+    } catch (error) {
+      const message =
+        error instanceof CourseGenerationError
+          ? error.message
+          : "Une erreur est survenue pendant la préparation de la formation. Réessaie dans un instant.";
+      if (!(error instanceof CourseGenerationError)) {
+        console.error("Erreur inattendue pendant la construction du plan (configuration rapide) :", error);
+      }
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
   }
 
-  // Réservation atomique de la place de génération, côté base de données
-  // (voir supabase/migrations/0007_generation_reservations.sql) — avant tout
-  // appel à l'API Anthropic. Deux requêtes simultanées pour le même
-  // utilisateur ne peuvent jamais consommer la même dernière place : la
-  // fonction SQL sérialise les appels concurrents via un advisory lock.
-  // Un appel direct à cette route ne peut donc pas contourner la limite.
-  // Jamais atteinte pour le diagnostic/la construction du plan eux-mêmes
-  // (voir /api/courses/plan) : seule cette étape, déclenchée après
-  // validation du plan par l'utilisateur, réserve réellement un quota.
-  let reservationId: string;
+  const parsedInput = CourseStepInputSchema.safeParse(courseInput);
+  if (!parsedInput.success) {
+    console.error("Entrée de génération invalide (incohérence interne) :", parsedInput.error);
+    return NextResponse.json(
+      { error: "Une erreur est survenue. Réessaie dans un instant." },
+      { status: 502 },
+    );
+  }
+
+  let result;
   try {
-    reservationId = await reserveGenerationSlot(supabase, "course");
-  } catch (err) {
-    if (err instanceof QuotaExceededError) {
-      return NextResponse.json({ error: err.message }, { status: 403 });
-    }
-    // Échec de la réservation elle-même (panne transitoire, etc.) : on
-    // refuse plutôt que de laisser passer une génération sans réservation
-    // valide — la fiabilité du quota prime sur la disponibilité ici.
+    result = await startGenerationTask(supabase, "course", body.idempotencyKey, parsedInput.data);
+  } catch {
     return NextResponse.json(
       { error: "Impossible de vérifier ton quota pour le moment. Réessaie dans un instant." },
       { status: 503 },
     );
   }
 
-  const encoder = new TextEncoder();
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: quotaExceededMessage("course", result.isPro, result.limitCount) },
+      { status: 403 },
+    );
+  }
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      function send(payload: Record<string, unknown>) {
-        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
-      }
+  return NextResponse.json({ reservationId: result.reservationId });
+}
 
-      // Prompt 05.18.1 (rechargement pendant une génération) : transmis en
-      // tout premier, avant le moindre appel IA, pour que le client puisse
-      // le persister (sessionStorage) immédiatement — avant même qu'un
-      // rechargement de page ne devienne possible. `getGenerationStatus`
-      // (generation-status.ts) permet ensuite de retrouver l'état exact de
-      // cette réservation après un rechargement, sans jamais prétendre
-      // qu'une génération continue si son état ne peut pas être confirmé.
-      send({ reservationId });
+async function handleStep(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  reservationId: string,
+) {
+  const claimToken = crypto.randomUUID();
+  const claim = await claimGenerationStep(supabase, reservationId, claimToken);
 
-      try {
-        const onProgress = (stage: GenerationStage, label?: string) => {
-          send({ stage, label });
-        };
+  if (!claim.claimed) {
+    if (claim.reason === "not_found") {
+      return NextResponse.json({ error: "Génération introuvable." }, { status: 404 });
+    }
+    if (claim.reason === "already_resolved") {
+      return NextResponse.json({ done: true, alreadyResolved: true });
+    }
+    // "already_in_progress" (une autre invocation travaille activement) ou
+    // toute autre raison inattendue : jamais traité comme une erreur fatale
+    // côté client, qui doit simplement réessayer dans un instant.
+    return NextResponse.json({ done: false, busy: true });
+  }
 
-        const course = plan
-          ? await generateCourseFromPlan(
-              createAnthropicClient(),
-              topic,
-              plan.analysis,
-              plan.verifiedExamples,
-              plan.programme,
-              onProgress,
-            )
-          : await generateCourse(topic, onProgress);
+  const parsedInput = CourseStepInputSchema.safeParse(claim.input);
+  if (!parsedInput.success) {
+    console.error("Progression de génération corrompue (entrée) :", parsedInput.error);
+    await failGenerationStep(supabase, reservationId, claimToken, "input_corrupted");
+    await releaseReservation(supabase, reservationId);
+    return NextResponse.json(
+      { done: true, fatalError: "La génération a été interrompue de façon inattendue. Réessaie." },
+      { status: 200 },
+    );
+  }
 
-        // La formation est générée : on la renvoie même si la sauvegarde
-        // échoue (ex. migration SQL pas encore appliquée côté Supabase),
-        // pour ne pas perdre le travail déjà fait. `saveCourse` transmet
-        // `reservationId` au RPC `save_generated_course`, qui vérifie,
-        // verrouille et marque lui-même cette réservation `completed`
-        // dans la MÊME transaction que l'enregistrement de la formation
-        // (voir 0012_save_generated_course_atomic.sql) : il ne faut donc
-        // PAS appeler `consumeReservation` ici (double consommation). Si la
-        // sauvegarde échoue, la réservation reste `pending` (annulée avec
-        // le reste par cette même transaction) et doit être libérée ici.
-        let courseId: string | null = null;
-        let saveWarning: string | null = null;
-        try {
-          courseId = await saveCourse(supabase, course, reservationId);
-        } catch (saveError) {
-          // Prompt 05.16.1 (correctif E3, audit de sécurité 05.16) :
-          // `saveCourse` (persist.ts) encapsule toujours une erreur
-          // Supabase/Postgres brute dans un `Error` générique — jamais une
-          // erreur métier conçue pour être affichée. Le détail technique
-          // (nom de table/colonne/contrainte...) ne doit donc jamais
-          // atteindre le navigateur : seul un message générique est envoyé
-          // dans `saveWarning`, le détail réel reste uniquement dans les
-          // logs serveur.
-          console.error("Échec de l'enregistrement de la formation :", saveError);
-          saveWarning =
-            "La formation a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.";
-          await releaseReservation(supabase, reservationId);
-        }
+  let progress: CourseStepProgress;
+  if (isCourseProgressEmpty(claim.progress)) {
+    progress = EMPTY_COURSE_PROGRESS;
+  } else {
+    const parsedProgress = CourseStepProgressSchema.safeParse(claim.progress);
+    if (!parsedProgress.success) {
+      console.error("Progression de génération corrompue :", parsedProgress.error);
+      await failGenerationStep(supabase, reservationId, claimToken, "progress_corrupted");
+      await releaseReservation(supabase, reservationId);
+      return NextResponse.json(
+        { done: true, fatalError: "La génération a été interrompue de façon inattendue. Réessaie." },
+        { status: 200 },
+      );
+    }
+    progress = parsedProgress.data;
+  }
 
-        send({ stage: "done", courseId, course, saveWarning });
-      } catch (error) {
-        await releaseReservation(supabase, reservationId);
-        // Prompt 05.16.1 (correctif E3) : seules les erreurs explicitement
-        // conçues pour être affichées (`CourseGenerationError`, levée avec
-        // un message déjà rédigé pour l'utilisateur à chaque point de
-        // `generate.ts`) conservent leur message. Toute autre erreur —
-        // Anthropic, Zod, ou toute erreur inattendue — ne doit jamais
-        // exposer son détail technique au navigateur ; il est uniquement
-        // conservé dans les logs serveur.
-        const message = error instanceof CourseGenerationError
-          ? error.message
-          : "Une erreur est survenue pendant la génération. Réessaie dans un instant.";
-        if (!(error instanceof CourseGenerationError)) {
-          console.error("Erreur inattendue pendant la génération de formation :", error);
-        }
-        send({ stage: "error", message });
-      } finally {
-        controller.close();
-      }
-    },
-  });
+  const input = parsedInput.data;
+  const unit = decideNextCourseStep(input, progress);
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-    },
-  });
+  if (unit.kind === "assemble") {
+    let course;
+    try {
+      course = assembleCourseFromProgress(input, progress);
+    } catch (error) {
+      console.error("Assemblage de la formation impossible :", error);
+      await failGenerationStep(supabase, reservationId, claimToken, "assembly_failed");
+      await releaseReservation(supabase, reservationId);
+      return NextResponse.json(
+        { done: true, fatalError: "La génération a été interrompue de façon inattendue. Réessaie." },
+        { status: 200 },
+      );
+    }
+
+    let courseId: string | null = null;
+    let saveWarning: string | null = null;
+    try {
+      courseId = await saveCourse(supabase, course, reservationId);
+    } catch (saveError) {
+      console.error("Échec de l'enregistrement de la formation :", saveError);
+      saveWarning =
+        "La formation a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.";
+      await releaseReservation(supabase, reservationId);
+    }
+
+    await commitGenerationStep(supabase, reservationId, claimToken, { stage: "pret" });
+    return NextResponse.json({ done: true, courseId, course, saveWarning });
+  }
+
+  try {
+    const patch = await performCourseStepUnit(createAnthropicClient(), input, progress, unit);
+    const stage = stageForCourseUnit(unit);
+    const commitResult = await commitGenerationStep(supabase, reservationId, claimToken, {
+      ...patch,
+      stage,
+    });
+
+    if (!commitResult.ok) {
+      // La réclamation a expiré entre-temps (une autre invocation a repris
+      // la main) : jamais appliquer un résultat devenu obsolète par-dessus
+      // un travail plus récent. Le client doit simplement réessayer.
+      return NextResponse.json({ done: false, busy: true });
+    }
+
+    let label: string = STAGE_LABELS[stage];
+    if (unit.kind === "chapter") {
+      const total = flattenModulePlans(input.programme.modules).length;
+      const doneCount = Object.keys(patch.chapters ?? progress.chapters).length;
+      label = `${STAGE_LABELS[stage]} (${doneCount}/${total})`;
+    }
+
+    return NextResponse.json({ done: false, stage, label });
+  } catch (error) {
+    if (error instanceof CourseGenerationError) {
+      // Erreur métier/structurelle : jamais transitoire, ne vaut pas la
+      // peine de réessayer la même unité. On libère immédiatement le
+      // quota plutôt que de laisser l'utilisateur attendre 15 minutes.
+      await failGenerationStep(supabase, reservationId, claimToken, error.message);
+      await releaseReservation(supabase, reservationId);
+      return NextResponse.json({ done: true, fatalError: error.message });
+    }
+
+    // Toute autre erreur (réseau, panne transitoire de l'API Anthropic...) :
+    // jamais exposée telle quelle au navigateur, et jamais fatale ici — le
+    // client réessaiera la MÊME unité de travail (decideNextCourseStep ne
+    // dépend que de ce qui est déjà committé, jamais de ce qui a échoué).
+    console.error("Erreur transitoire pendant une étape de génération de formation :", error);
+    await failGenerationStep(supabase, reservationId, claimToken, "transient_error");
+    return NextResponse.json({ done: false, transientError: true });
+  }
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getGenerationProgressSummary } from "@/lib/generation/engine";
 import type { ReservationKind } from "./reservation";
 
 export type GenerationStatus = {
@@ -19,6 +20,14 @@ export type GenerationStatus = {
   status: "pending" | "completed" | "released" | "not_found" | "unknown";
   resourceId: string | null;
   createdAt: string | null;
+  /**
+   * Étape actuelle de l'architecture à étapes courtes (Prompt 05.20.1),
+   * ex. "chapitres", "redaction" — `null` si indisponible (jamais une
+   * raison de bloquer l'affichage : seulement une information en plus
+   * pour un message de reprise plus précis que "toujours en cours").
+   */
+  stage: string | null;
+  lastError: string | null;
 };
 
 /**
@@ -56,7 +65,7 @@ export async function getGenerationStatus(
     if (!user) {
       // Pas (ou plus) authentifié : on ne sait littéralement rien de cette
       // réservation, jamais "elle n'existe pas".
-      return { status: "unknown", resourceId: null, createdAt: null };
+      return { status: "unknown", resourceId: null, createdAt: null, stage: null, lastError: null };
     }
 
     const { data, error } = await supabase
@@ -68,23 +77,39 @@ export async function getGenerationStatus(
       .maybeSingle();
 
     if (error) {
-      return { status: "unknown", resourceId: null, createdAt: null };
+      return { status: "unknown", resourceId: null, createdAt: null, stage: null, lastError: null };
     }
     if (!data) {
-      return { status: "not_found", resourceId: null, createdAt: null };
+      return { status: "not_found", resourceId: null, createdAt: null, stage: null, lastError: null };
     }
 
     const status = data.status as string;
     if (status !== "pending" && status !== "completed" && status !== "released") {
-      return { status: "unknown", resourceId: null, createdAt: null };
+      return { status: "unknown", resourceId: null, createdAt: null, stage: null, lastError: null };
+    }
+
+    // Résumé de progression (Prompt 05.20.1) : purement informatif, jamais
+    // nécessaire pour déterminer `status` ci-dessus — un échec de cette
+    // lecture annexe ne doit jamais faire basculer un statut par ailleurs
+    // confirmé vers "unknown".
+    let stage: string | null = null;
+    let lastError: string | null = null;
+    if (status === "pending") {
+      const summary = await getGenerationProgressSummary(supabase, reservationId).catch(() => null);
+      if (summary?.found) {
+        stage = summary.stage;
+        lastError = summary.lastError;
+      }
     }
 
     return {
       status,
       resourceId: (data.resource_id as string | null) ?? null,
       createdAt: (data.created_at as string | null) ?? null,
+      stage,
+      lastError,
     };
   } catch {
-    return { status: "unknown", resourceId: null, createdAt: null };
+    return { status: "unknown", resourceId: null, createdAt: null, stage: null, lastError: null };
   }
 }

@@ -15,41 +15,35 @@ const STAGE_ORDER: DeepAnalysisStage[] = [
   "recherche",
   "redaction",
   "synthese",
+  "assemblage",
   "pret",
 ];
 
+// Prompt 05.20.1 (suite de l'audit 05.19/05.20, risque critique sur
+// Netlify) : même architecture à étapes courtes que CourseGenerator — voir
+// ce fichier pour le détail des commentaires. L'analyse approfondie
+// bénéficie exactement du même mécanisme, jamais d'un niveau de fiabilité
+// différent.
 type Status = "idle" | "generating" | "done" | "error";
 
-type StreamEvent = {
-  reservationId?: string;
-  stage?: DeepAnalysisStage | "done" | "error";
-  label?: string;
-  analysis?: GeneratedDeepAnalysis;
-  analysisId?: string | null;
-  message?: string;
-  saveWarning?: string | null;
-};
-
 const MAX_LENGTH = 500;
-// Prompt 05.19/05.20 (reprise après rechargement, même correction qu'en
-// 05.18.1 pour la génération de formation) : clé dédiée, jamais partagée
-// avec "tavyra:course-generation" — une analyse en cours ne doit jamais
-// être confondue avec une formation en cours.
 const SESSION_STORAGE_KEY = "tavyra:analysis-generation";
-// Un peu au-delà de maxDuration=300s côté serveur (route.ts) : passé ce
-// délai sans confirmation, on ne prétend plus que la génération est
-// "toujours en cours".
-const MAX_PLAUSIBLE_GENERATION_MS = 360_000;
-const STATUS_POLL_INTERVAL_MS = 5000;
+const MAX_TRANSIENT_RETRIES = 6;
+const BUSY_RETRY_DELAY_MS = 1500;
 
-type StoredGeneration = { reservationId: string; topic: string; startedAt: number };
+type StoredGeneration = {
+  idempotencyKey: string;
+  reservationId: string | null;
+  topic: string;
+  startedAt: number;
+};
 
 function loadStoredGeneration(): StoredGeneration | null {
   try {
     const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredGeneration;
-    if (!parsed.reservationId || !parsed.topic || !parsed.startedAt) return null;
+    if (!parsed.idempotencyKey || !parsed.topic || !parsed.startedAt) return null;
     return parsed;
   } catch {
     return null;
@@ -67,6 +61,25 @@ function storeGeneration(value: StoredGeneration | null) {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type StartResponse = { reservationId?: string; error?: string };
+type StepResponse = {
+  done?: boolean;
+  busy?: boolean;
+  transientError?: boolean;
+  alreadyResolved?: boolean;
+  fatalError?: string;
+  stage?: DeepAnalysisStage;
+  label?: string;
+  analysisId?: string | null;
+  analysis?: GeneratedDeepAnalysis;
+  saveWarning?: string | null;
+  error?: string;
+};
+
 export function AnalysisGenerator({
   remainingGenerations,
   isPro,
@@ -75,10 +88,6 @@ export function AnalysisGenerator({
   isPro: boolean;
 }) {
   const router = useRouter();
-  // Prompt 05.19/05.20 : état initial calculé à partir d'une éventuelle
-  // génération déjà en cours — jamais défini via un `setState` synchrone
-  // dans un effet (voir l'effet ci-dessous, qui ne fait que RELIRE l'état
-  // côté serveur de façon asynchrone).
   const [topic, setTopic] = useState(() => loadStoredGeneration()?.topic ?? "");
   const [status, setStatus] = useState<Status>(() => (loadStoredGeneration() ? "generating" : "idle"));
   const [stage, setStage] = useState<DeepAnalysisStage>("cadrage");
@@ -86,17 +95,10 @@ export function AnalysisGenerator({
   const [error, setError] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [resumeNotice, setResumeNotice] = useState<string | null>(() =>
-    loadStoredGeneration() ? "Vérification de l'état de ton analyse en cours…" : null,
+    loadStoredGeneration() ? "Reprise de ton analyse en cours…" : null,
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const reservationRef = useRef<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Protection contre les doubles soumissions (même raisonnement qu'en
-  // 05.18.1 pour CourseGenerator) : vérifié ET positionné de façon
-  // SYNCHRONE, indépendamment du cycle de rendu React — un simple test sur
-  // `status` pourrait laisser passer un second appel si React regroupe
-  // plusieurs mises à jour d'état avant de redessiner.
   const isGeneratingRef = useRef(false);
 
   function resizeTextarea() {
@@ -106,79 +108,151 @@ export function AnalysisGenerator({
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }
 
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }
-
-  // Reprise après rechargement : au montage, si une génération a été
-  // lancée avant un rechargement de page (marqueur laissé en
-  // sessionStorage), on ne redémarre JAMAIS une nouvelle génération ni une
-  // nouvelle réservation — on va seulement RELIRE l'état réel de celle déjà
-  // en cours côté serveur.
+  // Reprise après rechargement (Prompt 05.20.1) : reprend directement la
+  // boucle d'étapes courtes là où elle s'est arrêtée (progression déjà
+  // persistée côté Supabase, jamais perdue), au lieu de simplement
+  // surveiller un travail qui continuerait en arrière-plan — il n'y en a
+  // plus. Si "start" n'avait pas encore reçu de réponse au moment du
+  // rechargement, il est rejoué avec la MÊME clé d'idempotence.
   useEffect(() => {
     const loaded = loadStoredGeneration();
     if (!loaded) return;
-    const stored = loaded;
-    reservationRef.current = stored.reservationId;
 
-    async function checkOnce() {
-      const result = await getGenerationStatus(stored.reservationId, "analysis");
-
-      if (result.status === "completed") {
-        stopPolling();
-        storeGeneration(null);
-        if (result.resourceId) {
-          router.push(`/dashboard/analyses/${result.resourceId}`);
-        } else {
-          setResumeNotice(null);
-          setStatus("done");
+    (async () => {
+      let reservationId = loaded.reservationId;
+      if (!reservationId) {
+        try {
+          const response = await fetch("/api/analysis/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "start", idempotencyKey: loaded.idempotencyKey, topic: loaded.topic }),
+          });
+          const payload = (await response.json().catch(() => null)) as StartResponse | null;
+          if (!response.ok || !payload?.reservationId) {
+            storeGeneration(null);
+            setResumeNotice(null);
+            setError(payload?.error ?? "L'analyse précédente n'a pas pu être reprise. Réessaie.");
+            setStatus("error");
+            return;
+          }
+          reservationId = payload.reservationId;
+          storeGeneration({ ...loaded, reservationId });
+        } catch {
+          setResumeNotice(
+            "Impossible de confirmer l'état de ton analyse pour le moment (connexion instable). Recharge la page pour réessayer.",
+          );
+          return;
         }
-        return;
       }
-
-      if (result.status === "released" || result.status === "not_found") {
-        stopPolling();
-        storeGeneration(null);
-        setResumeNotice(null);
-        setError(
-          "L'analyse précédente s'est arrêtée (ou a expiré) avant la fin. Réessaie.",
-        );
-        setStatus("error");
-        return;
-      }
-
-      if (result.status === "unknown") {
-        // Jamais affirmer qu'elle continue si on ne peut pas le confirmer.
-        setResumeNotice(
-          "Impossible de confirmer l'état de ton analyse pour le moment (connexion instable). Nouvelle tentative dans quelques secondes…",
-        );
-        return;
-      }
-
-      // status === "pending" : réellement toujours en cours, confirmé.
-      const elapsed = Date.now() - stored.startedAt;
-      if (elapsed > MAX_PLAUSIBLE_GENERATION_MS) {
-        stopPolling();
-        storeGeneration(null);
-        setResumeNotice(null);
-        setError(
-          "Nous ne parvenons plus à confirmer l'état de cette analyse après un délai inhabituel. Réessaie — ton quota n'a pas été consommé si elle n'a pas abouti.",
-        );
-        setStatus("error");
-        return;
-      }
-      setResumeNotice("Ton analyse précédente est toujours en cours…");
-    }
-
-    checkOnce();
-    pollRef.current = setInterval(checkOnce, STATUS_POLL_INTERVAL_MS);
-    return () => stopPolling();
+      setTopic(loaded.topic);
+      setResumeNotice(null);
+      await runStepLoop(reservationId);
+    })();
     // Volontairement une seule fois au montage.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function runStepLoop(reservationId: string) {
+    let consecutiveFailures = 0;
+
+    while (true) {
+      let response: Response;
+      try {
+        response = await fetch("/api/analysis/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "step", reservationId }),
+        });
+      } catch {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError(
+            "Impossible de contacter le serveur pour continuer l'analyse. Elle reste en cours et n'a rien perdu : recharge la page pour réessayer.",
+          );
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as StepResponse | null;
+        storeGeneration(null);
+        setError(payload?.error ?? "Une erreur est survenue.");
+        setStatus("error");
+        isGeneratingRef.current = false;
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as StepResponse | null;
+      if (!payload) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError("Une erreur est survenue. L'analyse reste reprenable : recharge la page pour réessayer.");
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      if (payload.busy) {
+        await sleep(BUSY_RETRY_DELAY_MS);
+        continue;
+      }
+
+      if (payload.transientError) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError(
+            "L'analyse rencontre des difficultés techniques persistantes. Ton quota n'a pas été consommé davantage et rien n'est perdu : recharge la page pour réessayer.",
+          );
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      consecutiveFailures = 0;
+
+      if (payload.done) {
+        storeGeneration(null);
+        isGeneratingRef.current = false;
+
+        if (payload.alreadyResolved) {
+          const result = await getGenerationStatus(reservationId, "analysis");
+          if (result.status === "completed" && result.resourceId) {
+            router.push(`/dashboard/analyses/${result.resourceId}`);
+          } else if (result.status === "completed") {
+            setStatus("done");
+          } else {
+            setError("Cette analyse s'est arrêtée (ou a expiré) avant la fin. Réessaie.");
+            setStatus("error");
+          }
+          return;
+        }
+
+        if (payload.fatalError) {
+          setError(payload.fatalError);
+          setStatus("error");
+          return;
+        }
+
+        setAnalysis(payload.analysis ?? null);
+        setSaveWarning(payload.saveWarning ?? null);
+        setStatus("done");
+        router.refresh();
+        return;
+      }
+
+      if (payload.stage) setStage(payload.stage);
+    }
+  }
 
   async function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
@@ -192,64 +266,26 @@ export function AnalysisGenerator({
     setError(null);
     setAnalysis(null);
 
+    const idempotencyKey = crypto.randomUUID();
+    storeGeneration({ idempotencyKey, reservationId: null, topic: trimmed, startedAt: Date.now() });
+
     try {
       const response = await fetch("/api/analysis/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: trimmed }),
+        body: JSON.stringify({ action: "start", idempotencyKey, topic: trimmed }),
       });
-
-      if (!response.ok || !response.body) {
-        const payload = await response.json().catch(() => null);
+      const payload = (await response.json().catch(() => null)) as StartResponse | null;
+      if (!response.ok || !payload?.reservationId) {
         throw new Error(payload?.error ?? "Impossible de lancer l'analyse.");
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex = buffer.indexOf("\n");
-        while (newlineIndex >= 0) {
-          const line = buffer.slice(0, newlineIndex).trim();
-          buffer = buffer.slice(newlineIndex + 1);
-          newlineIndex = buffer.indexOf("\n");
-          if (!line) continue;
-
-          const parsed = JSON.parse(line) as StreamEvent;
-
-          if (parsed.reservationId) {
-            // Persisté AVANT tout autre traitement : si la page est
-            // rechargée à n'importe quel instant après cette ligne, elle
-            // pourra toujours retrouver cette génération (voir l'effet de
-            // reprise ci-dessus).
-            reservationRef.current = parsed.reservationId;
-            storeGeneration({ reservationId: parsed.reservationId, topic: trimmed, startedAt: Date.now() });
-            continue;
-          }
-          if (parsed.stage === "error") {
-            throw new Error(parsed.message ?? "L'analyse a échoué.");
-          }
-          if (parsed.stage === "done" && parsed.analysis) {
-            storeGeneration(null);
-            setAnalysis(parsed.analysis);
-            setSaveWarning(parsed.saveWarning ?? null);
-            setStatus("done");
-            router.refresh();
-            continue;
-          }
-          setStage(parsed.stage as DeepAnalysisStage);
-        }
-      }
+      storeGeneration({ idempotencyKey, reservationId: payload.reservationId, topic: trimmed, startedAt: Date.now() });
+      await runStepLoop(payload.reservationId);
     } catch (err) {
       storeGeneration(null);
       setError(err instanceof Error ? err.message : "Une erreur est survenue.");
       setStatus("error");
-    } finally {
       isGeneratingRef.current = false;
     }
   }

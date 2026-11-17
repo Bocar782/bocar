@@ -1,27 +1,22 @@
-// Vrais tests automatisés (Prompt 05.9, dernières sécurisations ; étendus
-// en 05.18.1 pour le parcours "plan validé") : importent et exécutent le
-// VRAI handler POST de route.ts (pas une copie de son flux try/catch) ainsi
-// que le vrai src/lib/courses/persist.ts et src/lib/courses/reservation.ts
-// qu'il appelle en interne. Seules les frontières externes (client
-// Supabase, generateCourse/generateCourseFromPlan) sont mockées. Aucun
-// appel réel à Anthropic ni à Supabase. `validateProgrammeStructure` est la
-// VRAIE fonction (pure, sans IA ni réseau) : on veut vérifier son vrai
-// comportement de rejet avant réservation, pas une version simulée.
+// Vrais tests automatisés (Prompt 05.20.1, architecture à étapes courtes) :
+// importent et exécutent le VRAI handler POST de route.ts. Seules les
+// frontières externes (client Supabase, client Anthropic, les fonctions
+// de generate.ts) sont mockées. Aucun appel réel à Anthropic ni à
+// Supabase. `validateProgrammeStructure`/`decideNextCourseStep`/
+// `flattenModulePlans` sont les VRAIES fonctions (pures, sans IA ni
+// réseau) : on veut vérifier leur vrai comportement.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Analysis, GeneratedCourse, Programme, VerifiedExample } from "@/lib/courses/schemas";
+import type { Analysis, Programme, VerifiedExample } from "@/lib/courses/schemas";
 
-const mockGenerateCourse = vi.fn();
-const mockGenerateCourseFromPlan = vi.fn();
+const mockBuildCoursePlan = vi.fn();
+const mockPerformCourseStepUnit = vi.fn();
 
 vi.mock("@/lib/courses/generate", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/courses/generate")>(
-    "@/lib/courses/generate",
-  );
+  const actual = await vi.importActual<typeof import("@/lib/courses/generate")>("@/lib/courses/generate");
   return {
-    generateCourse: (...args: unknown[]) => mockGenerateCourse(...args),
-    generateCourseFromPlan: (...args: unknown[]) => mockGenerateCourseFromPlan(...args),
-    validateProgrammeStructure: actual.validateProgrammeStructure,
-    CourseGenerationError: class CourseGenerationError extends Error {},
+    ...actual,
+    buildCoursePlan: (...args: unknown[]) => mockBuildCoursePlan(...args),
+    performCourseStepUnit: (...args: unknown[]) => mockPerformCourseStepUnit(...args),
   };
 });
 
@@ -30,38 +25,91 @@ vi.mock("@/lib/anthropic/client", () => ({
   createAnthropicClient: () => mockCreateAnthropicClient(),
 }));
 
-type RpcCall = { fnName: string; args: unknown };
+const mockSaveCourse = vi.fn();
+vi.mock("@/lib/courses/persist", () => ({
+  saveCourse: (...args: unknown[]) => mockSaveCourse(...args),
+}));
 
-// Type large volontairement : les différents tests font répondre `rpc()`
-// avec des formes différentes selon le scénario (succès, échec de
-// sauvegarde...), toujours l'une de ces deux formes réellement utilisées
-// par le vrai code (voir reservation.ts/persist.ts).
-type RpcMockResult =
-  | { single: () => Promise<{ data: unknown; error: Error | null }> }
-  | Promise<{ data: unknown; error: Error | null }>;
+type RpcCall = { fnName: string; args: unknown };
 
 function makeSupabaseMock() {
   const rpcCalls: RpcCall[] = [];
-  const rpc = vi.fn((fnName: string, args: unknown): RpcMockResult => {
+  const state = {
+    reservations: new Map<string, { status: string; input: unknown; progress: unknown; claimedStep: string | null }>(),
+    byIdemKey: new Map<string, string>(),
+    nextId: 1,
+  };
+
+  const rpc = vi.fn((fnName: string, args: Record<string, unknown>) => {
     rpcCalls.push({ fnName, args });
-    if (fnName === "reserve_generation_slot") {
+
+    if (fnName === "start_generation_task") {
+      const key = `${args.p_kind}:${args.p_idempotency_key}`;
+      const existing = state.byIdemKey.get(key);
+      if (existing) {
+        return {
+          single: async () => ({
+            data: { reservation_id: existing, already_existed: true, ok: true, is_pro: null, limit_count: null, used_count: null },
+            error: null,
+          }),
+        };
+      }
+      const id = `00000000-0000-4000-8000-${String(state.nextId++).padStart(12, "0")}`;
+      state.byIdemKey.set(key, id);
+      state.reservations.set(id, { status: "pending", input: args.p_input, progress: {}, claimedStep: null });
       return {
         single: async () => ({
-          data: { ok: true, reservation_id: "res-1", is_pro: false, limit_count: 1, used_count: 1 },
+          data: { reservation_id: id, already_existed: false, ok: true, is_pro: false, limit_count: 1, used_count: 1 },
           error: null,
         }),
       };
     }
-    if (fnName === "save_generated_course") {
-      return Promise.resolve({ data: "course-id", error: null });
+
+    if (fnName === "claim_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (!row) {
+        return { single: async () => ({ data: { claimed: false, reason: "not_found", input: null, progress: null, reservation_status: null }, error: null }) };
+      }
+      if (row.status !== "pending") {
+        return { single: async () => ({ data: { claimed: false, reason: "already_resolved", input: row.input, progress: row.progress, reservation_status: row.status }, error: null }) };
+      }
+      if (row.claimedStep) {
+        return { single: async () => ({ data: { claimed: false, reason: "already_in_progress", input: null, progress: null, reservation_status: row.status }, error: null }) };
+      }
+      row.claimedStep = args.p_claim_token as string;
+      return { single: async () => ({ data: { claimed: true, reason: null, input: row.input, progress: row.progress, reservation_status: row.status }, error: null }) };
     }
-    // resolve_generation_slot (consommation/libération)
-    return Promise.resolve({ data: true, error: null });
+
+    if (fnName === "commit_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (!row || row.claimedStep !== args.p_claim_token) {
+        return { single: async () => ({ data: { ok: false, reason: row ? "claim_expired" : "not_found" }, error: null }) };
+      }
+      row.progress = { ...(row.progress as object), ...(args.p_progress_patch as object) };
+      row.claimedStep = null;
+      return { single: async () => ({ data: { ok: true, reason: null }, error: null }) };
+    }
+
+    if (fnName === "fail_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (row) row.claimedStep = null;
+      return { single: async () => ({ data: { ok: true, reason: null }, error: null }) };
+    }
+
+    if (fnName === "resolve_generation_slot") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (row) row.status = args.p_status as string;
+      return Promise.resolve({ data: true, error: null });
+    }
+
+    return Promise.resolve({ data: null, error: null });
   });
+
   return {
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
     rpc,
     rpcCalls,
+    state,
   };
 }
 
@@ -73,48 +121,13 @@ vi.mock("@/lib/supabase/server", () => ({
 
 beforeEach(() => {
   currentSupabaseMock = makeSupabaseMock();
-  mockGenerateCourse.mockReset();
-  mockGenerateCourseFromPlan.mockReset();
+  mockBuildCoursePlan.mockReset();
+  mockPerformCourseStepUnit.mockReset();
+  mockSaveCourse.mockReset();
   mockCreateAnthropicClient.mockClear();
 });
 
-const FAKE_COURSE: GeneratedCourse = {
-  topic: "Sujet",
-  title: "Formation test",
-  domain: "Test",
-  level: "débutant",
-  introduction: "Intro",
-  objectives: ["Obj"],
-  chapters: [],
-  modules: [],
-  summary: "Résumé",
-  keyPoints: ["Point"],
-  quiz: [],
-};
-
-async function callRoute(origin?: string, body?: Record<string, unknown>) {
-  const { POST } = await import("@/app/api/courses/generate/route");
-  const response = await POST(
-    new Request("http://localhost/api/courses/generate", {
-      method: "POST",
-      headers: origin ? { origin } : undefined,
-      body: JSON.stringify(body ?? { topic: "Un sujet de test" }),
-    }),
-  );
-  if (response.status !== 200) {
-    const json = await response.json().catch(() => null);
-    return { response, lines: [], json };
-  }
-  const text = await response.text();
-  const lines = text
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
-  return { response, lines, json: null as Record<string, unknown> | null };
-}
-
-const FAKE_ANALYSIS: Analysis = {
+const ANALYSIS: Analysis = {
   title: "Formation test",
   domain: "Test",
   level: "débutant",
@@ -122,260 +135,261 @@ const FAKE_ANALYSIS: Analysis = {
   usesRealWorldExamples: false,
   moduleCount: 2,
 };
-
-const FAKE_VERIFIED_EXAMPLES: VerifiedExample[] = [];
-
-const VALID_PROGRAMME: Programme = {
+const VERIFIED_EXAMPLES: VerifiedExample[] = [];
+const PROGRAMME: Programme = {
   introduction: "Introduction",
   objectives: ["Objectif"],
   summaryAngle: "Angle",
   modules: [
-    {
-      title: "Module 1",
-      objective: "Objectif module 1",
-      chapters: [
-        { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
-        { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
-        { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
-      ],
-    },
-    {
-      title: "Module 2",
-      objective: "Objectif module 2",
-      chapters: [
-        { title: "Leçon 4", summary: "Résumé 4", exampleIndex: null },
-        { title: "Leçon 5", summary: "Résumé 5", exampleIndex: null },
-        { title: "Leçon 6", summary: "Résumé 6", exampleIndex: null },
-      ],
-    },
+    { title: "Module 1", objective: "Objectif 1", chapters: [
+      { title: "L1", summary: "S1", exampleIndex: null },
+      { title: "L2", summary: "S2", exampleIndex: null },
+      { title: "L3", summary: "S3", exampleIndex: null },
+    ] },
+    { title: "Module 2", objective: "Objectif 2", chapters: [
+      { title: "L4", summary: "S4", exampleIndex: null },
+      { title: "L5", summary: "S5", exampleIndex: null },
+      { title: "L6", summary: "S6", exampleIndex: null },
+    ] },
   ],
 };
-
-// Structure invalide : un seul module (le minimum réel est 2, voir
-// MIN_MODULE_COUNT dans generate.ts) — doit être rejetée par
-// validateProgrammeStructure() avant toute réservation de quota.
 const INVALID_PROGRAMME: Programme = {
   introduction: "Introduction",
   objectives: ["Objectif"],
   summaryAngle: "Angle",
-  modules: [
-    {
-      title: "Module 1",
-      objective: "Objectif module 1",
-      chapters: [
-        { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
-        { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
-        { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
-      ],
-    },
-  ],
+  modules: [{ title: "Module 1", objective: "Objectif 1", chapters: [
+    { title: "L1", summary: "S1", exampleIndex: null },
+    { title: "L2", summary: "S2", exampleIndex: null },
+    { title: "L3", summary: "S3", exampleIndex: null },
+  ] }],
 };
 
-describe("POST /api/courses/generate (vrai route.ts + vraie vérification d'origine)", () => {
-  it("renvoie 403 pour une origine externe non autorisée, avant toute génération", async () => {
-    const { response } = await callRoute("https://evil.example");
+async function callRoute(body: Record<string, unknown>, origin?: string) {
+  const { POST } = await import("@/app/api/courses/generate/route");
+  const response = await POST(
+    new Request("http://localhost/api/courses/generate", {
+      method: "POST",
+      headers: origin ? { origin, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+  const json = await response.json().catch(() => null);
+  return { response, json };
+}
 
+describe("POST /api/courses/generate — vérification d'origine", () => {
+  it("renvoie 403 pour une origine externe non autorisée, avant toute action", async () => {
+    const { response } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" }, "https://evil.example");
     expect(response.status).toBe(403);
-    expect(mockGenerateCourse).not.toHaveBeenCalled();
-  });
-
-  it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
-    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
-
-    const { response } = await callRoute(undefined);
-
-    expect(response.status).toBe(200);
   });
 });
 
-describe("POST /api/courses/generate (vrai route.ts + vrai persist.ts/reservation.ts)", () => {
-  it("n'enregistre jamais la formation et libère la réservation quand generateCourse() échoue", async () => {
-    mockGenerateCourse.mockRejectedValue(new Error("échec simulé de génération"));
+describe("POST /api/courses/generate — action 'start'", () => {
+  it("rejette un plan dont la structure est invalide, AVANT toute réservation de quota", async () => {
+    const { response, json } = await callRoute({
+      action: "start",
+      idempotencyKey: "k1",
+      topic: "Sujet",
+      plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: INVALID_PROGRAMME },
+    });
 
-    const { lines } = await callRoute();
+    expect(response.status).toBe(400);
+    expect(json.error).toMatch(/structure/i);
+    const startCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "start_generation_task");
+    expect(startCalls).toHaveLength(0);
+  });
 
-    expect(lines.some((l) => l.stage === "error" && typeof l.message === "string" && (l.message as string).length > 0)).toBe(
-      true,
-    );
+  it("réserve un quota et renvoie reservationId pour un plan valide (parcours diagnostic guidé)", async () => {
+    const { response, json } = await callRoute({
+      action: "start",
+      idempotencyKey: "k1",
+      topic: "Sujet",
+      plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME },
+    });
 
-    const saveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "save_generated_course");
-    expect(saveCalls).toHaveLength(0);
+    expect(response.status).toBe(200);
+    expect(json.reservationId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(mockBuildCoursePlan).not.toHaveBeenCalled();
+  });
 
-    const releaseCalls = currentSupabaseMock.rpcCalls.filter(
-      (c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released",
-    );
+  it("construit le plan côté serveur pour le parcours 'configuration rapide' (sans plan)", async () => {
+    mockBuildCoursePlan.mockResolvedValue({ analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME });
+
+    const { response, json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+
+    expect(response.status).toBe(200);
+    expect(json.reservationId).toBeDefined();
+    expect(mockBuildCoursePlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejouer 'start' avec la MÊME clé d'idempotence renvoie la même réservation, sans consommer un second quota", async () => {
+    const body = { action: "start", idempotencyKey: "same-key", topic: "Sujet", plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME } };
+
+    const first = await callRoute(body);
+    const second = await callRoute(body);
+
+    expect(first.json.reservationId).toBe(second.json.reservationId);
+    const startCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "start_generation_task");
+    expect(startCalls).toHaveLength(2); // deux appels HTTP, mais une seule vraie réservation (vérifié ci-dessus).
+  });
+
+  it("renvoie 403 avec le message de quota si le RPC start_generation_task refuse (quota atteint)", async () => {
+    currentSupabaseMock.rpc = vi.fn(() => ({
+      single: async () => ({ data: { reservation_id: null, already_existed: false, ok: false, is_pro: false, limit_count: 1, used_count: 1 }, error: null }),
+    })) as never;
+
+    const { response, json } = await callRoute({
+      action: "start",
+      idempotencyKey: "k1",
+      topic: "Sujet",
+      plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME },
+    });
+
+    expect(response.status).toBe(403);
+    expect(json.error).toContain("formation");
+  });
+});
+
+describe("POST /api/courses/generate — action 'step'", () => {
+  async function startOne() {
+    const { json } = await callRoute({
+      action: "start",
+      idempotencyKey: "k1",
+      topic: "Sujet",
+      plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME },
+    });
+    return json.reservationId as string;
+  }
+
+  it("renvoie 404 pour une réservation introuvable", async () => {
+    const { response, json } = await callRoute({ action: "step", reservationId: "00000000-0000-0000-0000-000000000000" });
+    expect(response.status).toBe(404);
+    expect(json.error).toBeDefined();
+  });
+
+  it("exécute une seule unité de travail par appel et avance la progression", async () => {
+    const reservationId = await startOne();
+    mockPerformCourseStepUnit.mockResolvedValue({
+      chapters: { "0": { position: 0, title: "L1", explanation: "x", keyTakeaway: "x", example: { isReal: false, description: "x", sourceUrl: null, sourceTitle: null } } },
+    });
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
+
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(false);
+    expect(json.stage).toBe("chapitres");
+    expect(mockPerformCourseStepUnit).toHaveBeenCalledTimes(1);
+  });
+
+  it("libère immédiatement la réservation sur une erreur métier fatale (CourseGenerationError), sans attendre 15 minutes", async () => {
+    const reservationId = await startOne();
+    const { CourseGenerationError } = await vi.importActual<typeof import("@/lib/courses/generate")>("@/lib/courses/generate");
+    mockPerformCourseStepUnit.mockRejectedValue(new CourseGenerationError("Contenu de leçon invalide."));
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
+
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(true);
+    expect(json.fatalError).toBe("Contenu de leçon invalide.");
+    const releaseCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released");
     expect(releaseCalls).toHaveLength(1);
   });
 
-  it("enregistre la formation une seule fois et ne libère jamais la réservation en cas de succès complet", async () => {
-    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
+  it("ne libère JAMAIS la réservation sur une erreur transitoire, et indique au client de réessayer", async () => {
+    const reservationId = await startOne();
+    mockPerformCourseStepUnit.mockRejectedValue(new Error("panne réseau transitoire"));
 
-    const { lines } = await callRoute();
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
-    expect(lines.some((l) => l.stage === "done" && l.courseId === "course-id")).toBe(true);
-
-    const saveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "save_generated_course");
-    expect(saveCalls).toHaveLength(1);
-
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(false);
+    expect(json.transientError).toBe(true);
     const releaseCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot");
     expect(releaseCalls).toHaveLength(0);
   });
 
-  it("libère la réservation si la génération réussit mais que la sauvegarde échoue, sans jamais réessayer generateCourse()", async () => {
-    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
-    currentSupabaseMock.rpc.mockImplementation((fnName: string, args: unknown): RpcMockResult => {
-      currentSupabaseMock.rpcCalls.push({ fnName, args });
-      if (fnName === "reserve_generation_slot") {
-        return {
-          single: async () => ({
-            data: { ok: true, reservation_id: "res-1", is_pro: false, limit_count: 1, used_count: 1 },
-            error: null,
-          }),
-        };
-      }
-      if (fnName === "save_generated_course") {
-        return Promise.resolve({ data: null, error: new Error("RPC indisponible") });
-      }
-      return Promise.resolve({ data: true, error: null });
-    });
-
-    const { lines } = await callRoute();
-
-    expect(mockGenerateCourse).toHaveBeenCalledTimes(1);
-    expect(lines.some((l) => l.stage === "done" && l.courseId === null && typeof l.saveWarning === "string")).toBe(
-      true,
+  it("deux appels 'step' simultanés sur la même réservation : un seul avance, l'autre reçoit busy:true (jamais la même étape exécutée deux fois)", async () => {
+    const reservationId = await startOne();
+    mockPerformCourseStepUnit.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ chapters: { "0": { position: 0, title: "L1", explanation: "x", keyTakeaway: "x", example: { isReal: false, description: "x", sourceUrl: null, sourceTitle: null } } } }), 20)),
     );
 
-    const releaseCalls = currentSupabaseMock.rpcCalls.filter(
-      (c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released",
-    );
-    expect(releaseCalls).toHaveLength(1);
+    const [first, second] = await Promise.all([
+      callRoute({ action: "step", reservationId }),
+      callRoute({ action: "step", reservationId }),
+    ]);
+
+    const busyResponses = [first.json, second.json].filter((j) => j.busy === true);
+    const workedResponses = [first.json, second.json].filter((j) => j.busy !== true);
+    expect(busyResponses).toHaveLength(1);
+    expect(workedResponses).toHaveLength(1);
+    expect(mockPerformCourseStepUnit).toHaveBeenCalledTimes(1);
   });
 
-  // Prompt 05.16.1 (correctif E3, audit de sécurité 05.16) : une erreur
-  // Supabase/Postgres simulée, contenant du détail interne (nom de table,
-  // colonne, contrainte), ne doit jamais atteindre la réponse HTTP.
-  it("ne révèle jamais le détail d'une erreur de sauvegarde Supabase simulée (table/colonne/contrainte)", async () => {
-    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
-    const sensitiveDetail =
-      'column "secret_internal_column" of relation "public.courses" violates not-null constraint "courses_secret_check"';
-    currentSupabaseMock.rpc.mockImplementation((fnName: string, args: unknown): RpcMockResult => {
-      currentSupabaseMock.rpcCalls.push({ fnName, args });
-      if (fnName === "reserve_generation_slot") {
-        return {
-          single: async () => ({
-            data: { ok: true, reservation_id: "res-1", is_pro: false, limit_count: 1, used_count: 1 },
-            error: null,
-          }),
-        };
-      }
-      if (fnName === "save_generated_course") {
-        return Promise.resolve({ data: null, error: new Error(sensitiveDetail) });
-      }
-      return Promise.resolve({ data: true, error: null });
-    });
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("assemble et sauvegarde la formation à la dernière étape, via le RPC atomique existant (save_generated_course réutilisé via saveCourse)", async () => {
+    const reservationId = await startOne();
+    // Simule une progression déjà complète (toutes les étapes faites) en
+    // committant directement l'état attendu par decideNextCourseStep,
+    // pour atteindre "assemble" en un seul appel "step".
+    const row = currentSupabaseMock.state.reservations.get(reservationId)!;
+    row.progress = {
+      stage: "quizFinal",
+      chapters: Object.fromEntries(
+        Array.from({ length: 6 }, (_, i) => [String(i), { position: i, title: `L${i}`, explanation: "x", keyTakeaway: "x", example: { isReal: false, description: "x", sourceUrl: null, sourceTitle: null } }]),
+      ),
+      moduleQuizzes: { "0": [], "1": [] },
+      summary: { summary: "Résumé", keyPoints: [] },
+      finalQuiz: [],
+    };
+    mockSaveCourse.mockResolvedValue("course-123");
 
-    const { response, lines } = await callRoute();
-    const fullBody = JSON.stringify(lines);
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
     expect(response.status).toBe(200);
-    expect(fullBody).not.toContain("secret_internal_column");
-    expect(fullBody).not.toContain("constraint");
-    expect(fullBody).not.toContain("relation");
-    const doneLine = lines.find((l) => l.stage === "done");
-    expect(doneLine?.saveWarning).toBe(
-      "La formation a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.",
-    );
-    // Le détail reste disponible côté serveur (logs), juste jamais dans la réponse.
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(json.done).toBe(true);
+    expect(json.courseId).toBe("course-123");
+    expect(json.course).toBeDefined();
+    expect(mockSaveCourse).toHaveBeenCalledTimes(1);
+    expect(mockSaveCourse).toHaveBeenCalledWith(currentSupabaseMock, expect.any(Object), reservationId);
+  });
+
+  it("si la sauvegarde finale échoue, libère la réservation et renvoie un avertissement sans perdre le contenu généré", async () => {
+    const reservationId = await startOne();
+    const row = currentSupabaseMock.state.reservations.get(reservationId)!;
+    row.progress = {
+      stage: "quizFinal",
+      chapters: Object.fromEntries(
+        Array.from({ length: 6 }, (_, i) => [String(i), { position: i, title: `L${i}`, explanation: "x", keyTakeaway: "x", example: { isReal: false, description: "x", sourceUrl: null, sourceTitle: null } }]),
+      ),
+      moduleQuizzes: { "0": [], "1": [] },
+      summary: { summary: "Résumé", keyPoints: [] },
+      finalQuiz: [],
+    };
+    mockSaveCourse.mockRejectedValue(new Error("colonne manquante"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
+
+    expect(response.status).toBe(200);
+    expect(json.courseId).toBeNull();
+    expect(json.course).toBeDefined();
+    expect(json.saveWarning).toBeDefined();
+    expect(JSON.stringify(json)).not.toContain("colonne manquante");
+    const releaseCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released");
+    expect(releaseCalls).toHaveLength(1);
     consoleErrorSpy.mockRestore();
   });
 
-  it("ne révèle jamais le détail d'une erreur inattendue (non métier) pendant la génération", async () => {
-    const sensitiveDetail = 'relation "public.secret_table" does not exist';
-    mockGenerateCourse.mockRejectedValue(new Error(sensitiveDetail));
+  it("renvoie alreadyResolved:true sans refaire de travail si la génération est déjà terminée", async () => {
+    const reservationId = await startOne();
+    const row = currentSupabaseMock.state.reservations.get(reservationId)!;
+    row.status = "completed";
 
-    const { response, lines } = await callRoute();
-    const fullBody = JSON.stringify(lines);
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
     expect(response.status).toBe(200);
-    expect(fullBody).not.toContain("secret_table");
-    expect(fullBody).not.toContain("relation");
-    const errorLine = lines.find((l) => l.stage === "error");
-    expect(errorLine?.message).toBe("Une erreur est survenue pendant la génération. Réessaie dans un instant.");
-  });
-
-  it("conserve le message d'une CourseGenerationError (erreur métier conçue pour être affichée)", async () => {
-    const { CourseGenerationError } = await import("@/lib/courses/generate");
-    mockGenerateCourse.mockRejectedValue(
-      new CourseGenerationError("Le sujet proposé est trop vague pour construire une formation."),
-    );
-
-    const { lines } = await callRoute();
-
-    const errorLine = lines.find((l) => l.stage === "error");
-    expect(errorLine?.message).toBe("Le sujet proposé est trop vague pour construire une formation.");
-  });
-});
-
-// Prompt 05.18.1 : parcours "plan validé" (diagnostic guidé) — un plan
-// construit par /api/courses/plan, potentiellement modifié par
-// l'utilisateur, est transmis dans le corps de la requête.
-describe("POST /api/courses/generate — plan validé (Prompt 05.18.1)", () => {
-  it("rejette un plan dont la structure est invalide (ex: un seul module) AVANT toute réservation de quota", async () => {
-    const { response, json } = await callRoute(undefined, {
-      topic: "Un sujet de test",
-      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: INVALID_PROGRAMME },
-    });
-
-    expect(response.status).toBe(400);
-    expect(json?.error).toMatch(/structure/i);
-    expect(mockGenerateCourse).not.toHaveBeenCalled();
-    expect(mockGenerateCourseFromPlan).not.toHaveBeenCalled();
-    const reserveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "reserve_generation_slot");
-    expect(reserveCalls).toHaveLength(0);
-  });
-
-  it("réserve un quota puis appelle generateCourseFromPlan (jamais generateCourse) pour un plan valide", async () => {
-    mockGenerateCourseFromPlan.mockResolvedValue(FAKE_COURSE);
-
-    const { lines } = await callRoute(undefined, {
-      topic: "Un sujet de test",
-      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: VALID_PROGRAMME },
-    });
-
-    expect(lines.some((l) => l.stage === "done" && l.courseId === "course-id")).toBe(true);
-    expect(mockGenerateCourse).not.toHaveBeenCalled();
-    expect(mockGenerateCourseFromPlan).toHaveBeenCalledWith(
-      { fakeClient: true },
-      "Un sujet de test",
-      FAKE_ANALYSIS,
-      FAKE_VERIFIED_EXAMPLES,
-      VALID_PROGRAMME,
-      expect.any(Function),
-    );
-
-    const reserveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "reserve_generation_slot");
-    expect(reserveCalls).toHaveLength(1);
-  });
-
-  it("transmet reservationId comme toute première ligne du flux NDJSON, avant le moindre évènement de progression", async () => {
-    mockGenerateCourseFromPlan.mockResolvedValue(FAKE_COURSE);
-
-    const { lines } = await callRoute(undefined, {
-      topic: "Un sujet de test",
-      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: VALID_PROGRAMME },
-    });
-
-    expect(lines[0]).toEqual({ reservationId: "res-1" });
-  });
-
-  it("applique le même comportement pour le parcours 'configuration rapide' (sans plan) : reservationId toujours en première ligne", async () => {
-    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
-
-    const { lines } = await callRoute();
-
-    expect(lines[0]).toEqual({ reservationId: "res-1" });
+    expect(json.done).toBe(true);
+    expect(json.alreadyResolved).toBe(true);
+    expect(mockPerformCourseStepUnit).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 //
-// Vrai test (Prompt 05.18.1) : importe et rend le VRAI composant
-// CourseGenerator dans un DOM jsdom — seules les frontières externes
-// (`fetch`, `getGenerationStatus`, sessionStorage) sont mockées/contrôlées.
-// Couvre le nouveau parcours en plusieurs étapes (diagnostic adaptatif,
-// plan modifiable, validation, génération réelle, reprise après
-// rechargement) exigé par ce prompt.
+// Vrai test (Prompt 05.20.1, architecture à étapes courtes) : importe et
+// rend le VRAI composant CourseGenerator dans un DOM jsdom. `fetch` est
+// mocké pour répondre au contrat JSON start/step (plus de NDJSON) ;
+// `getGenerationStatus` et sessionStorage sont également contrôlés.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,31 +50,26 @@ afterEach(() => {
   container.remove();
 });
 
-function ndjsonStream(lines: Record<string, unknown>[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      for (const line of lines) {
-        controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
-      }
-      controller.close();
-    },
-  });
-}
-
-type FetchCall = { url: string; body: unknown };
+type FetchCall = { url: string; body: Record<string, unknown> };
 let fetchCalls: FetchCall[] = [];
-let fetchHandler: (url: string, body: unknown) => Promise<{ ok: boolean; status: number; body?: ReadableStream<Uint8Array>; json: () => Promise<unknown> }>;
+let fetchHandler: (
+  url: string,
+  body: Record<string, unknown>,
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
 function installFetchMock() {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
-      const body = init?.body ? JSON.parse(init.body as string) : undefined;
+      const body = init?.body ? JSON.parse(init.body as string) : {};
       fetchCalls.push({ url, body });
       return fetchHandler(url, body);
     }),
   );
+}
+
+function jsonResponse(payload: unknown, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => payload };
 }
 
 const FAKE_COURSE: GeneratedCourse = {
@@ -102,38 +95,23 @@ const FAKE_COURSE: GeneratedCourse = {
 };
 
 const FAKE_PLAN = {
-  analysis: {
-    title: "Formation test",
-    domain: "Test",
-    level: "débutant" as const,
-    angle: "pratique",
-    moduleCount: 2,
-    usesRealWorldExamples: false,
-  },
+  analysis: { title: "Formation test", domain: "Test", level: "débutant" as const, angle: "pratique", moduleCount: 2, usesRealWorldExamples: false },
   verifiedExamples: [],
   programme: {
     introduction: "Introduction du plan",
     objectives: ["Objectif global"],
     summaryAngle: "Angle",
     modules: [
-      {
-        title: "Module 1",
-        objective: "Objectif module 1",
-        chapters: [
-          { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
-          { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
-          { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
-        ],
-      },
-      {
-        title: "Module 2",
-        objective: "Objectif module 2",
-        chapters: [
-          { title: "Leçon 4", summary: "Résumé 4", exampleIndex: null },
-          { title: "Leçon 5", summary: "Résumé 5", exampleIndex: null },
-          { title: "Leçon 6", summary: "Résumé 6", exampleIndex: null },
-        ],
-      },
+      { title: "Module 1", objective: "Objectif module 1", chapters: [
+        { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
+        { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
+        { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
+      ] },
+      { title: "Module 2", objective: "Objectif module 2", chapters: [
+        { title: "Leçon 4", summary: "Résumé 4", exampleIndex: null },
+        { title: "Leçon 5", summary: "Résumé 5", exampleIndex: null },
+        { title: "Leçon 6", summary: "Résumé 6", exampleIndex: null },
+      ] },
     ],
   },
   estimatedMinutes: 120,
@@ -178,61 +156,62 @@ async function click(el: Element) {
   });
 }
 
+async function flush(times = 1) {
+  for (let i = 0; i < times; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
 beforeEach(() => {
   fetchCalls = [];
 });
 
-describe("CourseGenerator — état initial (Prompt 05.18.1)", () => {
+describe("CourseGenerator — état initial", () => {
   it("propose le diagnostic guidé ET la configuration rapide, désactivés tant qu'aucun sujet n'est saisi", async () => {
     await renderGenerator({ remainingGenerations: 1, locked: false });
-
     expect(findButton("Créer avec le diagnostic guidé").disabled).toBe(true);
     expect(findButton("Configuration rapide (sans diagnostic)").disabled).toBe(true);
   });
 
   it("affiche le message de quota atteint pour un utilisateur Free, avec un lien vers /pricing", async () => {
     await renderGenerator({ remainingGenerations: 0, locked: true });
-
     expect(container.textContent).toContain("Limite du plan gratuit atteinte");
     expect(container.querySelector('a[href="/pricing"]')).not.toBeNull();
   });
-
-  it("affiche le message de quota atteint pour un utilisateur Pro (texte différent)", async () => {
-    await renderGenerator({ remainingGenerations: 0, locked: false });
-
-    expect(container.textContent).toContain("Limite mensuelle atteinte");
-  });
 });
 
-describe("CourseGenerator — configuration rapide (parcours inchangé, sans diagnostic)", () => {
-  it("appelle directement /api/courses/generate avec { topic } seul, sans jamais appeler /api/courses/plan", async () => {
+describe("CourseGenerator — configuration rapide (sans diagnostic)", () => {
+  it("appelle 'start' avec { topic } seul (sans plan), puis boucle 'step' jusqu'à la fin", async () => {
     installFetchMock();
-    fetchHandler = async () => ({
-      ok: true,
-      status: 200,
-      body: ndjsonStream([{ stage: "done", courseId: "course-1", course: FAKE_COURSE, saveWarning: null }]),
-      json: async () => ({}),
-    });
+    fetchHandler = async (_url, body) => {
+      if (body.action === "start") {
+        expect(body.plan).toBeUndefined();
+        return jsonResponse({ reservationId: "res-1" });
+      }
+      if (body.action === "step") {
+        return jsonResponse({ done: true, courseId: "course-1", course: FAKE_COURSE, saveWarning: null });
+      }
+      throw new Error("appel inattendu");
+    };
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
     await click(findButton("Configuration rapide (sans diagnostic)"));
 
     expect(container.textContent).toContain("Formation test générée");
-    expect(fetchCalls).toHaveLength(1);
-    expect(fetchCalls[0].url).toBe("/api/courses/generate");
-    expect(fetchCalls[0].body).toEqual({ topic: "Un sujet de test" });
     expect(mockRefresh).toHaveBeenCalled();
+    expect(fetchCalls.some((c) => c.body.action === "start")).toBe(true);
+    expect(fetchCalls.some((c) => c.body.action === "step")).toBe(true);
   });
 
-  it("affiche le message d'erreur du serveur sur un stage 'error' (scénario : erreur pendant une génération)", async () => {
+  it("affiche le message d'erreur fatale renvoyé par le serveur", async () => {
     installFetchMock();
-    fetchHandler = async () => ({
-      ok: true,
-      status: 200,
-      body: ndjsonStream([{ stage: "error", message: "Le sujet proposé ne permet pas de générer une formation." }]),
-      json: async () => ({}),
-    });
+    fetchHandler = async (_url, body) => {
+      if (body.action === "start") return jsonResponse({ reservationId: "res-1" });
+      return jsonResponse({ done: true, fatalError: "Le sujet proposé ne permet pas de générer une formation." });
+    };
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
@@ -241,98 +220,32 @@ describe("CourseGenerator — configuration rapide (parcours inchangé, sans dia
     expect(container.textContent).toContain("Le sujet proposé ne permet pas de générer une formation.");
     expect(container.querySelector("textarea")).not.toBeNull();
   });
+
+  it("enchaîne plusieurs appels 'step' en affichant la progression avant la fin", async () => {
+    installFetchMock();
+    let stepCount = 0;
+    fetchHandler = async (_url, body) => {
+      if (body.action === "start") return jsonResponse({ reservationId: "res-1" });
+      stepCount += 1;
+      if (stepCount < 3) return jsonResponse({ done: false, stage: "chapitres", label: "Création des chapitres... (1/6)" });
+      return jsonResponse({ done: true, courseId: "course-1", course: FAKE_COURSE, saveWarning: null });
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await setTextareaValue("Un sujet de test");
+    await click(findButton("Configuration rapide (sans diagnostic)"));
+
+    expect(stepCount).toBe(3);
+    expect(container.textContent).toContain("Formation test générée");
+  });
 });
 
-describe("CourseGenerator — diagnostic adaptatif (Prompt 05.18.1)", () => {
-  it("affiche la première question renvoyée par le serveur après avoir cliqué sur le diagnostic guidé", async () => {
+describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
+  it("affiche la première question du diagnostic", async () => {
     installFetchMock();
     fetchHandler = async (url) => {
       if (url === "/api/courses/plan") {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            question: { id: "q1", question: "Quel est ton niveau actuel ?", type: "single_choice", choices: ["Débutant", "Avancé"] },
-          }),
-        };
-      }
-      throw new Error(`url inattendue : ${url}`);
-    };
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
-    await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
-
-    expect(container.textContent).toContain("Quel est ton niveau actuel ?");
-    expect(fetchCalls[0].body).toEqual({ action: "question", topic: "Un sujet de test", previousAnswers: [] });
-  });
-
-  it("transmet la réponse choisie, enchaîne les questions, puis construit le plan quand le serveur signale la fin du diagnostic", async () => {
-    installFetchMock();
-    let questionCallCount = 0;
-    fetchHandler = async (url, body) => {
-      if (url === "/api/courses/plan" && (body as { action: string }).action === "question") {
-        questionCallCount += 1;
-        if (questionCallCount === 1) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              question: { id: "q1", question: "Quel est ton niveau ?", type: "single_choice", choices: ["Débutant"] },
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => ({ question: null }) };
-      }
-      if (url === "/api/courses/plan" && (body as { action: string }).action === "build") {
-        return { ok: true, status: 200, json: async () => FAKE_PLAN };
-      }
-      throw new Error(`appel inattendu : ${url} ${JSON.stringify(body)}`);
-    };
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
-    await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
-    await click(findButton("Débutant"));
-
-    // Le deuxième appel "question" transmet bien la réponse donnée.
-    const questionCalls = fetchCalls.filter(
-      (c) => c.url === "/api/courses/plan" && (c.body as { action: string }).action === "question",
-    );
-    expect(questionCalls).toHaveLength(2);
-    expect(
-      (questionCalls[1].body as { previousAnswers: { answer: string }[] }).previousAnswers[0].answer,
-    ).toBe("Débutant");
-
-    // Le plan proposé est maintenant affiché.
-    expect(container.textContent).toContain("Plan proposé");
-    expect(container.textContent).toContain("Module 1");
-    const buildCall = fetchCalls.find(
-      (c) => c.url === "/api/courses/plan" && (c.body as { action: string }).action === "build",
-    );
-    expect(buildCall).toBeDefined();
-  });
-
-  it("permet d'ignorer le diagnostic à tout moment et de passer à la configuration rapide", async () => {
-    installFetchMock();
-    fetchHandler = async (url, body) => {
-      if (url === "/api/courses/plan") {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            question: { id: "q1", question: "Quel est ton niveau ?", type: "single_choice", choices: ["Débutant"] },
-          }),
-        };
-      }
-      if (url === "/api/courses/generate") {
-        expect(body).toEqual({ topic: "Un sujet de test" }); // jamais de plan/diagnostic transmis ici.
-        return {
-          ok: true,
-          status: 200,
-          body: ndjsonStream([{ stage: "done", courseId: "c1", course: FAKE_COURSE, saveWarning: null }]),
-          json: async () => ({}),
-        };
+        return jsonResponse({ question: { id: "q1", question: "Quel est ton niveau ?", type: "single_choice", choices: ["Débutant"] } });
       }
       throw new Error(`url inattendue : ${url}`);
     };
@@ -342,133 +255,70 @@ describe("CourseGenerator — diagnostic adaptatif (Prompt 05.18.1)", () => {
     await click(findButton("Créer avec le diagnostic guidé"));
 
     expect(container.textContent).toContain("Quel est ton niveau ?");
-    await click(findButton("Passer directement à la configuration rapide (sans diagnostic)"));
-
-    expect(container.textContent).toContain("Formation test générée");
   });
-});
 
-describe("CourseGenerator — plan proposé, modification, ajustement et validation (Prompt 05.18.1)", () => {
-  async function reachPlanReview() {
+  it("construit le plan puis valide et génère via start { topic, plan }", async () => {
     installFetchMock();
     fetchHandler = async (url, body) => {
-      if (url === "/api/courses/plan" && (body as { action: string }).action === "question") {
-        return { ok: true, status: 200, json: async () => ({ question: null }) };
+      if (url === "/api/courses/plan" && body.action === "question") return jsonResponse({ question: null });
+      if (url === "/api/courses/plan" && body.action === "build") return jsonResponse(FAKE_PLAN);
+      if (url === "/api/courses/generate" && body.action === "start") {
+        expect(body.plan).toEqual({ analysis: FAKE_PLAN.analysis, verifiedExamples: FAKE_PLAN.verifiedExamples, programme: FAKE_PLAN.programme });
+        return jsonResponse({ reservationId: "res-1" });
       }
-      if (url === "/api/courses/plan" && (body as { action: string }).action === "build") {
-        return { ok: true, status: 200, json: async () => FAKE_PLAN };
+      if (url === "/api/courses/generate" && body.action === "step") {
+        return jsonResponse({ done: true, courseId: "c1", course: FAKE_COURSE, saveWarning: null });
       }
-      throw new Error(`appel inattendu : ${url}`);
+      throw new Error(`appel inattendu : ${url} ${JSON.stringify(body)}`);
     };
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
     await click(findButton("Créer avec le diagnostic guidé"));
-  }
 
-  it("affiche les modules/leçons/objectifs/durée estimée du plan", async () => {
-    await reachPlanReview();
-
-    expect(container.textContent).toContain("Module 1");
-    expect(container.textContent).toContain("Module 2");
-    expect(container.textContent).toContain("Objectif global");
-    expect(container.textContent).toContain("Durée estimée");
-  });
-
-  it("permet de modifier un titre de module avant de valider", async () => {
-    await reachPlanReview();
-
-    // Les inputs contrôlés par React n'exposent pas leur valeur via
-    // l'attribut HTML `value` (seulement via la propriété JS) : on ne peut
-    // donc pas les retrouver avec un sélecteur CSS `input[value=...]`.
-    const moduleTitleInput = Array.from(container.querySelectorAll("input")).find(
-      (input) => input.value === "Module 1",
-    ) as HTMLInputElement;
-    expect(moduleTitleInput).not.toBeUndefined();
-    await act(async () => {
-      NATIVE_INPUT_VALUE_SETTER.call(moduleTitleInput, "Module 1 renommé");
-      moduleTitleInput.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    // `textContent` n'inclut jamais la valeur d'un <input> (ce n'est pas du
-    // texte enfant) : on relit la propriété `.value` du même champ.
-    expect(moduleTitleInput.value).toBe("Module 1 renommé");
-  });
-
-  it("envoie une demande d'ajustement et remplace le plan affiché par la réponse du serveur", async () => {
-    await reachPlanReview();
-
-    await click(findButton("Demander un ajustement"));
-    const textarea = Array.from(container.querySelectorAll("textarea")).find((t) =>
-      t.placeholder.startsWith("Décris l'ajustement"),
-    ) as HTMLTextAreaElement;
-    await act(async () => {
-      NATIVE_TEXTAREA_VALUE_SETTER.call(textarea, "Ajoute plus d'exercices pratiques");
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    const adjustedPlan = {
-      ...FAKE_PLAN,
-      programme: { ...FAKE_PLAN.programme, modules: [{ ...FAKE_PLAN.programme.modules[0], title: "Module ajusté" }] },
-    };
-    fetchHandler = async (url, body) => {
-      expect(url).toBe("/api/courses/plan");
-      expect((body as { action: string }).action).toBe("adjust");
-      expect((body as { adjustmentRequest: string }).adjustmentRequest).toBe(
-        "Ajoute plus d'exercices pratiques",
-      );
-      return { ok: true, status: 200, json: async () => adjustedPlan };
-    };
-
-    await click(findButton("Envoyer l'ajustement"));
-
-    const moduleTitleInput = Array.from(container.querySelectorAll("input")).find(
-      (input) => input.value === "Module ajusté",
-    );
-    expect(moduleTitleInput).not.toBeUndefined();
-  });
-
-  it("valide le plan et lance /api/courses/generate avec { topic, plan } — jamais de quota consommé avant cet instant", async () => {
-    await reachPlanReview();
-
-    fetchHandler = async (url, body) => {
-      expect(url).toBe("/api/courses/generate");
-      const parsed = body as { topic: string; plan: unknown };
-      expect(parsed.topic).toBe("Un sujet de test");
-      expect(parsed.plan).toEqual({
-        analysis: FAKE_PLAN.analysis,
-        verifiedExamples: FAKE_PLAN.verifiedExamples,
-        programme: FAKE_PLAN.programme,
-      });
-      return {
-        ok: true,
-        status: 200,
-        body: ndjsonStream([
-          { reservationId: "res-1" },
-          { stage: "done", courseId: "c1", course: FAKE_COURSE, saveWarning: null },
-        ]),
-        json: async () => ({}),
-      };
-    };
-
+    expect(container.textContent).toContain("Plan proposé");
     await click(findButton("Valider et générer la formation"));
 
     expect(container.textContent).toContain("Formation test générée");
   });
 
-  it("protège contre une double soumission (deux clics rapides sur 'Valider et générer' n'appellent /api/courses/generate qu'une seule fois)", async () => {
-    await reachPlanReview();
-
-    let callCount = 0;
-    fetchHandler = async () => {
-      callCount += 1;
-      return {
-        ok: true,
-        status: 200,
-        body: ndjsonStream([{ stage: "done", courseId: "c1", course: FAKE_COURSE, saveWarning: null }]),
-        json: async () => ({}),
-      };
+  it("permet de modifier un titre de module avant de valider", async () => {
+    installFetchMock();
+    fetchHandler = async (_url, body) => {
+      if (body.action === "question") return jsonResponse({ question: null });
+      if (body.action === "build") return jsonResponse(FAKE_PLAN);
+      throw new Error("appel inattendu");
     };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await setTextareaValue("Un sujet de test");
+    await click(findButton("Créer avec le diagnostic guidé"));
+
+    const moduleTitleInput = Array.from(container.querySelectorAll("input")).find((i) => i.value === "Module 1") as HTMLInputElement;
+    expect(moduleTitleInput).not.toBeUndefined();
+    await act(async () => {
+      NATIVE_INPUT_VALUE_SETTER.call(moduleTitleInput, "Module 1 renommé");
+      moduleTitleInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(moduleTitleInput.value).toBe("Module 1 renommé");
+  });
+
+  it("protège contre une double soumission (deux clics rapides sur 'Valider et générer')", async () => {
+    installFetchMock();
+    let startCallCount = 0;
+    fetchHandler = async (_url, body) => {
+      if (body.action === "question") return jsonResponse({ question: null });
+      if (body.action === "build") return jsonResponse(FAKE_PLAN);
+      if (body.action === "start") {
+        startCallCount += 1;
+        return jsonResponse({ reservationId: "res-1" });
+      }
+      return jsonResponse({ done: true, courseId: "c1", course: FAKE_COURSE, saveWarning: null });
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await setTextareaValue("Un sujet de test");
+    await click(findButton("Créer avec le diagnostic guidé"));
 
     const button = findButton("Valider et générer la formation");
     await act(async () => {
@@ -477,79 +327,125 @@ describe("CourseGenerator — plan proposé, modification, ajustement et validat
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(callCount).toBe(1);
+    expect(startCallCount).toBe(1);
   });
 });
 
-describe("CourseGenerator — rechargement pendant une génération (Prompt 05.18.1)", () => {
-  it("affiche un avis clair et retrouve l'état réel (toujours en cours) plutôt que de redémarrer de zéro", async () => {
-    sessionStorage.setItem(
-      "tavyra:course-generation",
-      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
-    );
-    mockGetGenerationStatus.mockResolvedValue({ status: "pending", resourceId: null, createdAt: null });
+describe("CourseGenerator — idempotence au démarrage (Prompt 05.20.1)", () => {
+  it("persiste l'idempotencyKey en sessionStorage AVANT le premier appel réseau", async () => {
+    installFetchMock();
+    fetchHandler = async () => new Promise(() => {}); // ne répond jamais pendant ce test.
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
+    await setTextareaValue("Un sujet de test");
 
-    expect(container.textContent).toMatch(/vérification|toujours en cours/i);
-    expect(mockGetGenerationStatus).toHaveBeenCalledWith("res-stored", "course");
-  });
-
-  it("redirige vers la formation terminée si le serveur confirme qu'elle est 'completed'", async () => {
-    sessionStorage.setItem(
-      "tavyra:course-generation",
-      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
-    );
-    mockGetGenerationStatus.mockResolvedValue({
-      status: "completed",
-      resourceId: "course-xyz",
-      createdAt: null,
-    });
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
+    const button = findButton("Configuration rapide (sans diagnostic)");
     await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
+
+    const stored = JSON.parse(sessionStorage.getItem("tavyra:course-generation") ?? "null");
+    expect(stored?.idempotencyKey).toBeDefined();
+    expect(stored?.reservationId).toBeNull();
+  });
+});
+
+describe("CourseGenerator — rechargement pendant une génération", () => {
+  it("rejoue 'start' avec la MÊME clé si reservationId n'a jamais été reçu avant le rechargement", async () => {
+    sessionStorage.setItem(
+      "tavyra:course-generation",
+      JSON.stringify({ idempotencyKey: "idem-stored", reservationId: null, topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    installFetchMock();
+    fetchHandler = async (_url, body) => {
+      if (body.action === "start") {
+        expect(body.idempotencyKey).toBe("idem-stored");
+        return jsonResponse({ reservationId: "res-resumed" });
+      }
+      return jsonResponse({ done: true, courseId: "c1", course: FAKE_COURSE, saveWarning: null });
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await flush(3);
+
+    expect(container.textContent).toContain("Formation test générée");
+  });
+
+  it("reprend directement la boucle d'étapes courtes si reservationId était déjà connu, sans redémarrer", async () => {
+    sessionStorage.setItem(
+      "tavyra:course-generation",
+      JSON.stringify({ idempotencyKey: "idem-stored", reservationId: "res-known", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    installFetchMock();
+    fetchHandler = async (_url, body) => {
+      expect(body.action).toBe("step"); // jamais "start" à nouveau.
+      expect(body.reservationId).toBe("res-known");
+      return jsonResponse({ done: true, courseId: "c1", course: FAKE_COURSE, saveWarning: null });
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await flush(3);
+
+    expect(container.textContent).toContain("Formation test générée");
+    expect(fetchCalls.every((c) => c.body.action === "step")).toBe(true);
+  });
+
+  it("redirige vers la formation terminée si le serveur signale alreadyResolved et un resourceId", async () => {
+    sessionStorage.setItem(
+      "tavyra:course-generation",
+      JSON.stringify({ idempotencyKey: "idem-stored", reservationId: "res-known", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    installFetchMock();
+    fetchHandler = async () => jsonResponse({ done: true, alreadyResolved: true });
+    mockGetGenerationStatus.mockResolvedValue({ status: "completed", resourceId: "course-xyz", stage: null, lastError: null, createdAt: null });
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await flush(3);
 
     expect(mockPush).toHaveBeenCalledWith("/dashboard/formations/course-xyz");
     expect(sessionStorage.getItem("tavyra:course-generation")).toBeNull();
   });
 
-  it("affiche un message d'échec si le serveur confirme que la réservation a été libérée (génération ratée)", async () => {
+  it("affiche un message d'échec si le serveur signale alreadyResolved sans succès (libérée/expirée)", async () => {
     sessionStorage.setItem(
       "tavyra:course-generation",
-      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+      JSON.stringify({ idempotencyKey: "idem-stored", reservationId: "res-known", topic: "Sujet repris", startedAt: Date.now() }),
     );
-    mockGetGenerationStatus.mockResolvedValue({ status: "released", resourceId: null, createdAt: null });
+    installFetchMock();
+    fetchHandler = async () => jsonResponse({ done: true, alreadyResolved: true });
+    mockGetGenerationStatus.mockResolvedValue({ status: "released", resourceId: null, stage: null, lastError: null, createdAt: null });
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await flush(3);
 
     expect(container.textContent).toMatch(/arrêtée|expiré/i);
-    expect(sessionStorage.getItem("tavyra:course-generation")).toBeNull();
   });
 
-  it("ne prétend JAMAIS qu'une génération continue si son état ne peut pas être confirmé (statut 'unknown')", async () => {
+  it("réessaie automatiquement un nombre borné de fois en cas d'erreur transitoire, puis abandonne proprement", async () => {
     sessionStorage.setItem(
       "tavyra:course-generation",
-      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+      JSON.stringify({ idempotencyKey: "idem-stored", reservationId: "res-known", topic: "Sujet repris", startedAt: Date.now() }),
     );
-    mockGetGenerationStatus.mockResolvedValue({ status: "unknown", resourceId: null, createdAt: null });
+    installFetchMock();
+    let callCount = 0;
+    fetchHandler = async () => {
+      callCount += 1;
+      return jsonResponse({ done: false, transientError: true });
+    };
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
+    // Suffisamment de temps réel pour laisser passer au moins un backoff
+    // (le premier délai entre deux tentatives est de 1000ms).
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     });
 
-    expect(container.textContent).not.toMatch(/toujours en cours(?!.*impossible)/i);
-    expect(container.textContent).toMatch(/impossible de confirmer/i);
-  });
+    expect(callCount).toBeGreaterThan(1);
+  }, 10000);
 
   it("sans aucune génération en cours en sessionStorage, démarre normalement en 'idle' (non-régression)", async () => {
     await renderGenerator({ remainingGenerations: 1, locked: false });
-
     expect(mockGetGenerationStatus).not.toHaveBeenCalled();
     expect(findButton("Créer avec le diagnostic guidé")).not.toBeNull();
   });

@@ -20,7 +20,15 @@ type ReserveRpcRow = {
   used_count: number;
 };
 
-function quotaExceededMessage(kind: ReservationKind, isPro: boolean, limitCount: number): string {
+// Exportée (Prompt 05.20.1, sans changement de comportement) pour être
+// réutilisée par le nouveau endpoint "start" (démarrage d'une tâche de
+// génération à étapes courtes, voir /api/courses/generate/route.ts), qui
+// n'appelle plus directement `reserveGenerationSlot` (la réservation se
+// fait désormais à l'intérieur du RPC `start_generation_task`,
+// 0023_generation_progress.sql, qui réutilise lui-même
+// `reserve_generation_slot` sans le dupliquer) mais doit produire EXACTEMENT
+// le même message d'erreur en cas de quota atteint.
+export function quotaExceededMessage(kind: ReservationKind, isPro: boolean, limitCount: number): string {
   if (!isPro) {
     return kind === "course"
       ? `Le plan gratuit est limité à ${limitCount} formation${limitCount > 1 ? "s" : ""}. Débloque la formation complète pour continuer.`

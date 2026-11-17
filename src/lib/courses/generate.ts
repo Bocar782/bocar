@@ -1056,3 +1056,250 @@ export async function generateCourse(
   });
   return generateCourseFromPlan(client, topic, analysis, verifiedExamples, programme, onProgress);
 }
+
+// --- Architecture à étapes courtes (Prompt 05.20.1) ---
+//
+// `generateCourseFromPlan` ci-dessus reste utilisée par rien d'autre que
+// de futurs appels directs éventuels : la rédaction complète d'une
+// formation (jusqu'à 20 leçons + jusqu'à 4 quiz de module + un résumé + un
+// quiz final, soit jusqu'à 26 appels Anthropic) ne doit plus jamais tenir
+// dans une seule requête HTTP (risque de dépasser la limite réelle des
+// fonctions Netlify synchrones, voir l'audit 05.19/05.20). Les fonctions
+// ci-dessous réutilisent EXACTEMENT les mêmes fonctions privées de
+// rédaction (writeChapter, writeSummary, writeModuleQuiz, writeQuiz) et
+// les mêmes vérifications (validateChapterContent, flattenModulePlans),
+// mais exécutent une seule unité de travail à la fois, à partir d'une
+// progression persistée côté Supabase (generation_progress,
+// 0023_generation_progress.sql) plutôt que de tout garder en mémoire d'une
+// requête à l'autre.
+
+export type CourseStepInput = {
+  topic: string;
+  analysis: Analysis;
+  verifiedExamples: VerifiedExample[];
+  programme: Programme;
+};
+
+/**
+ * Forme exacte de `generation_progress.progress` pour une formation —
+ * validée par `CourseStepProgressSchema` (progress-schemas.ts) avant toute
+ * lecture/écriture : jamais interprétée sans validation, même si elle
+ * provient de notre propre base. Les clés de `chapters`/`moduleQuizzes`
+ * sont des index numériques encodés en texte (contrainte de jsonb).
+ */
+export type CourseStepProgress = {
+  stage: GenerationStage;
+  chapters: Record<string, GeneratedChapter>;
+  moduleQuizzes: Record<string, QuizQuestion[]>;
+  summary?: CourseSummary;
+  finalQuiz?: QuizQuestion[];
+};
+
+export const EMPTY_COURSE_PROGRESS: CourseStepProgress = {
+  stage: "chapitres",
+  chapters: {},
+  moduleQuizzes: {},
+};
+
+export type CourseStepUnit =
+  | { kind: "chapter"; globalIndex: number }
+  | { kind: "moduleQuiz"; moduleIndex: number }
+  | { kind: "summary" }
+  | { kind: "finalQuiz" }
+  | { kind: "assemble" }
+  | { kind: "done" };
+
+function sortedChaptersFromProgress(
+  progress: CourseStepProgress,
+  totalChapters: number,
+): GeneratedChapter[] {
+  const result: GeneratedChapter[] = [];
+  for (let i = 0; i < totalChapters; i++) {
+    const chapter = progress.chapters[String(i)];
+    if (!chapter) {
+      throw new CourseGenerationError(
+        "Progression de génération incohérente : chapitre manquant pour assembler la suite.",
+      );
+    }
+    result.push(chapter);
+  }
+  return result;
+}
+
+/**
+ * Détermine la PROCHAINE unité de travail à partir de la progression
+ * actuelle — jamais à partir d'un compteur transmis par le client, toujours
+ * recalculée à partir de ce qui est RÉELLEMENT déjà présent dans
+ * `progress`. Deux appels avec la même progression renvoient toujours la
+ * même unité : c'est cette propriété qui rend chaque étape idempotente
+ * (rejouer un appel qui a échoué AVANT d'avoir committé son résultat
+ * redemande exactement la même chose, jamais la suivante).
+ */
+export function decideNextCourseStep(
+  input: CourseStepInput,
+  progress: CourseStepProgress,
+): CourseStepUnit {
+  const flatPlans = flattenModulePlans(input.programme.modules);
+  for (const plan of flatPlans) {
+    if (!(String(plan.globalIndex) in progress.chapters)) {
+      return { kind: "chapter", globalIndex: plan.globalIndex };
+    }
+  }
+  if (!progress.summary) return { kind: "summary" };
+  for (let i = 0; i < input.programme.modules.length; i++) {
+    if (!(String(i) in progress.moduleQuizzes)) return { kind: "moduleQuiz", moduleIndex: i };
+  }
+  if (!progress.finalQuiz) return { kind: "finalQuiz" };
+  return { kind: "assemble" };
+}
+
+/** Étiquette de progression affichable (réutilise STAGE_LABELS) pour une unité donnée. */
+export function stageForCourseUnit(unit: CourseStepUnit): GenerationStage {
+  switch (unit.kind) {
+    case "chapter":
+      return "chapitres";
+    case "summary":
+    case "moduleQuiz":
+      return "finition";
+    case "finalQuiz":
+      return "quizFinal";
+    case "assemble":
+    case "done":
+      return "assemblage";
+  }
+}
+
+/**
+ * Exécute UNE unité de travail (un seul appel Anthropic dans la grande
+ * majorité des cas) et renvoie le PATCH à committer — jamais la
+ * progression complète : `commit_generation_step` (RPC) remplace
+ * seulement les clés présentes dans ce patch, l'appelant (route.ts) doit
+ * donc y inclure la valeur ENTIÈRE souhaitée pour chaque clé modifiée
+ * (ex. la carte complète des chapitres, pas seulement le nouveau).
+ */
+export async function performCourseStepUnit(
+  client: Anthropic,
+  input: CourseStepInput,
+  progress: CourseStepProgress,
+  unit: CourseStepUnit,
+): Promise<Partial<CourseStepProgress>> {
+  const flatPlans = flattenModulePlans(input.programme.modules);
+  const totalChapters = flatPlans.length;
+
+  if (unit.kind === "chapter") {
+    const plan = flatPlans[unit.globalIndex];
+    const assignedExample =
+      plan.exampleIndex !== null ? input.verifiedExamples[plan.exampleIndex] ?? null : null;
+
+    const content = await writeChapter(
+      client,
+      input.analysis,
+      input.programme.modules,
+      plan,
+      assignedExample,
+    );
+
+    const chapterErrors = validateChapterContent(content, plan);
+    if (chapterErrors.length > 0) {
+      throw new CourseGenerationError(`Contenu de leçon invalide : ${chapterErrors.join(" ")}`);
+    }
+
+    const claimedUrl = content.example.sourceUrl?.trim().replace(/\/$/, "") ?? null;
+    const matchesVerified =
+      claimedUrl !== null &&
+      input.verifiedExamples.some((e) => e.sourceUrl.trim().replace(/\/$/, "") === claimedUrl);
+    const isReal = content.example.isReal && matchesVerified;
+
+    const chapter: GeneratedChapter = {
+      position: plan.globalIndex,
+      title: plan.title,
+      explanation: content.explanation,
+      keyTakeaway: content.keyTakeaway,
+      example: {
+        isReal,
+        description: content.example.description,
+        sourceUrl: isReal ? content.example.sourceUrl : null,
+        sourceTitle: isReal ? content.example.sourceTitle : null,
+      },
+      exercise: content.exercise
+        ? { prompt: content.exercise.prompt, solution: content.exercise.solution }
+        : null,
+    };
+
+    return { chapters: { ...progress.chapters, [String(unit.globalIndex)]: chapter } };
+  }
+
+  if (unit.kind === "summary") {
+    const chapters = sortedChaptersFromProgress(progress, totalChapters);
+    const summary = await writeSummary(client, input.analysis, input.programme, chapters);
+    return { summary };
+  }
+
+  if (unit.kind === "moduleQuiz") {
+    const chapters = sortedChaptersFromProgress(progress, totalChapters);
+    const moduleChapters = chapters.filter(
+      (_, i) => flatPlans[i].moduleIndex === unit.moduleIndex,
+    );
+    const moduleTitle = input.programme.modules[unit.moduleIndex].title;
+    const quiz = await writeModuleQuiz(client, input.analysis, moduleTitle, moduleChapters);
+    return { moduleQuizzes: { ...progress.moduleQuizzes, [String(unit.moduleIndex)]: quiz } };
+  }
+
+  if (unit.kind === "finalQuiz") {
+    const chapters = sortedChaptersFromProgress(progress, totalChapters);
+    const allModuleQuestions = Object.values(progress.moduleQuizzes).flat();
+    const quiz = await writeQuiz(
+      client,
+      input.analysis,
+      input.programme.objectives,
+      chapters,
+      allModuleQuestions,
+    );
+    return { finalQuiz: quiz };
+  }
+
+  // "assemble" et "done" ne produisent aucun patch : assembleCourseFromProgress
+  // (ci-dessous) et la sauvegarde atomique s'en chargent, hors de cette fonction.
+  return {};
+}
+
+/**
+ * Reconstruit la `GeneratedCourse` complète une fois toutes les unités de
+ * travail terminées — jamais appelée avant que `decideNextCourseStep` ne
+ * renvoie `{ kind: "assemble" }`, qui garantit que chapters/summary/
+ * moduleQuizzes/finalQuiz sont tous présents.
+ */
+export function assembleCourseFromProgress(
+  input: CourseStepInput,
+  progress: CourseStepProgress,
+): GeneratedCourse {
+  const flatPlans = flattenModulePlans(input.programme.modules);
+  const chapters = sortedChaptersFromProgress(progress, flatPlans.length);
+  if (!progress.summary) {
+    throw new CourseGenerationError("Progression de génération incohérente : résumé manquant.");
+  }
+
+  const chaptersByModule: GeneratedChapter[][] = input.programme.modules.map((_, moduleIndex) =>
+    chapters.filter((_, i) => flatPlans[i].moduleIndex === moduleIndex),
+  );
+  const modules: GeneratedModule[] = input.programme.modules.map((m, moduleIndex) => ({
+    position: moduleIndex,
+    title: m.title,
+    chapters: chaptersByModule[moduleIndex],
+    quiz: progress.moduleQuizzes[String(moduleIndex)] ?? [],
+  }));
+
+  return {
+    topic: input.topic,
+    title: input.analysis.title,
+    domain: input.analysis.domain,
+    level: input.analysis.level,
+    introduction: input.programme.introduction,
+    objectives: input.programme.objectives,
+    chapters,
+    modules,
+    summary: progress.summary.summary,
+    keyPoints: progress.summary.keyPoints,
+    quiz: progress.finalQuiz ?? [],
+  };
+}

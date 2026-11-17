@@ -249,3 +249,182 @@ export async function generateDeepAnalysis(
     sources,
   };
 }
+
+// --- Architecture à étapes courtes (Prompt 05.20.1) ---
+//
+// Même principe que pour les formations (voir generate.ts,
+// performCourseStepUnit) : `generateDeepAnalysis` ci-dessus reste
+// disponible mais une analyse complète (cadrage + recherche + jusqu'à 7
+// sections + synthèse, chacune un aller-retour IA potentiellement long)
+// ne doit plus tenir dans une seule requête HTTP. Les fonctions
+// ci-dessous réutilisent EXACTEMENT les mêmes fonctions privées
+// (scopeAnalysis, researchRealCases, extractVerifiedCases, writeSection,
+// writeSynthesis), une seule unité de travail à la fois, à partir d'une
+// progression persistée côté Supabase (generation_progress).
+
+export type AnalysisStepInput = { topic: string };
+
+export type AnalysisStepProgress = {
+  stage: DeepAnalysisStage;
+  brief?: AnalysisBrief;
+  verifiedCases?: VerifiedCase[];
+  sections: Record<string, DeepAnalysisSection>;
+  synthesis?: { synthesis: string; keyLessons: string[] };
+};
+
+export const EMPTY_ANALYSIS_PROGRESS: AnalysisStepProgress = {
+  stage: "cadrage",
+  sections: {},
+};
+
+export type AnalysisStepUnit =
+  | { kind: "cadrage" }
+  | { kind: "recherche" }
+  | { kind: "section"; index: number }
+  | { kind: "synthese" }
+  | { kind: "assemble" }
+  | { kind: "done" };
+
+/**
+ * Détermine la PROCHAINE unité de travail à partir de la progression
+ * actuelle, jamais d'un compteur transmis par le client — même principe
+ * d'idempotence que `decideNextCourseStep`.
+ */
+export function decideNextAnalysisStep(
+  progress: AnalysisStepProgress,
+): AnalysisStepUnit {
+  if (!progress.brief) return { kind: "cadrage" };
+  if (!progress.verifiedCases) return { kind: "recherche" };
+  for (let i = 0; i < progress.verifiedCases.length; i++) {
+    if (!(String(i) in progress.sections)) return { kind: "section", index: i };
+  }
+  if (!progress.synthesis) return { kind: "synthese" };
+  return { kind: "assemble" };
+}
+
+export function stageForAnalysisUnit(unit: AnalysisStepUnit): DeepAnalysisStage {
+  switch (unit.kind) {
+    case "cadrage":
+      return "cadrage";
+    case "recherche":
+      return "recherche";
+    case "section":
+      return "redaction";
+    case "synthese":
+      return "synthese";
+    case "assemble":
+    case "done":
+      return "assemblage";
+  }
+}
+
+/**
+ * Exécute UNE unité de travail et renvoie le PATCH à committer — même
+ * contrat que `performCourseStepUnit` : l'appelant doit y placer la
+ * valeur ENTIÈRE souhaitée pour chaque clé modifiée.
+ */
+export async function performAnalysisStepUnit(
+  client: Anthropic,
+  input: AnalysisStepInput,
+  progress: AnalysisStepProgress,
+  unit: AnalysisStepUnit,
+): Promise<Partial<AnalysisStepProgress>> {
+  if (unit.kind === "cadrage") {
+    const brief = await scopeAnalysis(client, input.topic);
+    return { brief };
+  }
+
+  if (unit.kind === "recherche") {
+    if (!progress.brief) {
+      throw new AnalysisGenerationError("Progression de génération incohérente : cadrage manquant.");
+    }
+    const { findings, realSources } = await researchRealCases(client, progress.brief);
+    const verifiedCases = await extractVerifiedCases(client, progress.brief, findings, realSources);
+
+    if (verifiedCases.length < MIN_VERIFIED_CASES) {
+      throw new AnalysisGenerationError(
+        "Pas assez de cas réels et vérifiables trouvés sur ce sujet pour produire une analyse approfondie fiable. Essaie de reformuler le sujet ou de le préciser (un domaine, une période, une région).",
+      );
+    }
+
+    return { verifiedCases: verifiedCases.slice(0, progress.brief.caseCount) };
+  }
+
+  if (unit.kind === "section") {
+    if (!progress.brief || !progress.verifiedCases) {
+      throw new AnalysisGenerationError(
+        "Progression de génération incohérente : recherche manquante pour rédiger une section.",
+      );
+    }
+    const verifiedCase = progress.verifiedCases[unit.index];
+    const otherCases = progress.verifiedCases.filter((_, j) => j !== unit.index);
+    const content = await writeSection(client, progress.brief, verifiedCase, otherCases);
+
+    const section: DeepAnalysisSection = {
+      position: unit.index,
+      name: verifiedCase.name,
+      outcome: verifiedCase.outcome,
+      content: content.content,
+      lessons: content.lessons,
+      source: { index: unit.index, url: verifiedCase.sourceUrl, title: verifiedCase.sourceTitle },
+    };
+
+    return { sections: { ...progress.sections, [String(unit.index)]: section } };
+  }
+
+  if (unit.kind === "synthese") {
+    if (!progress.brief || !progress.verifiedCases) {
+      throw new AnalysisGenerationError(
+        "Progression de génération incohérente : sections manquantes pour la synthèse.",
+      );
+    }
+    const sections: DeepAnalysisSection[] = [];
+    for (let i = 0; i < progress.verifiedCases.length; i++) {
+      const section = progress.sections[String(i)];
+      if (!section) {
+        throw new AnalysisGenerationError(
+          "Progression de génération incohérente : section manquante pour la synthèse.",
+        );
+      }
+      sections.push(section);
+    }
+    const synthesis = await writeSynthesis(client, progress.brief, sections);
+    return { synthesis };
+  }
+
+  return {};
+}
+
+/**
+ * Reconstruit la `GeneratedDeepAnalysis` complète une fois toutes les
+ * unités de travail terminées.
+ */
+export function assembleAnalysisFromProgress(
+  input: AnalysisStepInput,
+  progress: AnalysisStepProgress,
+): GeneratedDeepAnalysis {
+  if (!progress.brief || !progress.verifiedCases || !progress.synthesis) {
+    throw new AnalysisGenerationError("Progression de génération incohérente pour l'assemblage final.");
+  }
+
+  const sections: DeepAnalysisSection[] = [];
+  for (let i = 0; i < progress.verifiedCases.length; i++) {
+    const section = progress.sections[String(i)];
+    if (!section) {
+      throw new AnalysisGenerationError("Progression de génération incohérente : section manquante.");
+    }
+    sections.push(section);
+  }
+  const sources: DeepAnalysisSource[] = sections.map((s) => s.source);
+
+  return {
+    topic: input.topic,
+    title: progress.brief.title,
+    domain: progress.brief.domain,
+    introduction: progress.brief.introduction,
+    sections,
+    synthesis: progress.synthesis.synthesis,
+    keyLessons: progress.synthesis.keyLessons,
+    sources,
+  };
+}

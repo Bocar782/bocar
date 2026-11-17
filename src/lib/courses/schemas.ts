@@ -409,11 +409,20 @@ export type GeneratedCourse = {
   quizId?: string | null;
 };
 
+// Prompt 05.20.1 : "finition" (quiz de module + résumé) et "quizFinal" et
+// "assemblage" (sauvegarde) sont de nouvelles étapes introduites par
+// l'architecture à étapes courtes — chacune correspond maintenant à
+// plusieurs appels HTTP successifs (un par leçon/quiz) plutôt qu'à une
+// seule section du code comme avant ; la granularité d'affichage augmente
+// mais la progression reste strictement dans le même ordre qu'avant.
 export type GenerationStage =
   | "analyse"
   | "recherche"
   | "programme"
   | "chapitres"
+  | "finition"
+  | "quizFinal"
+  | "assemblage"
   | "pret";
 
 export const STAGE_LABELS: Record<GenerationStage, string> = {
@@ -421,5 +430,8 @@ export const STAGE_LABELS: Record<GenerationStage, string> = {
   recherche: "Recherche d'exemples et de sources...",
   programme: "Construction du programme...",
   chapitres: "Création des chapitres...",
+  finition: "Résumé et quiz de module...",
+  quizFinal: "Création du quiz final...",
+  assemblage: "Enregistrement de la formation...",
   pret: "Formation prête.",
 };

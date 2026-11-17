@@ -109,11 +109,14 @@ export type GeneratedDeepAnalysis = {
   sources: DeepAnalysisSource[];
 };
 
+// Prompt 05.20.1 : "assemblage" (sauvegarde) est une nouvelle étape
+// introduite par l'architecture à étapes courtes.
 export type DeepAnalysisStage =
   | "cadrage"
   | "recherche"
   | "redaction"
   | "synthese"
+  | "assemblage"
   | "pret";
 
 export const DEEP_STAGE_LABELS: Record<DeepAnalysisStage, string> = {
@@ -121,5 +124,6 @@ export const DEEP_STAGE_LABELS: Record<DeepAnalysisStage, string> = {
   recherche: "Recherche de cas réels sur le web...",
   redaction: "Rédaction de l'analyse...",
   synthese: "Synthèse pédagogique...",
+  assemblage: "Enregistrement de l'analyse...",
   pret: "Analyse prête.",
 };

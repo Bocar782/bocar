@@ -20,12 +20,18 @@ import type {
   VerifiedExample,
 } from "@/lib/courses/schemas";
 
-// Prompt 05.18.1 : remplace le parcours "sujet -> génération immédiate" par
-// un parcours en plusieurs étapes (diagnostic adaptatif -> plan proposé,
-// modifiable -> validation -> génération réelle), tout en conservant
-// "configuration rapide" comme parcours alternatif STRICTEMENT inchangé
-// (même appel /api/courses/generate avec seulement { topic }, qui déclenche
-// côté serveur exactement le même generateCourse() qu'avant cette tâche).
+// Prompt 05.18.1 : diagnostic adaptatif -> plan proposé, modifiable ->
+// validation -> génération. Prompt 05.20.1 (suite de l'audit 05.19/05.20,
+// risque critique sur Netlify) : la génération elle-même n'est plus UNE
+// requête HTTP streamée pouvant durer plusieurs minutes — c'est maintenant
+// une boucle d'appels COURTS et répétés ("étape suivante"), chacun
+// persistant sa progression côté Supabase avant de répondre
+// (/api/courses/generate, action "start" puis "step" répétée). Consé-
+// quence assumée et honnête : la génération n'avance plus tant que cet
+// onglet n'envoie pas d'appel "step" — fermer l'onglet la met en pause
+// SANS JAMAIS LA PERDRE (chaque étape déjà terminée reste acquise), elle
+// reprend exactement où elle s'est arrêtée au retour sur cette page, au
+// lieu de continuer en arrière-plan comme avant.
 
 type Status =
   | "idle"
@@ -43,33 +49,36 @@ type PlanContext = {
   estimatedMinutes: number;
 };
 
-type StreamEvent = {
-  reservationId?: string;
-  stage?: GenerationStage | "done" | "error";
-  label?: string;
-  course?: GeneratedCourse;
-  courseId?: string | null;
-  message?: string;
-  saveWarning?: string | null;
-};
+type ServerPlan = { analysis: Analysis; verifiedExamples: VerifiedExample[]; programme: Programme };
 
 const MAX_LENGTH = 500;
 const MAX_ANSWER_LENGTH = 500;
 const SESSION_STORAGE_KEY = "tavyra:course-generation";
-// Un peu au-delà de maxDuration=540s côté serveur (route.ts) : passé ce
-// délai sans confirmation, on ne prétend plus que la génération est
-// "toujours en cours" — voir handleResume ci-dessous.
-const MAX_PLAUSIBLE_GENERATION_MS = 600_000;
-const STATUS_POLL_INTERVAL_MS = 5000;
+// Après ce nombre d'échecs consécutifs d'un appel "étape suivante"
+// (panne réseau, erreur transitoire côté serveur), on arrête de
+// réessayer automatiquement plutôt que de le faire indéfiniment sans que
+// l'utilisateur en soit informé — la génération reste reprenable (rien
+// n'est perdu, aucune étape déjà validée n'est refaite).
+const MAX_TRANSIENT_RETRIES = 6;
+const BUSY_RETRY_DELAY_MS = 1500;
 
-type StoredGeneration = { reservationId: string; topic: string; startedAt: number };
+type StoredGeneration = {
+  idempotencyKey: string;
+  // `null` tant que la réponse de "start" n'a pas encore été reçue —
+  // voir l'effet de reprise ci-dessous : dans ce cas, "start" est rejoué
+  // avec la MÊME clé d'idempotence au lieu d'être perdu.
+  reservationId: string | null;
+  topic: string;
+  plan?: ServerPlan;
+  startedAt: number;
+};
 
 function loadStoredGeneration(): StoredGeneration | null {
   try {
     const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredGeneration;
-    if (!parsed.reservationId || !parsed.topic || !parsed.startedAt) return null;
+    if (!parsed.idempotencyKey || !parsed.topic || !parsed.startedAt) return null;
     return parsed;
   } catch {
     return null;
@@ -87,27 +96,24 @@ function storeGeneration(value: StoredGeneration | null) {
   }
 }
 
-async function readNdjson(
-  response: Response,
-  onLine: (line: StreamEvent) => void,
-): Promise<void> {
-  if (!response.body) return;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newlineIndex = buffer.indexOf("\n");
-    while (newlineIndex >= 0) {
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-      newlineIndex = buffer.indexOf("\n");
-      if (line) onLine(JSON.parse(line) as StreamEvent);
-    }
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+type StartResponse = { reservationId?: string; error?: string };
+type StepResponse = {
+  done?: boolean;
+  busy?: boolean;
+  transientError?: boolean;
+  alreadyResolved?: boolean;
+  fatalError?: string;
+  stage?: GenerationStage;
+  label?: string;
+  courseId?: string | null;
+  course?: GeneratedCourse;
+  saveWarning?: string | null;
+  error?: string;
+};
 
 export function CourseGenerator({
   remainingGenerations,
@@ -117,20 +123,15 @@ export function CourseGenerator({
   locked: boolean;
 }) {
   const router = useRouter();
-  // Prompt 05.18.1 (reprise après rechargement) : état initial calculé à
-  // partir d'une éventuelle génération déjà en cours (marqueur laissé en
-  // sessionStorage avant un rechargement de page) — jamais défini via un
-  // `setState` synchrone dans un effet (voir l'effet ci-dessous, qui ne
-  // fait que RELIRE l'état côté serveur de façon asynchrone).
   const [topic, setTopic] = useState(() => loadStoredGeneration()?.topic ?? "");
   const [status, setStatus] = useState<Status>(() => (loadStoredGeneration() ? "generating" : "idle"));
-  const [stage, setStage] = useState<GenerationStage>("analyse");
+  const [stage, setStage] = useState<GenerationStage>("chapitres");
   const [course, setCourse] = useState<GeneratedCourse | null>(null);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [resumeNotice, setResumeNotice] = useState<string | null>(() =>
-    loadStoredGeneration() ? "Vérification de l'état de ta génération en cours…" : null,
+    loadStoredGeneration() ? "Reprise de ta génération en cours…" : null,
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -144,15 +145,8 @@ export function CourseGenerator({
   const [adjustmentRequest, setAdjustmentRequest] = useState("");
   const [showAdjustmentField, setShowAdjustmentField] = useState(false);
 
-  const reservationRef = useRef<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Prompt 05.18.1 (protection contre les doubles soumissions) : vérifié ET
-  // positionné de façon SYNCHRONE, indépendamment du cycle de rendu React —
-  // contrairement à une simple vérification de `status`, un `ref` est à
-  // jour immédiatement, même si deux clics arrivent avant qu'un nouveau
-  // rendu n'ait eu lieu (React peut regrouper plusieurs mises à jour d'état
-  // avant de redessiner, un simple test sur `status` pourrait donc laisser
-  // passer un second appel).
+  // Protection contre les doubles soumissions (Prompt 05.18.1) : vérifié ET
+  // positionné de façon SYNCHRONE, indépendamment du cycle de rendu React.
   const isGeneratingRef = useRef(false);
 
   function resizeTextarea() {
@@ -162,78 +156,56 @@ export function CourseGenerator({
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }
 
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }
-
-  // Prompt 05.18.1 (reprise après rechargement) : au montage, si une
-  // génération a été lancée avant un rechargement de page (marqueur
-  // laissé en sessionStorage), on ne redémarre JAMAIS une nouvelle
-  // génération ni une nouvelle réservation — on va seulement RELIRE
-  // l'état réel de celle déjà en cours côté serveur.
+  // Reprise après rechargement (Prompt 05.20.1) : si une génération a été
+  // lancée avant un rechargement de page, on ne redémarre JAMAIS une
+  // nouvelle génération ni une nouvelle réservation — on reprend
+  // directement la boucle d'étapes courtes à l'endroit exact où elle
+  // s'est arrêtée (la progression déjà validée est persistée côté
+  // Supabase, jamais perdue). Si "start" n'avait pas encore reçu de
+  // réponse au moment du rechargement, il est rejoué avec la MÊME clé
+  // d'idempotence — jamais une seconde réservation pour la même intention.
   useEffect(() => {
     const loaded = loadStoredGeneration();
     if (!loaded) return;
-    const stored = loaded;
-    reservationRef.current = stored.reservationId;
 
-    async function checkOnce() {
-      const result = await getGenerationStatus(stored.reservationId, "course");
-
-      if (result.status === "completed") {
-        stopPolling();
-        storeGeneration(null);
-        if (result.resourceId) {
-          router.push(`/dashboard/formations/${result.resourceId}`);
-        } else {
-          setResumeNotice(null);
-          setStatus("done");
+    (async () => {
+      let reservationId = loaded.reservationId;
+      if (!reservationId) {
+        try {
+          const response = await fetch("/api/courses/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "start",
+              idempotencyKey: loaded.idempotencyKey,
+              topic: loaded.topic,
+              ...(loaded.plan ? { plan: loaded.plan } : {}),
+            }),
+          });
+          const payload = (await response.json().catch(() => null)) as StartResponse | null;
+          if (!response.ok || !payload?.reservationId) {
+            storeGeneration(null);
+            setResumeNotice(null);
+            setError(payload?.error ?? "La génération précédente n'a pas pu être reprise. Réessaie.");
+            setStatus("error");
+            return;
+          }
+          reservationId = payload.reservationId;
+          storeGeneration({ ...loaded, reservationId });
+        } catch {
+          // Réseau indisponible maintenant : jamais affirmer que la
+          // génération a échoué — elle reste peut-être bel et bien en
+          // cours côté serveur si "start" avait en réalité réussi.
+          setResumeNotice(
+            "Impossible de confirmer l'état de ta génération pour le moment (connexion instable). Recharge la page pour réessayer.",
+          );
+          return;
         }
-        return;
       }
-
-      if (result.status === "released" || result.status === "not_found") {
-        stopPolling();
-        storeGeneration(null);
-        setResumeNotice(null);
-        setError(
-          "La génération précédente s'est arrêtée (ou a expiré) avant la fin. Réessaie.",
-        );
-        setStatus("error");
-        return;
-      }
-
-      if (result.status === "unknown") {
-        // Jamais affirmer qu'elle continue si on ne peut pas le confirmer.
-        setResumeNotice(
-          "Impossible de confirmer l'état de ta génération pour le moment (connexion instable). Nouvelle tentative dans quelques secondes…",
-        );
-        return;
-      }
-
-      // status === "pending" : réellement toujours en cours, confirmé.
-      const elapsed = Date.now() - stored.startedAt;
-      if (elapsed > MAX_PLAUSIBLE_GENERATION_MS) {
-        // Au-delà d'une durée plausible, on ne peut plus raisonnablement
-        // affirmer qu'elle est "toujours en cours" sans nouvelle preuve.
-        stopPolling();
-        storeGeneration(null);
-        setResumeNotice(null);
-        setError(
-          "Nous ne parvenons plus à confirmer l'état de cette génération après un délai inhabituel. Réessaie — ton quota n'a pas été consommé si elle n'a pas abouti.",
-        );
-        setStatus("error");
-        return;
-      }
-      setResumeNotice("Ta génération précédente est toujours en cours…");
-    }
-
-    checkOnce();
-    pollRef.current = setInterval(checkOnce, STATUS_POLL_INTERVAL_MS);
-    return () => stopPolling();
+      setTopic(loaded.topic);
+      setResumeNotice(null);
+      await runStepLoop(reservationId);
+    })();
     // Volontairement une seule fois au montage.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -257,7 +229,6 @@ export function CourseGenerator({
         setDiagnosticChoice("");
         setStatus("diagnostic");
       } else {
-        // Aucune question nécessaire pour ce sujet : passe directement au plan.
         await buildPlan([]);
       }
     } catch (err) {
@@ -372,71 +343,176 @@ export function CourseGenerator({
     });
   }
 
-  async function runGeneration(body: Record<string, unknown>) {
+  /**
+   * Boucle d'étapes courtes (Prompt 05.20.1) : appelle "step" répétitivement
+   * jusqu'à ce que le serveur indique que la génération est terminée
+   * (succès ou échec définitif). Chaque étape persiste son résultat avant
+   * de répondre — jamais de double exécution d'une même étape, même si
+   * cette boucle est interrompue et reprise plus tard (voir l'effet de
+   * reprise ci-dessus).
+   */
+  async function runStepLoop(reservationId: string) {
+    let consecutiveFailures = 0;
+
+    while (true) {
+      let response: Response;
+      try {
+        response = await fetch("/api/courses/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "step", reservationId }),
+        });
+      } catch {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError(
+            "Impossible de contacter le serveur pour continuer la génération. Ta génération reste en cours et n'a rien perdu : recharge la page pour réessayer.",
+          );
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as StepResponse | null;
+        storeGeneration(null);
+        setError(payload?.error ?? "Une erreur est survenue.");
+        setStatus("error");
+        isGeneratingRef.current = false;
+        return;
+      }
+
+      const payload = (await response.json().catch(() => null)) as StepResponse | null;
+      if (!payload) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError("Une erreur est survenue. Ta génération reste reprenable : recharge la page pour réessayer.");
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      if (payload.busy) {
+        await sleep(BUSY_RETRY_DELAY_MS);
+        continue;
+      }
+
+      if (payload.transientError) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_TRANSIENT_RETRIES) {
+          setError(
+            "La génération rencontre des difficultés techniques persistantes. Ton quota n'a pas été consommé davantage et rien n'est perdu : recharge la page pour réessayer.",
+          );
+          setStatus("error");
+          isGeneratingRef.current = false;
+          return;
+        }
+        await sleep(Math.min(1000 * consecutiveFailures, 5000));
+        continue;
+      }
+
+      consecutiveFailures = 0;
+
+      if (payload.done) {
+        storeGeneration(null);
+        isGeneratingRef.current = false;
+
+        if (payload.alreadyResolved) {
+          const result = await getGenerationStatus(reservationId, "course");
+          if (result.status === "completed" && result.resourceId) {
+            router.push(`/dashboard/formations/${result.resourceId}`);
+          } else if (result.status === "completed") {
+            setStatus("done");
+          } else {
+            setError("Cette génération s'est arrêtée (ou a expiré) avant la fin. Réessaie.");
+            setStatus("error");
+          }
+          return;
+        }
+
+        if (payload.fatalError) {
+          setError(payload.fatalError);
+          setStatus("error");
+          return;
+        }
+
+        setCourse(payload.course ?? null);
+        setCourseId(payload.courseId ?? null);
+        setSaveWarning(payload.saveWarning ?? null);
+        setStatus("done");
+        router.refresh();
+        return;
+      }
+
+      if (payload.stage) setStage(payload.stage);
+    }
+  }
+
+  async function startGeneration(body: { topic: string; plan?: ServerPlan }) {
     if (isGeneratingRef.current) return;
     isGeneratingRef.current = true;
-    setStatus("generating");
-    setStage("analyse");
     setError(null);
     setCourse(null);
+    setStatus(body.plan ? "generating" : "building_plan");
+    setStage("chapitres");
+
+    const idempotencyKey = crypto.randomUUID();
+    // Persisté AVANT le premier appel réseau : si la page est rechargée à
+    // n'importe quel instant après cette ligne — y compris pendant que la
+    // requête "start" est encore en vol — l'effet de reprise ci-dessus
+    // pourra toujours la rejouer avec la MÊME clé, jamais une seconde fois.
+    storeGeneration({
+      idempotencyKey,
+      reservationId: null,
+      topic: body.topic,
+      plan: body.plan,
+      startedAt: Date.now(),
+    });
 
     try {
       const response = await fetch("/api/courses/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ action: "start", idempotencyKey, topic: body.topic, plan: body.plan }),
       });
-
-      if (!response.ok || !response.body) {
-        const payload = await response.json().catch(() => null);
+      const payload = (await response.json().catch(() => null)) as StartResponse | null;
+      if (!response.ok || !payload?.reservationId) {
         throw new Error(payload?.error ?? "Impossible de lancer la génération.");
       }
 
-      await readNdjson(response, (parsed) => {
-        if (parsed.reservationId) {
-          // Persisté AVANT tout autre traitement : si la page est
-          // rechargée à n'importe quel instant après cette ligne, elle
-          // pourra toujours retrouver cette génération (voir l'effet de
-          // reprise ci-dessus) — jamais de double réservation possible,
-          // la quota a déjà été consommée côté serveur à cet instant.
-          reservationRef.current = parsed.reservationId;
-          storeGeneration({ reservationId: parsed.reservationId, topic: topic.trim(), startedAt: Date.now() });
-          return;
-        }
-        if (parsed.stage === "error") {
-          throw new Error(parsed.message ?? "La génération a échoué.");
-        }
-        if (parsed.stage === "done" && parsed.course) {
-          storeGeneration(null);
-          setCourse(parsed.course);
-          setCourseId(parsed.courseId ?? null);
-          setSaveWarning(parsed.saveWarning ?? null);
-          setStatus("done");
-          router.refresh();
-          return;
-        }
-        if (parsed.stage) setStage(parsed.stage as GenerationStage);
+      storeGeneration({
+        idempotencyKey,
+        reservationId: payload.reservationId,
+        topic: body.topic,
+        plan: body.plan,
+        startedAt: Date.now(),
       });
+      setStatus("generating");
+      await runStepLoop(payload.reservationId);
     } catch (err) {
       storeGeneration(null);
       setError(err instanceof Error ? err.message : "Une erreur est survenue.");
       setStatus("error");
-    } finally {
       isGeneratingRef.current = false;
     }
   }
 
   // Parcours "configuration rapide" : comportement STRICTEMENT identique à
-  // avant le Prompt 05.18.1 (même endpoint, même payload { topic } seul).
+  // avant le Prompt 05.18.1 côté intention (pas de diagnostic ni de
+  // validation de plan) — le plan est désormais construit côté serveur
+  // dans "start" plutôt que dans cette même requête que la rédaction.
   async function handleQuickSubmit() {
     const trimmed = topic.trim();
     if (!trimmed || status !== "idle") return;
-    await runGeneration({ topic: trimmed });
+    await startGeneration({ topic: trimmed });
   }
 
-  // Parcours principal (Prompt 05.18.1) : lance le diagnostic adaptatif
-  // plutôt qu'une génération immédiate — c'est désormais le comportement
-  // par défaut du formulaire (touche Entrée incluse).
   function handleFormSubmit(formEvent: FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
     startDiagnostic();
@@ -444,13 +520,9 @@ export function CourseGenerator({
 
   async function handleValidatePlan() {
     if (!plan || status !== "plan_review") return;
-    await runGeneration({
+    await startGeneration({
       topic: topic.trim(),
-      plan: {
-        analysis: plan.analysis,
-        verifiedExamples: plan.verifiedExamples,
-        programme: plan.programme,
-      },
+      plan: { analysis: plan.analysis, verifiedExamples: plan.verifiedExamples, programme: plan.programme },
     });
   }
 
@@ -569,7 +641,7 @@ export function CourseGenerator({
 
           <button
             type="button"
-            onClick={() => runGeneration({ topic: topic.trim() })}
+            onClick={() => startGeneration({ topic: topic.trim() })}
             className="mt-6 block text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground"
           >
             Passer directement à la configuration rapide (sans diagnostic)

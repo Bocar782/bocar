@@ -1,55 +1,91 @@
-// Vrais tests automatisés (Prompt 05.16.1, correctif E3 de l'audit de
-// sécurité 05.16) : importent et exécutent le VRAI handler POST de route.ts
-// ainsi que le vrai src/lib/analysis/persist.ts et
-// src/lib/courses/reservation.ts qu'il appelle en interne. Seules les
-// frontières externes (client Supabase, generateDeepAnalysis) sont mockées.
-// Aucun appel réel à Anthropic ni à Supabase.
+// Vrais tests automatisés (Prompt 05.20.1, architecture à étapes courtes —
+// même mécanisme que /api/courses/generate, voir ce fichier de test pour
+// le détail des commentaires). Seules les frontières externes (client
+// Supabase, client Anthropic, performAnalysisStepUnit) sont mockées.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GeneratedDeepAnalysis } from "@/lib/analysis/schemas";
 
-const mockGenerateDeepAnalysis = vi.fn();
+const mockPerformAnalysisStepUnit = vi.fn();
 
-vi.mock("@/lib/analysis/generate", () => ({
-  generateDeepAnalysis: (...args: unknown[]) => mockGenerateDeepAnalysis(...args),
-  AnalysisGenerationError: class AnalysisGenerationError extends Error {},
+vi.mock("@/lib/analysis/generate", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/analysis/generate")>("@/lib/analysis/generate");
+  return {
+    ...actual,
+    performAnalysisStepUnit: (...args: unknown[]) => mockPerformAnalysisStepUnit(...args),
+  };
+});
+
+const mockCreateAnthropicClient = vi.fn(() => ({ fakeClient: true }));
+vi.mock("@/lib/anthropic/client", () => ({
+  createAnthropicClient: () => mockCreateAnthropicClient(),
+}));
+
+const mockSaveDeepAnalysis = vi.fn();
+vi.mock("@/lib/analysis/persist", () => ({
+  saveDeepAnalysis: (...args: unknown[]) => mockSaveDeepAnalysis(...args),
 }));
 
 type RpcCall = { fnName: string; args: unknown };
 
-type RpcMockResult =
-  | { single: () => Promise<{ data: unknown; error: Error | null }> }
-  | Promise<{ data: unknown; error: Error | null }>;
-
-// Prompt 05.17.1 (correction de la faille critique de l'audit 05.17) :
-// `saveDeepAnalysis` passe désormais par le RPC `save_generated_analysis`
-// (plus d'insert direct via `.from("deep_analyses")`) — ce mock simule ce
-// RPC comme les autres.
-let saveAnalysisResult: { data: unknown; error: Error | null } = {
-  data: "analysis-id",
-  error: null,
-};
-
 function makeSupabaseMock() {
   const rpcCalls: RpcCall[] = [];
-  const rpc = vi.fn((fnName: string, args: unknown): RpcMockResult => {
+  const state = {
+    reservations: new Map<string, { status: string; input: unknown; progress: unknown; claimedStep: string | null }>(),
+    byIdemKey: new Map<string, string>(),
+    nextId: 1,
+  };
+
+  const rpc = vi.fn((fnName: string, args: Record<string, unknown>) => {
     rpcCalls.push({ fnName, args });
-    if (fnName === "reserve_generation_slot") {
-      return {
-        single: async () => ({
-          data: { ok: true, reservation_id: "res-1", is_pro: true, limit_count: 2, used_count: 1 },
-          error: null,
-        }),
-      };
+
+    if (fnName === "start_generation_task") {
+      const key = `${args.p_kind}:${args.p_idempotency_key}`;
+      const existing = state.byIdemKey.get(key);
+      if (existing) {
+        return { single: async () => ({ data: { reservation_id: existing, already_existed: true, ok: true, is_pro: null, limit_count: null, used_count: null }, error: null }) };
+      }
+      const id = `00000000-0000-4000-8000-${String(state.nextId++).padStart(12, "0")}`;
+      state.byIdemKey.set(key, id);
+      state.reservations.set(id, { status: "pending", input: args.p_input, progress: {}, claimedStep: null });
+      return { single: async () => ({ data: { reservation_id: id, already_existed: false, ok: true, is_pro: true, limit_count: 2, used_count: 1 }, error: null }) };
     }
-    if (fnName === "save_generated_analysis") {
-      return Promise.resolve(saveAnalysisResult);
+
+    if (fnName === "claim_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (!row) return { single: async () => ({ data: { claimed: false, reason: "not_found", input: null, progress: null, reservation_status: null }, error: null }) };
+      if (row.status !== "pending") return { single: async () => ({ data: { claimed: false, reason: "already_resolved", input: row.input, progress: row.progress, reservation_status: row.status }, error: null }) };
+      if (row.claimedStep) return { single: async () => ({ data: { claimed: false, reason: "already_in_progress", input: null, progress: null, reservation_status: row.status }, error: null }) };
+      row.claimedStep = args.p_claim_token as string;
+      return { single: async () => ({ data: { claimed: true, reason: null, input: row.input, progress: row.progress, reservation_status: row.status }, error: null }) };
     }
-    return Promise.resolve({ data: true, error: null });
+
+    if (fnName === "commit_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (!row || row.claimedStep !== args.p_claim_token) return { single: async () => ({ data: { ok: false, reason: row ? "claim_expired" : "not_found" }, error: null }) };
+      row.progress = { ...(row.progress as object), ...(args.p_progress_patch as object) };
+      row.claimedStep = null;
+      return { single: async () => ({ data: { ok: true, reason: null }, error: null }) };
+    }
+
+    if (fnName === "fail_generation_step") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (row) row.claimedStep = null;
+      return { single: async () => ({ data: { ok: true, reason: null }, error: null }) };
+    }
+
+    if (fnName === "resolve_generation_slot") {
+      const row = state.reservations.get(args.p_reservation_id as string);
+      if (row) row.status = args.p_status as string;
+      return Promise.resolve({ data: true, error: null });
+    }
+
+    return Promise.resolve({ data: null, error: null });
   });
+
   return {
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
     rpc,
     rpcCalls,
+    state,
   };
 }
 
@@ -60,146 +96,163 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 beforeEach(() => {
-  saveAnalysisResult = { data: "analysis-id", error: null };
   currentSupabaseMock = makeSupabaseMock();
-  mockGenerateDeepAnalysis.mockReset();
+  mockPerformAnalysisStepUnit.mockReset();
+  mockSaveDeepAnalysis.mockReset();
+  mockCreateAnthropicClient.mockClear();
 });
 
-const FAKE_ANALYSIS: GeneratedDeepAnalysis = {
-  topic: "Sujet",
-  title: "Analyse test",
-  domain: "Test",
-  introduction: "Intro",
-  sections: [],
-  synthesis: "Synthèse",
-  keyLessons: [],
-  sources: [],
-};
-
-async function callRoute(origin?: string) {
+async function callRoute(body: Record<string, unknown>, origin?: string) {
   const { POST } = await import("@/app/api/analysis/generate/route");
   const response = await POST(
     new Request("http://localhost/api/analysis/generate", {
       method: "POST",
-      headers: origin ? { origin } : undefined,
-      body: JSON.stringify({ topic: "Un sujet de test" }),
+      headers: origin ? { origin, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     }),
   );
-  const text = await response.text();
-  const lines = text
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as Record<string, unknown>);
-  return { response, lines };
+  const json = await response.json().catch(() => null);
+  return { response, json };
 }
 
-describe("POST /api/analysis/generate (vrai route.ts + vraie vérification d'origine)", () => {
-  it("renvoie 403 pour une origine externe non autorisée, avant toute génération", async () => {
-    const { response } = await callRoute("https://evil.example");
-
+describe("POST /api/analysis/generate — vérification d'origine", () => {
+  it("renvoie 403 pour une origine externe non autorisée, avant toute action", async () => {
+    const { response } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" }, "https://evil.example");
     expect(response.status).toBe(403);
-    expect(mockGenerateDeepAnalysis).not.toHaveBeenCalled();
-  });
-
-  it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
-    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
-
-    const { response } = await callRoute(undefined);
-
-    expect(response.status).toBe(200);
   });
 });
 
-describe("POST /api/analysis/generate (vrai route.ts + vrai persist.ts/reservation.ts)", () => {
-  it("n'enregistre jamais l'analyse et libère la réservation quand generateDeepAnalysis() échoue", async () => {
-    mockGenerateDeepAnalysis.mockRejectedValue(new Error("échec simulé de génération"));
+describe("POST /api/analysis/generate — action 'start'", () => {
+  it("réserve un quota et renvoie reservationId", async () => {
+    const { response, json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+    expect(response.status).toBe(200);
+    expect(json.reservationId).toBe("00000000-0000-4000-8000-000000000001");
+  });
 
-    const { lines } = await callRoute();
+  it("rejouer 'start' avec la MÊME clé d'idempotence renvoie la même réservation, sans consommer un second quota", async () => {
+    const body = { action: "start", idempotencyKey: "same-key", topic: "Sujet" };
+    const first = await callRoute(body);
+    const second = await callRoute(body);
+    expect(first.json.reservationId).toBe(second.json.reservationId);
+  });
 
-    expect(lines.some((l) => l.stage === "error")).toBe(true);
-    const releaseCalls = currentSupabaseMock.rpcCalls.filter(
-      (c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released",
-    );
+  it("renvoie 403 avec le message de quota si le RPC refuse (quota atteint)", async () => {
+    currentSupabaseMock.rpc = vi.fn(() => ({
+      single: async () => ({ data: { reservation_id: null, already_existed: false, ok: false, is_pro: true, limit_count: 2, used_count: 2 }, error: null }),
+    })) as never;
+
+    const { response, json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+
+    expect(response.status).toBe(403);
+    expect(json.error).toContain("analyse");
+  });
+});
+
+describe("POST /api/analysis/generate — action 'step'", () => {
+  async function startOne() {
+    const { json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+    return json.reservationId as string;
+  }
+
+  it("renvoie 404 pour une réservation introuvable", async () => {
+    const { response } = await callRoute({ action: "step", reservationId: "00000000-0000-0000-0000-000000000000" });
+    expect(response.status).toBe(404);
+  });
+
+  it("exécute une seule unité de travail par appel et avance la progression", async () => {
+    const reservationId = await startOne();
+    mockPerformAnalysisStepUnit.mockResolvedValue({
+      brief: { title: "Analyse test", domain: "Test", introduction: "x", researchAngle: "x", caseCount: 4, searchQueries: ["q"] },
+    });
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
+
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(false);
+    expect(json.stage).toBe("cadrage");
+    expect(mockPerformAnalysisStepUnit).toHaveBeenCalledTimes(1);
+  });
+
+  it("libère immédiatement la réservation sur une erreur métier fatale (pas assez de cas vérifiés), sans attendre 15 minutes", async () => {
+    const reservationId = await startOne();
+    const { AnalysisGenerationError } = await vi.importActual<typeof import("@/lib/analysis/generate")>("@/lib/analysis/generate");
+    mockPerformAnalysisStepUnit.mockRejectedValue(new AnalysisGenerationError("Pas assez de cas réels."));
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
+
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(true);
+    expect(json.fatalError).toBe("Pas assez de cas réels.");
+    const releaseCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "released");
     expect(releaseCalls).toHaveLength(1);
   });
 
-  it("enregistre l'analyse via le RPC save_generated_analysis, SANS appeler consumeReservation séparément (non-régression + correction 05.17.1)", async () => {
-    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
+  it("ne libère JAMAIS la réservation sur une erreur transitoire", async () => {
+    const reservationId = await startOne();
+    mockPerformAnalysisStepUnit.mockRejectedValue(new Error("panne réseau"));
 
-    const { lines } = await callRoute();
-
-    expect(lines.some((l) => l.stage === "done" && l.analysisId === "analysis-id")).toBe(true);
-    // save_generated_analysis a bien été appelé avec la réservation en cours.
-    const saveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "save_generated_analysis");
-    expect(saveCalls).toHaveLength(1);
-    expect((saveCalls[0].args as { p_reservation_id?: string }).p_reservation_id).toBe("res-1");
-    // Le RPC marque lui-même la réservation "completed" dans sa propre
-    // transaction (non simulée ici, voir les tests Postgres réels) : la
-    // route elle-même ne doit JAMAIS appeler resolve_generation_slot en
-    // plus, sous peine de double consommation.
-    const resolveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot");
-    expect(resolveCalls).toHaveLength(0);
-  });
-
-  // Prompt 05.16.1 (correctif E3) : une erreur Supabase/Postgres simulée,
-  // contenant du détail interne, ne doit jamais atteindre la réponse HTTP.
-  it("ne révèle jamais le détail d'une erreur de sauvegarde Supabase simulée (table/colonne/contrainte)", async () => {
-    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
-    const sensitiveDetail =
-      'column "secret_internal_column" of relation "public.deep_analyses" violates not-null constraint "deep_analyses_secret_check"';
-    saveAnalysisResult = { data: null, error: new Error(sensitiveDetail) };
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const { response, lines } = await callRoute();
-    const fullBody = JSON.stringify(lines);
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
     expect(response.status).toBe(200);
-    expect(fullBody).not.toContain("secret_internal_column");
-    expect(fullBody).not.toContain("constraint");
-    expect(fullBody).not.toContain("relation");
-    const doneLine = lines.find((l) => l.stage === "done");
-    expect(doneLine?.saveWarning).toBe(
-      "L'analyse a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.",
-    );
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
+    expect(json.done).toBe(false);
+    expect(json.transientError).toBe(true);
+    const releaseCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot");
+    expect(releaseCalls).toHaveLength(0);
   });
 
-  it("ne révèle jamais le détail d'une erreur inattendue (non métier) pendant la génération", async () => {
-    const sensitiveDetail = 'relation "public.secret_table" does not exist';
-    mockGenerateDeepAnalysis.mockRejectedValue(new Error(sensitiveDetail));
+  it("deux appels 'step' simultanés sur la même réservation : un seul avance, l'autre reçoit busy:true", async () => {
+    const reservationId = await startOne();
+    mockPerformAnalysisStepUnit.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ brief: { title: "x", domain: "x", introduction: "x", researchAngle: "x", caseCount: 4, searchQueries: [] } }), 20)),
+    );
 
-    const { response, lines } = await callRoute();
-    const fullBody = JSON.stringify(lines);
+    const [first, second] = await Promise.all([
+      callRoute({ action: "step", reservationId }),
+      callRoute({ action: "step", reservationId }),
+    ]);
+
+    const busyResponses = [first.json, second.json].filter((j) => j.busy === true);
+    expect(busyResponses).toHaveLength(1);
+    expect(mockPerformAnalysisStepUnit).toHaveBeenCalledTimes(1);
+  });
+
+  it("assemble et sauvegarde l'analyse à la dernière étape, via le RPC atomique existant (saveDeepAnalysis réutilisé)", async () => {
+    const reservationId = await startOne();
+    const row = currentSupabaseMock.state.reservations.get(reservationId)!;
+    row.progress = {
+      stage: "synthese",
+      brief: { title: "Analyse test", domain: "Test", introduction: "x", researchAngle: "x", caseCount: 2, searchQueries: [] },
+      verifiedCases: [
+        { name: "Cas A", summary: "x", outcome: "succès", sourceUrl: "https://a.example.com", sourceTitle: "A" },
+        { name: "Cas B", summary: "x", outcome: "échec", sourceUrl: "https://b.example.com", sourceTitle: "B" },
+      ],
+      sections: {
+        "0": { position: 0, name: "Cas A", outcome: "succès", content: "x", lessons: [], source: { index: 0, url: "https://a.example.com", title: "A" } },
+        "1": { position: 1, name: "Cas B", outcome: "échec", content: "x", lessons: [], source: { index: 1, url: "https://b.example.com", title: "B" } },
+      },
+      synthesis: { synthesis: "Synthèse", keyLessons: [] },
+    };
+    mockSaveDeepAnalysis.mockResolvedValue("analysis-123");
+
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
     expect(response.status).toBe(200);
-    expect(fullBody).not.toContain("secret_table");
-    expect(fullBody).not.toContain("relation");
-    const errorLine = lines.find((l) => l.stage === "error");
-    expect(errorLine?.message).toBe("Une erreur est survenue pendant l'analyse. Réessaie dans un instant.");
+    expect(json.done).toBe(true);
+    expect(json.analysisId).toBe("analysis-123");
+    expect(json.analysis).toBeDefined();
+    expect(mockSaveDeepAnalysis).toHaveBeenCalledTimes(1);
   });
 
-  it("conserve le message d'une AnalysisGenerationError (erreur métier conçue pour être affichée)", async () => {
-    const { AnalysisGenerationError } = await import("@/lib/analysis/generate");
-    mockGenerateDeepAnalysis.mockRejectedValue(
-      new AnalysisGenerationError("Le sujet proposé ne permet pas d'identifier de cas réels pertinents."),
-    );
+  it("renvoie alreadyResolved:true sans refaire de travail si l'analyse est déjà terminée", async () => {
+    const reservationId = await startOne();
+    const row = currentSupabaseMock.state.reservations.get(reservationId)!;
+    row.status = "completed";
 
-    const { lines } = await callRoute();
+    const { response, json } = await callRoute({ action: "step", reservationId });
 
-    const errorLine = lines.find((l) => l.stage === "error");
-    expect(errorLine?.message).toBe("Le sujet proposé ne permet pas d'identifier de cas réels pertinents.");
-  });
-
-  // Prompt 05.19/05.20 : même correction qu'en 05.18.1 pour
-  // /api/courses/generate — nécessaire pour que le client puisse reprendre
-  // après un rechargement pendant une analyse en cours.
-  it("transmet reservationId comme toute première ligne du flux NDJSON, avant le moindre évènement de progression", async () => {
-    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
-
-    const { lines } = await callRoute();
-
-    expect(lines[0]).toEqual({ reservationId: "res-1" });
+    expect(response.status).toBe(200);
+    expect(json.done).toBe(true);
+    expect(json.alreadyResolved).toBe(true);
+    expect(mockPerformAnalysisStepUnit).not.toHaveBeenCalled();
   });
 });

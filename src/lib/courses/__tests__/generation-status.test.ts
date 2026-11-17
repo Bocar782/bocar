@@ -89,7 +89,13 @@ describe("getGenerationStatus — statuts confirmés et filtrage par kind (Promp
 
     const result = await getGenerationStatus("res-1", "course");
 
-    expect(result).toEqual({ status: "pending", resourceId: null, createdAt: "2026-01-01T00:00:00Z" });
+    expect(result).toEqual({
+      status: "pending",
+      resourceId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      stage: null,
+      lastError: null,
+    });
   });
 
   it("renvoie 'completed' avec le resourceId de la ressource créée", async () => {
