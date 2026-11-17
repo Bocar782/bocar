@@ -9,6 +9,7 @@ import {
   releaseReservation,
   reserveGenerationSlot,
 } from "@/lib/courses/reservation";
+import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -16,6 +17,9 @@ export const maxDuration = 300;
 const MAX_TOPIC_LENGTH = 500;
 
 export async function POST(request: Request) {
+  const originError = checkRequestOrigin(request);
+  if (originError) return originError;
+
   const supabase = await createClient();
   const {
     data: { user },

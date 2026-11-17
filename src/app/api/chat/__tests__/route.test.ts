@@ -102,11 +102,12 @@ beforeEach(() => {
   mockAnthropicStream.mockReturnValue(fakeAnthropicStreamImpl("Réponse de Tavyra"));
 });
 
-async function callRoute(body: Record<string, unknown>) {
+async function callRoute(body: Record<string, unknown>, origin?: string) {
   const { POST } = await import("@/app/api/chat/route");
   const response = await POST(
     new Request("http://localhost/api/chat", {
       method: "POST",
+      headers: origin ? { origin } : undefined,
       body: JSON.stringify(body),
     }),
   );
@@ -120,6 +121,21 @@ const VALID_BODY = {
 };
 
 describe("POST /api/chat (vrai route.ts + vrai rate-limit.ts)", () => {
+  it("renvoie 403 pour une origine externe non autorisée, avant toute authentification ou appel Anthropic", async () => {
+    const response = await callRoute(VALID_BODY, "https://evil.example");
+
+    expect(response.status).toBe(403);
+    expect(mockAnthropicStream).not.toHaveBeenCalled();
+    const rateLimitCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "check_chat_rate_limit");
+    expect(rateLimitCalls).toHaveLength(0);
+  });
+
+  it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
+    const response = await callRoute(VALID_BODY, undefined);
+
+    expect(response.status).toBe(200);
+  });
+
   it("renvoie 401 si non authentifié, sans jamais appeler Anthropic", async () => {
     currentSupabaseMock.auth.getUser = vi.fn(async () => ({ data: { user: null } }));
 

@@ -8,6 +8,7 @@ import {
   reserveGenerationSlot,
 } from "@/lib/courses/reservation";
 import type { GenerationStage } from "@/lib/courses/schemas";
+import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
 // Portée à 540s (Prompt 05.9, corrigé) : la génération est maintenant
@@ -32,6 +33,9 @@ export const maxDuration = 540;
 const MAX_TOPIC_LENGTH = 500;
 
 export async function POST(request: Request) {
+  const originError = checkRequestOrigin(request);
+  if (originError) return originError;
+
   const supabase = await createClient();
   const {
     data: { user },

@@ -74,11 +74,12 @@ const FAKE_COURSE: GeneratedCourse = {
   quiz: [],
 };
 
-async function callRoute() {
+async function callRoute(origin?: string) {
   const { POST } = await import("@/app/api/courses/generate/route");
   const response = await POST(
     new Request("http://localhost/api/courses/generate", {
       method: "POST",
+      headers: origin ? { origin } : undefined,
       body: JSON.stringify({ topic: "Un sujet de test" }),
     }),
   );
@@ -90,6 +91,23 @@ async function callRoute() {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
   return { response, lines };
 }
+
+describe("POST /api/courses/generate (vrai route.ts + vraie vérification d'origine)", () => {
+  it("renvoie 403 pour une origine externe non autorisée, avant toute génération", async () => {
+    const { response } = await callRoute("https://evil.example");
+
+    expect(response.status).toBe(403);
+    expect(mockGenerateCourse).not.toHaveBeenCalled();
+  });
+
+  it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
+    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
+
+    const { response } = await callRoute(undefined);
+
+    expect(response.status).toBe(200);
+  });
+});
 
 describe("POST /api/courses/generate (vrai route.ts + vrai persist.ts/reservation.ts)", () => {
   it("n'enregistre jamais la formation et libère la réservation quand generateCourse() échoue", async () => {

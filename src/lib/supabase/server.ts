@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getSupabaseCookieOptions } from "./cookie-options";
 import { getSupabasePublishableKey, getSupabaseUrl } from "./env";
 
 // Client à utiliser dans les Server Components, Server Actions et Route
@@ -8,6 +9,7 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(getSupabaseUrl(), getSupabasePublishableKey(), {
+    cookieOptions: getSupabaseCookieOptions(),
     cookies: {
       getAll() {
         return cookieStore.getAll();

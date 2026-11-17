@@ -72,11 +72,12 @@ const FAKE_ANALYSIS: GeneratedDeepAnalysis = {
   sources: [],
 };
 
-async function callRoute() {
+async function callRoute(origin?: string) {
   const { POST } = await import("@/app/api/analysis/generate/route");
   const response = await POST(
     new Request("http://localhost/api/analysis/generate", {
       method: "POST",
+      headers: origin ? { origin } : undefined,
       body: JSON.stringify({ topic: "Un sujet de test" }),
     }),
   );
@@ -88,6 +89,23 @@ async function callRoute() {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
   return { response, lines };
 }
+
+describe("POST /api/analysis/generate (vrai route.ts + vraie vérification d'origine)", () => {
+  it("renvoie 403 pour une origine externe non autorisée, avant toute génération", async () => {
+    const { response } = await callRoute("https://evil.example");
+
+    expect(response.status).toBe(403);
+    expect(mockGenerateDeepAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
+    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
+
+    const { response } = await callRoute(undefined);
+
+    expect(response.status).toBe(200);
+  });
+});
 
 describe("POST /api/analysis/generate (vrai route.ts + vrai persist.ts/reservation.ts)", () => {
   it("n'enregistre jamais l'analyse et libère la réservation quand generateDeepAnalysis() échoue", async () => {

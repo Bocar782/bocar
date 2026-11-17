@@ -4,6 +4,7 @@ import { createAnthropicClient } from "@/lib/anthropic/client";
 import { ChatRateLimitExceededError, checkChatRateLimit } from "@/lib/chat/rate-limit";
 import { buildChatSystemPrompt } from "@/lib/courses/chat-context";
 import { getCourseById } from "@/lib/courses/persist";
+import { checkRequestOrigin } from "@/lib/security/origin-check";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const originError = checkRequestOrigin(request);
+  if (originError) return originError;
+
   const supabase = await createClient();
   const {
     data: { user },

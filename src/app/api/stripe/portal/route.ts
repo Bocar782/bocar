@@ -3,12 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createStripeClient } from "@/lib/stripe/client";
 import { getSiteUrl } from "@/lib/site-url";
+import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
 
 // Ouvre le portail client Stripe (factures, moyen de paiement, résiliation)
 // pour l'abonnement de l'utilisateur connecté.
-export async function POST() {
+export async function POST(request: Request) {
+  const originError = checkRequestOrigin(request);
+  if (originError) return originError;
+
   const supabase = await createClient();
   const {
     data: { user },

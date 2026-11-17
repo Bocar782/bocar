@@ -4,12 +4,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createStripeClient } from "@/lib/stripe/client";
 import { getStripePriceId } from "@/lib/stripe/env";
 import { getSiteUrl } from "@/lib/site-url";
+import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
 
 // Crée une session Stripe Checkout (abonnement Pro) et redirige l'utilisateur
 // vers la page de paiement hébergée par Stripe.
-export async function POST() {
+export async function POST(request: Request) {
+  const originError = checkRequestOrigin(request);
+  if (originError) return originError;
+
   const supabase = await createClient();
   const {
     data: { user },

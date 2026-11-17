@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSupabaseCookieOptions } from "@/lib/supabase/cookie-options";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
 
 // Rafraîchit la session Supabase à chaque requête et garde les cookies
@@ -11,6 +12,7 @@ export async function proxy(request: NextRequest) {
     getSupabaseUrl(),
     getSupabasePublishableKey(),
     {
+      cookieOptions: getSupabaseCookieOptions(),
       cookies: {
         getAll() {
           return request.cookies.getAll();
