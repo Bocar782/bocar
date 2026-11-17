@@ -1,8 +1,12 @@
-// Vrais tests automatisés (Prompt 05.16.4, correction M3 de l'audit
-// 05.16.3) : importent et exécutent le VRAI handler POST de route.ts, y
-// compris le VRAI `checkRequestOrigin` qu'il appelle désormais en premier.
-// Seules les frontières externes (Supabase, Stripe) sont mockées — aucun
-// appel réel à Stripe.
+// Vrais tests automatisés (Prompt 05.17.3, correction de la faille de
+// double abonnement de l'audit 05.17) : importent et exécutent le VRAI
+// handler POST de route.ts, y compris le VRAI `checkRequestOrigin`. Seules
+// les frontières externes (Supabase, Stripe) sont mockées — aucun appel
+// réel à Stripe. Le RPC `reserve_checkout_session` lui-même
+// (0022_stripe_reliability.sql) est vérifié séparément par de vrais tests
+// PostgreSQL (voir le rapport final), y compris sa protection de
+// concurrence réelle (verrou avisoire) — ce fichier prouve uniquement que
+// route.ts l'appelle correctement et respecte son résultat.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStripeCustomersCreate = vi.fn();
@@ -18,16 +22,23 @@ vi.mock("@/lib/stripe/env", () => ({
   getStripePriceId: () => "price_test_123",
 }));
 
-const mockSubscriptionsSelect = vi.fn();
+type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
+
+let reservationResult: ReservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+let reservationError: Error | null = null;
+const rpcCalls: { fnName: string; args: unknown }[] = [];
+const mockReserveRpc = vi.fn((fnName: string, args: unknown) => {
+  rpcCalls.push({ fnName, args });
+  return {
+    single: async () => ({ data: reservationError ? null : reservationResult, error: reservationError }),
+  };
+});
+const mockUpdate = vi.fn(() => ({ eq: async () => ({ data: null, error: null }) }));
+
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: (...args: unknown[]) => mockSubscriptionsSelect(...args),
-        }),
-      }),
-    }),
+    rpc: (fnName: string, args: unknown) => mockReserveRpc(fnName, args),
+    from: () => ({ update: mockUpdate }),
   }),
 }));
 
@@ -52,8 +63,11 @@ function callRoute(origin?: string) {
 beforeEach(() => {
   vi.resetModules();
   currentUser = { id: "user-1", email: "user@test.local" };
-  mockSubscriptionsSelect.mockReset();
-  mockSubscriptionsSelect.mockResolvedValue({ data: null });
+  reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+  reservationError = null;
+  mockReserveRpc.mockClear();
+  rpcCalls.length = 0;
+  mockUpdate.mockClear();
   mockStripeCustomersCreate.mockReset();
   mockStripeCustomersCreate.mockResolvedValue({ id: "cus_new_123" });
   mockStripeCheckoutSessionsCreate.mockReset();
@@ -61,11 +75,12 @@ beforeEach(() => {
 });
 
 describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origine)", () => {
-  it("renvoie 403 pour une origine externe non autorisée, sans jamais appeler Stripe", async () => {
+  it("renvoie 403 pour une origine externe non autorisée, sans jamais appeler Stripe ni réserver de session", async () => {
     const response = await callRoute("https://evil.example");
 
     expect(response.status).toBe(403);
     expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    expect(mockReserveRpc).not.toHaveBeenCalled();
   });
 
   it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
@@ -92,13 +107,59 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
   });
 
-  it("réutilise le customer Stripe existant plutôt que d'en créer un nouveau (non-régression)", async () => {
-    mockSubscriptionsSelect.mockResolvedValue({ data: { stripe_customer_id: "cus_existing_456" } });
+  it("réutilise le customer Stripe existant renvoyé par la réservation plutôt que d'en créer un nouveau (non-régression)", async () => {
+    reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
 
     await callRoute("http://localhost:3000");
 
     expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
     const [[sessionArgs]] = mockStripeCheckoutSessionsCreate.mock.calls;
     expect(sessionArgs.customer).toBe("cus_existing_456");
+  });
+
+  describe("correction 05.17.3 : empêche les doubles abonnements", () => {
+    it("appelle reserve_checkout_session AVANT tout appel à Stripe, avec l'id du vrai utilisateur connecté", async () => {
+      await callRoute("http://localhost:3000");
+
+      expect(mockReserveRpc).toHaveBeenCalledWith("reserve_checkout_session", { p_user_id: "user-1" });
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuse (409) un utilisateur déjà Pro, sans jamais appeler Stripe", async () => {
+      reservationResult = { ok: false, reason: "already_pro", existing_customer_id: "cus_existing_456" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuse (409) une deuxième requête Checkout concurrente, sans jamais appeler Stripe (protection anti-double-abonnement)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("renvoie 503 sans jamais appeler Stripe si la réservation échoue techniquement (jamais de fallback silencieux)", async () => {
+      reservationError = new Error("RPC indisponible");
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(503);
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("persiste le nouveau customer Stripe créé, pour éviter un doublon au prochain essai", async () => {
+      reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+
+      await callRoute("http://localhost:3000");
+
+      expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1);
+      expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_new_123" });
+    });
   });
 });

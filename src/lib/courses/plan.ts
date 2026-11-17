@@ -69,6 +69,20 @@ async function getActiveSubscription(
     .maybeSingle();
 
   if (!data || !ACTIVE_SUBSCRIPTION_STATUSES.has(data.status)) return null;
+
+  // Filet de sécurité (Prompt 05.17.3, audit 05.17 — "passage automatique
+  // de Pro à Free lorsque les droits Pro ne sont plus valides") : si la
+  // période de facturation actuelle est déjà entièrement écoulée alors que
+  // `status` indique encore 'active'/'trialing' (ex. le webhook Stripe
+  // marquant la vraie fin de période n'est jamais arrivé), ne jamais
+  // accorder l'accès Pro au-delà de ce qui a réellement été payé. N'a
+  // aucun effet pendant une annulation programmée (`cancel_at_period_end`) :
+  // `current_period_end` reste dans le futur jusqu'à la fin réelle de la
+  // période payée, exactement comme souhaité.
+  if (data.current_period_end && new Date(data.current_period_end) < new Date()) {
+    return null;
+  }
+
   return data as SubscriptionRow;
 }
 
