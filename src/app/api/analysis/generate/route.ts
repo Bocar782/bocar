@@ -18,6 +18,7 @@ import {
   claimGenerationStep,
   commitGenerationStep,
   failGenerationStep,
+  IdempotencyPayloadMismatchError,
   startGenerationTask,
 } from "@/lib/generation/engine";
 import { AnalysisStepInputSchema, AnalysisStepProgressSchema } from "@/lib/generation/progress-schemas";
@@ -99,7 +100,16 @@ async function handleStart(
   let result;
   try {
     result = await startGenerationTask(supabase, "analysis", body.idempotencyKey, parsedInput.data);
-  } catch {
+  } catch (error) {
+    if (error instanceof IdempotencyPayloadMismatchError) {
+      return NextResponse.json(
+        {
+          error:
+            "Cette génération a déjà été démarrée avec un contenu différent. Recharge la page et réessaie.",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Impossible de vérifier ton quota pour le moment. Réessaie dans un instant." },
       { status: 503 },
@@ -182,14 +192,19 @@ async function handleStep(
     let saveWarning: string | null = null;
     try {
       analysisId = await saveDeepAnalysis(supabase, analysis, reservationId);
+      await commitGenerationStep(supabase, reservationId, claimToken, { stage: "pret" });
     } catch (saveError) {
       console.error("Échec de l'enregistrement de l'analyse :", saveError);
       saveWarning =
         "L'analyse a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.";
+      // On relâche la réclamation plutôt que de la committer : la
+      // réservation est déjà "released" ci-dessous, mieux vaut laisser
+      // claimed_step vide (via fail) que d'écrire un stage "pret" trompeur
+      // alors que l'enregistrement a justement échoué.
+      await failGenerationStep(supabase, reservationId, claimToken, "save_failed");
       await releaseReservation(supabase, reservationId);
     }
 
-    await commitGenerationStep(supabase, reservationId, claimToken, { stage: "pret" });
     return NextResponse.json({ done: true, analysisId, analysis, saveWarning });
   }
 

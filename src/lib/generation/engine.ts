@@ -15,6 +15,14 @@ export type StartGenerationTaskResult =
   | { ok: true; reservationId: string; alreadyExisted: boolean }
   | { ok: false; isPro: boolean; limitCount: number; usedCount: number };
 
+// Prompt 05.20.2 : `start_generation_task` lève cette erreur SQL précise
+// (voir 0023_generation_progress.sql) quand une clé d'idempotence rejouée
+// est associée à un contenu de demande différent de celui d'origine —
+// jamais une simple panne transitoire : l'appelant doit la distinguer pour
+// répondre par un message actionnable ("recharge la page") plutôt que par
+// le message générique "réessaie dans un instant" des vraies pannes.
+export class IdempotencyPayloadMismatchError extends Error {}
+
 export async function startGenerationTask(
   supabase: SupabaseClient,
   kind: ReservationKind,
@@ -35,6 +43,10 @@ export async function startGenerationTask(
       limit_count: number | null;
       used_count: number | null;
     }>();
+
+  if (error?.message.includes("idempotency_key_payload_mismatch")) {
+    throw new IdempotencyPayloadMismatchError(error.message);
+  }
 
   if (error || !data) {
     throw new Error(`Échec du démarrage de la génération : ${error?.message ?? "réponse vide"}`);

@@ -146,6 +146,17 @@ describe("POST /api/analysis/generate — action 'start'", () => {
     expect(response.status).toBe(403);
     expect(json.error).toContain("analyse");
   });
+
+  it("renvoie 409 (message actionnable, pas le message générique de panne) si la clé d'idempotence est réutilisée avec un contenu différent", async () => {
+    currentSupabaseMock.rpc = vi.fn(() => ({
+      single: async () => ({ data: null, error: { message: "idempotency_key_payload_mismatch" } }),
+    })) as never;
+
+    const { response, json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+
+    expect(response.status).toBe(409);
+    expect(json.error).toContain("Recharge la page");
+  });
 });
 
 describe("POST /api/analysis/generate — action 'step'", () => {

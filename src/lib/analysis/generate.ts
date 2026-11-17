@@ -1,13 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
-import { createAnthropicClient } from "@/lib/anthropic/client";
 import {
   AnalysisBriefSchema,
   CaseExtractionSchema,
   DeepSectionSchema,
   DeepSynthesisSchema,
-  DEEP_STAGE_LABELS,
   type AnalysisBrief,
   type DeepAnalysisSection,
   type DeepAnalysisSource,
@@ -20,8 +18,6 @@ const MODEL = "claude-opus-5-5";
 const MIN_VERIFIED_CASES = 3;
 
 export class AnalysisGenerationError extends Error {}
-
-type Progress = (stage: DeepAnalysisStage, detail?: string) => void;
 
 function requireContent<T extends { stop_reason: string | null }>(response: T): T {
   if (response.stop_reason === "refusal") {
@@ -70,44 +66,85 @@ async function scopeAnalysis(client: Anthropic, topic: string): Promise<Analysis
 }
 
 // --- Étape 2 : recherche web de cas réels ---
+//
+// Prompt 05.20.2 : un tour de recherche serveur (web_search) peut s'arrêter
+// sur `pause_turn` et nécessiter plusieurs reprises (jusqu'à 5, voir
+// commentaire plus bas) — enchaîner ces reprises en boucle à l'intérieur
+// d'UN SEUL appel de fonction violerait le principe central de
+// l'architecture à étapes courtes (un appel Anthropic au maximum par étape
+// HTTP) et créerait le risque de dépassement de durée Netlify le plus
+// concret de tout le pipeline. `performResearchTurn` fait donc EXACTEMENT
+// UN appel `client.messages.create` et renvoie un état sérialisable
+// (`ResearchTurnState`) que l'appelant persiste dans `progress.research`
+// entre deux requêtes HTTP ; `decideNextAnalysisStep` redemande une
+// nouvelle "research_turn" jusqu'à ce que `done` soit vrai.
+export type ResearchTurnState = {
+  // Typé `unknown[]` ici (plutôt que `Anthropic.MessageParam[]`) car ce
+  // champ traverse une sérialisation jsonb puis une revalidation Zod
+  // volontairement peu stricte (voir progress-schemas.ts) : sa forme
+  // exacte n'est jamais interprétée ni affichée, seulement reproduite telle
+  // quelle vers `client.messages.create` au tour suivant.
+  messages: unknown[];
+  resumes: number;
+  findings: string;
+  realSources: { url: string; title: string }[];
+  done: boolean;
+};
 
-async function researchRealCases(
+async function performResearchTurn(
   client: Anthropic,
   brief: AnalysisBrief,
-): Promise<{ findings: string; realSources: { url: string; title: string }[] }> {
+  state: ResearchTurnState | undefined,
+): Promise<ResearchTurnState> {
   const system =
     "Tu es Tavyra, chargée de rassembler des cas réels et vérifiables (parcours d'entrepreneurs, entreprises, investisseurs, stratégies, réussites, échecs, événements, données) disponibles publiquement, en lien avec un sujet donné. Utilise l'outil de recherche web pour mener PLUSIEURS recherches distinctes couvrant différents angles (succès, échecs, stratégies, données). Vérifie chaque fait par une recherche avant de l'avancer. N'affirme jamais qu'un cas est réel sans l'avoir confirmé par une recherche.";
-  const queriesList = brief.searchQueries.map((q) => `- ${q}`).join("\n");
-  const user = `Sujet : "${brief.title}" (domaine : ${brief.domain}).\nAngle de recherche : ${brief.researchAngle}\n\nMène des recherches web sur CHACUNE des requêtes suivantes, et d'autres si besoin pour compléter :\n${queriesList}\n\nRassemble au moins ${brief.caseCount + 2} cas réels et vérifiables (personnes, entreprises, événements), en couvrant à la fois des réussites ET des échecs ou situations mitigées — pas uniquement des success stories. Pour chacun : vérifie les faits par la recherche, résume ce qui s'est passé et pourquoi, et cite explicitement l'URL exacte de ta source.`;
-
-  let messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
   const tools = [
     { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 14 },
   ];
 
-  let response = requireContent(
+  let messages: Anthropic.MessageParam[];
+  let resumes: number;
+  let findingsSoFar: string;
+  let realSourcesSoFar: { url: string; title: string }[];
+
+  if (!state) {
+    const queriesList = brief.searchQueries.map((q) => `- ${q}`).join("\n");
+    const user = `Sujet : "${brief.title}" (domaine : ${brief.domain}).\nAngle de recherche : ${brief.researchAngle}\n\nMène des recherches web sur CHACUNE des requêtes suivantes, et d'autres si besoin pour compléter :\n${queriesList}\n\nRassemble au moins ${brief.caseCount + 2} cas réels et vérifiables (personnes, entreprises, événements), en couvrant à la fois des réussites ET des échecs ou situations mitigées — pas uniquement des success stories. Pour chacun : vérifie les faits par la recherche, résume ce qui s'est passé et pourquoi, et cite explicitement l'URL exacte de ta source.`;
+    messages = [{ role: "user", content: user }];
+    resumes = 0;
+    findingsSoFar = "";
+    realSourcesSoFar = [];
+  } else {
+    // `state.messages` est typé `unknown[]` au repos (voir ResearchTurnState) ;
+    // il n'a jamais été produit ou modifié que par CE code (persisté tel
+    // quel par commit_generation_step), donc le recast vers le type SDK
+    // exact à chaque reprise est sûr.
+    messages = state.messages as Anthropic.MessageParam[];
+    resumes = state.resumes + 1;
+    findingsSoFar = state.findings;
+    realSourcesSoFar = state.realSources;
+  }
+
+  const response = requireContent(
     await client.messages.create({ model: MODEL, max_tokens: 16000, system, messages, tools }),
   );
 
-  // Les tours de recherche serveur peuvent s'arrêter sur pause_turn si la
-  // limite interne d'itérations est atteinte : on relance pour continuer.
-  // Une analyse approfondie mène plus de recherches qu'une formation
-  // classique, donc on autorise davantage de reprises.
-  let resumes = 0;
-  while (response.stop_reason === "pause_turn" && resumes < 5) {
-    messages = [...messages, { role: "assistant", content: response.content }];
-    response = requireContent(
-      await client.messages.create({ model: MODEL, max_tokens: 16000, system, messages, tools }),
-    );
-    resumes += 1;
-  }
+  const newMessages: Anthropic.MessageParam[] = [
+    ...messages,
+    { role: "assistant", content: response.content },
+  ];
 
-  const findings = response.content
+  // Chaque reprise ne renvoie QUE la continuation de ce tour (pas de
+  // répétition du texte/des résultats déjà vus) : on accumule au lieu de
+  // ne garder que la dernière réponse, sans quoi les sources trouvées lors
+  // des tours intermédiaires seraient perdues.
+  const newText = response.content
     .filter((block): block is Anthropic.TextBlock => block.type === "text")
     .map((block) => block.text)
     .join("\n\n");
+  const findings = newText ? [findingsSoFar, newText].filter(Boolean).join("\n\n") : findingsSoFar;
 
-  const realSources: { url: string; title: string }[] = [];
+  const realSources = [...realSourcesSoFar];
   for (const block of response.content) {
     if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
       for (const item of block.content) {
@@ -118,7 +155,12 @@ async function researchRealCases(
     }
   }
 
-  return { findings, realSources };
+  // Une analyse approfondie mène plus de recherches qu'une formation
+  // classique, donc on autorise davantage de reprises (5) avant de forcer
+  // l'arrêt même si le modèle demande encore à continuer.
+  const done = response.stop_reason !== "pause_turn" || resumes >= 5;
+
+  return { messages: newMessages, resumes, findings, realSources, done };
 }
 
 async function extractVerifiedCases(
@@ -187,86 +229,28 @@ async function writeSynthesis(
   });
 }
 
-// --- Orchestration complète ---
-
-export async function generateDeepAnalysis(
-  topic: string,
-  onProgress: Progress,
-): Promise<GeneratedDeepAnalysis> {
-  const client = createAnthropicClient();
-
-  onProgress("cadrage", DEEP_STAGE_LABELS.cadrage);
-  const brief = await scopeAnalysis(client, topic);
-
-  onProgress("recherche", DEEP_STAGE_LABELS.recherche);
-  const { findings, realSources } = await researchRealCases(client, brief);
-  const verifiedCases = await extractVerifiedCases(client, brief, findings, realSources);
-
-  if (verifiedCases.length < MIN_VERIFIED_CASES) {
-    throw new AnalysisGenerationError(
-      "Pas assez de cas réels et vérifiables trouvés sur ce sujet pour produire une analyse approfondie fiable. Essaie de reformuler le sujet ou de le préciser (un domaine, une période, une région).",
-    );
-  }
-
-  const selectedCases = verifiedCases.slice(0, brief.caseCount);
-
-  onProgress("redaction", DEEP_STAGE_LABELS.redaction);
-  let completed = 0;
-  const sections: DeepAnalysisSection[] = await Promise.all(
-    selectedCases.map(async (verifiedCase, i) => {
-      const otherCases = selectedCases.filter((_, j) => j !== i);
-      const content = await writeSection(client, brief, verifiedCase, otherCases);
-
-      completed += 1;
-      onProgress("redaction", `${DEEP_STAGE_LABELS.redaction} (${completed}/${selectedCases.length})`);
-
-      return {
-        position: i,
-        name: verifiedCase.name,
-        outcome: verifiedCase.outcome,
-        content: content.content,
-        lessons: content.lessons,
-        source: { index: i, url: verifiedCase.sourceUrl, title: verifiedCase.sourceTitle },
-      };
-    }),
-  );
-
-  onProgress("synthese", DEEP_STAGE_LABELS.synthese);
-  const synthesis = await writeSynthesis(client, brief, sections);
-
-  const sources: DeepAnalysisSource[] = sections.map((s) => s.source);
-
-  onProgress("pret", DEEP_STAGE_LABELS.pret);
-
-  return {
-    topic,
-    title: brief.title,
-    domain: brief.domain,
-    introduction: brief.introduction,
-    sections,
-    synthesis: synthesis.synthesis,
-    keyLessons: synthesis.keyLessons,
-    sources,
-  };
-}
-
-// --- Architecture à étapes courtes (Prompt 05.20.1) ---
+// --- Architecture à étapes courtes (Prompt 05.20.1 puis 05.20.2) ---
 //
 // Même principe que pour les formations (voir generate.ts,
-// performCourseStepUnit) : `generateDeepAnalysis` ci-dessus reste
-// disponible mais une analyse complète (cadrage + recherche + jusqu'à 7
-// sections + synthèse, chacune un aller-retour IA potentiellement long)
-// ne doit plus tenir dans une seule requête HTTP. Les fonctions
-// ci-dessous réutilisent EXACTEMENT les mêmes fonctions privées
-// (scopeAnalysis, researchRealCases, extractVerifiedCases, writeSection,
-// writeSynthesis), une seule unité de travail à la fois, à partir d'une
-// progression persistée côté Supabase (generation_progress).
+// performCourseStepUnit) : une analyse complète (cadrage + recherche +
+// jusqu'à 7 sections + synthèse, chacune un aller-retour IA potentiellement
+// long) ne doit jamais tenir dans une seule requête HTTP. Les fonctions
+// ci-dessous réutilisent les mêmes fonctions privées (scopeAnalysis,
+// performResearchTurn, extractVerifiedCases, writeSection, writeSynthesis),
+// une seule unité de travail — donc au plus UN appel Anthropic — à la fois,
+// à partir d'une progression persistée côté Supabase (generation_progress).
+// Il n'existe plus de pipeline "tout en un" équivalent : le découpage en
+// étapes courtes est désormais le seul chemin de génération d'analyse.
 
 export type AnalysisStepInput = { topic: string };
 
 export type AnalysisStepProgress = {
   stage: DeepAnalysisStage;
   brief?: AnalysisBrief;
+  // Prompt 05.20.2 : état du tour de recherche en cours, persisté entre
+  // deux requêtes HTTP successives tant que `done` est faux — voir
+  // `performResearchTurn` ci-dessus pour le détail de ce découpage.
+  research?: ResearchTurnState;
   verifiedCases?: VerifiedCase[];
   sections: Record<string, DeepAnalysisSection>;
   synthesis?: { synthesis: string; keyLessons: string[] };
@@ -279,7 +263,8 @@ export const EMPTY_ANALYSIS_PROGRESS: AnalysisStepProgress = {
 
 export type AnalysisStepUnit =
   | { kind: "cadrage" }
-  | { kind: "recherche" }
+  | { kind: "research_turn" }
+  | { kind: "extract" }
   | { kind: "section"; index: number }
   | { kind: "synthese" }
   | { kind: "assemble" }
@@ -288,13 +273,18 @@ export type AnalysisStepUnit =
 /**
  * Détermine la PROCHAINE unité de travail à partir de la progression
  * actuelle, jamais d'un compteur transmis par le client — même principe
- * d'idempotence que `decideNextCourseStep`.
+ * d'idempotence que `decideNextCourseStep`. La recherche web est elle-même
+ * décomposée en autant de "research_turn" que nécessaire (un appel
+ * Anthropic chacun) avant l'extraction finale des cas vérifiés.
  */
 export function decideNextAnalysisStep(
   progress: AnalysisStepProgress,
 ): AnalysisStepUnit {
   if (!progress.brief) return { kind: "cadrage" };
-  if (!progress.verifiedCases) return { kind: "recherche" };
+  if (!progress.verifiedCases) {
+    if (!progress.research?.done) return { kind: "research_turn" };
+    return { kind: "extract" };
+  }
   for (let i = 0; i < progress.verifiedCases.length; i++) {
     if (!(String(i) in progress.sections)) return { kind: "section", index: i };
   }
@@ -306,7 +296,8 @@ export function stageForAnalysisUnit(unit: AnalysisStepUnit): DeepAnalysisStage 
   switch (unit.kind) {
     case "cadrage":
       return "cadrage";
-    case "recherche":
+    case "research_turn":
+    case "extract":
       return "recherche";
     case "section":
       return "redaction";
@@ -334,12 +325,30 @@ export async function performAnalysisStepUnit(
     return { brief };
   }
 
-  if (unit.kind === "recherche") {
+  if (unit.kind === "research_turn") {
     if (!progress.brief) {
       throw new AnalysisGenerationError("Progression de génération incohérente : cadrage manquant.");
     }
-    const { findings, realSources } = await researchRealCases(client, progress.brief);
-    const verifiedCases = await extractVerifiedCases(client, progress.brief, findings, realSources);
+    // Un seul appel Anthropic ici (voir performResearchTurn) : si la
+    // recherche nécessite plusieurs tours (pause_turn), chaque tour est sa
+    // propre unité de travail, redemandée par decideNextAnalysisStep tant
+    // que `research.done` est faux.
+    const research = await performResearchTurn(client, progress.brief, progress.research);
+    return { research };
+  }
+
+  if (unit.kind === "extract") {
+    if (!progress.brief || !progress.research) {
+      throw new AnalysisGenerationError(
+        "Progression de génération incohérente : recherche manquante pour l'extraction des cas.",
+      );
+    }
+    const verifiedCases = await extractVerifiedCases(
+      client,
+      progress.brief,
+      progress.research.findings,
+      progress.research.realSources,
+    );
 
     if (verifiedCases.length < MIN_VERIFIED_CASES) {
       throw new AnalysisGenerationError(

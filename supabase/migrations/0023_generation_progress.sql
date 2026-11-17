@@ -125,6 +125,7 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_existing_id uuid;
+  v_existing_input jsonb;
   v_reserve record;
 begin
   if v_user_id is null then
@@ -156,13 +157,23 @@ begin
   -- d'idempotence, pas seulement l'utilisateur et le type).
   perform pg_advisory_xact_lock(hashtext(v_user_id::text || ':' || p_kind || ':' || p_idempotency_key));
 
-  select gp.reservation_id into v_existing_id
+  select gp.reservation_id, gp.input into v_existing_id, v_existing_input
   from public.generation_progress gp
   where gp.user_id = v_user_id
     and gp.kind = p_kind
     and gp.idempotency_key = p_idempotency_key;
 
   if v_existing_id is not null then
+    -- Prompt 05.20.2 : une même clé d'idempotence ne doit JAMAIS permettre
+    -- de réutiliser silencieusement une réservation existante avec un
+    -- contenu de demande différent (sujet/plan changé) — l'appelant
+    -- recevrait alors, sans le savoir, la progression d'une tout autre
+    -- génération. L'égalité jsonb ignore l'ordre des clés d'un objet mais
+    -- PAS l'ordre des tableaux : une resoumission véritablement identique
+    -- (même objet sérialisé par le même client) reste toujours égale.
+    if v_existing_input is distinct from p_input then
+      raise exception 'idempotency_key_payload_mismatch';
+    end if;
     return query select v_existing_id, true, true, null::boolean, null::int, null::int;
     return;
   end if;
@@ -194,7 +205,7 @@ grant execute on function public.start_generation_task(text, text, jsonb) to aut
 create or replace function public.claim_generation_step(
   p_reservation_id uuid,
   p_claim_token text,
-  p_stale_after_seconds int default 120
+  p_stale_after_seconds int default 45
 ) returns table (
   claimed boolean,
   reason text,
@@ -209,6 +220,7 @@ as $$
 declare
   v_user_id uuid := auth.uid();
   v_row record;
+  v_stale_after_seconds int;
 begin
   if v_user_id is null then
     raise exception 'not_authenticated';
@@ -217,6 +229,21 @@ begin
   if p_claim_token is null or length(p_claim_token) = 0 then
     raise exception 'invalid_claim_token';
   end if;
+
+  -- Cette fonction est accordée au rôle `authenticated` (voir plus bas), donc
+  -- appelable directement par le client, pas seulement via notre route
+  -- serveur : on ne fait jamais confiance à p_stale_after_seconds tel quel.
+  -- Borne basse : un jeton de verrouillage (claim_token) protège déjà toute
+  -- écriture tardive d'un worker périmé (voir commit/fail_generation_step),
+  -- donc réduire cette fenêtre ne peut jamais causer de corruption, seulement
+  -- du travail dupliqué si l'ancien worker est encore en vol — aucun risque
+  -- à l'autoriser sur SA PROPRE réservation. Borne haute : évite qu'une
+  -- valeur absurde (ou une fenêtre par défaut mal choisie) ne bloque le
+  -- rétablissement après une fonction Netlify tuée abruptement pendant
+  -- plusieurs minutes. 45s par défaut : nettement supérieur au temps d'un
+  -- appel Anthropic normal, mais assez court pour que l'utilisateur qui
+  -- revient sur l'onglet après une coupure réseau puisse reprendre vite.
+  v_stale_after_seconds := greatest(15, least(coalesce(p_stale_after_seconds, 45), 600));
 
   -- Verrou par réservation (pas par utilisateur) : deux onglets ouverts
   -- sur la MÊME génération, ou un rechargement pendant qu'un appel
@@ -247,7 +274,7 @@ begin
 
   if v_row.claimed_step is not null
      and v_row.claimed_at is not null
-     and v_row.claimed_at > now() - (p_stale_after_seconds || ' seconds')::interval then
+     and v_row.claimed_at > now() - (v_stale_after_seconds || ' seconds')::interval then
     return query select false, 'already_in_progress', null::jsonb, null::jsonb, v_row.reservation_status;
     return;
   end if;

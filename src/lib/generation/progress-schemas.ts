@@ -93,9 +93,25 @@ export const AnalysisStepInputSchema = z.object({
   topic: z.string().min(1).max(500),
 });
 
+// L'état de recherche (Prompt 05.20.2) contient l'historique brut des
+// messages Anthropic (texte, blocs d'usage d'outil serveur, résultats de
+// recherche web) nécessaire pour reprendre un tour en pause — une
+// structure interne au SDK, jamais interprétée ni affichée côté client,
+// donc volontairement non re-typée champ par champ ici : seule la forme
+// d'ensemble (tableau de messages) et les champs qu'on lit réellement
+// (resumes, findings, realSources, done) sont vérifiés.
+const ResearchTurnStateSchema = z.object({
+  messages: z.array(z.record(z.string(), z.unknown())),
+  resumes: z.number().int().min(0),
+  findings: z.string(),
+  realSources: z.array(z.object({ url: z.string(), title: z.string() })),
+  done: z.boolean(),
+});
+
 export const AnalysisStepProgressSchema = z.object({
   stage: AnalysisStageSchema,
   brief: AnalysisBriefSchema.optional(),
+  research: ResearchTurnStateSchema.optional(),
   verifiedCases: CaseExtractionSchema.shape.cases.optional(),
   sections: z.record(z.string(), StoredSectionSchema),
   synthesis: z.object({ synthesis: z.string(), keyLessons: z.array(z.string()) }).optional(),

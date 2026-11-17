@@ -41,9 +41,27 @@ describe("decideNextAnalysisStep (vraie fonction) — ordre des étapes", () => 
     expect(decideNextAnalysisStep(EMPTY_ANALYSIS_PROGRESS)).toEqual({ kind: "cadrage" });
   });
 
-  it("passe à la recherche une fois le cadrage fait", () => {
+  it("passe à un tour de recherche une fois le cadrage fait", () => {
     const progress: AnalysisStepProgress = { ...EMPTY_ANALYSIS_PROGRESS, brief: BRIEF };
-    expect(decideNextAnalysisStep(progress)).toEqual({ kind: "recherche" });
+    expect(decideNextAnalysisStep(progress)).toEqual({ kind: "research_turn" });
+  });
+
+  it("redemande un tour de recherche tant que la recherche n'est pas terminée, même avec un état partiel", () => {
+    const progress: AnalysisStepProgress = {
+      ...EMPTY_ANALYSIS_PROGRESS,
+      brief: BRIEF,
+      research: { messages: [], resumes: 1, findings: "notes partielles", realSources: [], done: false },
+    };
+    expect(decideNextAnalysisStep(progress)).toEqual({ kind: "research_turn" });
+  });
+
+  it("passe à l'extraction des cas une fois la recherche terminée", () => {
+    const progress: AnalysisStepProgress = {
+      ...EMPTY_ANALYSIS_PROGRESS,
+      brief: BRIEF,
+      research: { messages: [], resumes: 2, findings: "notes complètes", realSources: [], done: true },
+    };
+    expect(decideNextAnalysisStep(progress)).toEqual({ kind: "extract" });
   });
 
   it("rédige chaque section une par une, dans l'ordre, après la recherche", () => {
@@ -73,7 +91,8 @@ describe("decideNextAnalysisStep (vraie fonction) — ordre des étapes", () => 
 describe("stageForAnalysisUnit (vraie fonction)", () => {
   it("associe chaque unité à l'étape d'affichage attendue", () => {
     expect(stageForAnalysisUnit({ kind: "cadrage" })).toBe("cadrage");
-    expect(stageForAnalysisUnit({ kind: "recherche" })).toBe("recherche");
+    expect(stageForAnalysisUnit({ kind: "research_turn" })).toBe("recherche");
+    expect(stageForAnalysisUnit({ kind: "extract" })).toBe("recherche");
     expect(stageForAnalysisUnit({ kind: "section", index: 0 })).toBe("redaction");
     expect(stageForAnalysisUnit({ kind: "synthese" })).toBe("synthese");
     expect(stageForAnalysisUnit({ kind: "assemble" })).toBe("assemblage");
@@ -94,10 +113,66 @@ describe("performAnalysisStepUnit (vraie fonction) — une seule unité à la fo
     expect(patch.brief?.title).toBe("Analyse test");
   });
 
-  it("échoue (AnalysisGenerationError) si la recherche ne trouve pas assez de cas vérifiés", async () => {
+  it("research_turn : exécute UN SEUL appel Anthropic et renvoie un état `done:true` si le modèle ne demande pas de reprise", async () => {
+    const create = vi.fn(async () => ({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "notes de recherche" }],
+    }));
+    const client = { messages: { create, parse: vi.fn() } };
+    const progress: AnalysisStepProgress = { ...EMPTY_ANALYSIS_PROGRESS, brief: BRIEF };
+
+    const patch = await performAnalysisStepUnit(client as never, INPUT, progress, { kind: "research_turn" });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(patch.research?.done).toBe(true);
+    expect(patch.research?.findings).toContain("notes de recherche");
+  });
+
+  it("research_turn : renvoie `done:false` sur pause_turn, pour qu'un NOUVEL appel (étape suivante) reprenne le même tour", async () => {
+    const create = vi.fn(async () => ({
+      stop_reason: "pause_turn",
+      content: [{ type: "text", text: "recherche en cours" }],
+    }));
+    const client = { messages: { create, parse: vi.fn() } };
+    const progress: AnalysisStepProgress = { ...EMPTY_ANALYSIS_PROGRESS, brief: BRIEF };
+
+    const patch = await performAnalysisStepUnit(client as never, INPUT, progress, { kind: "research_turn" });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(patch.research?.done).toBe(false);
+    expect(patch.research?.resumes).toBe(0);
+  });
+
+  it("research_turn : reprend l'état précédent plutôt que de recommencer, et accumule les trouvailles des tours successifs", async () => {
+    const create = vi.fn(async () => ({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: "second tour" }],
+    }));
+    const client = { messages: { create, parse: vi.fn() } };
+    const progress: AnalysisStepProgress = {
+      ...EMPTY_ANALYSIS_PROGRESS,
+      brief: BRIEF,
+      research: {
+        messages: [{ role: "user", content: "premier tour" }],
+        resumes: 0,
+        findings: "premier tour",
+        realSources: [],
+        done: false,
+      },
+    };
+
+    const patch = await performAnalysisStepUnit(client as never, INPUT, progress, { kind: "research_turn" });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(patch.research?.resumes).toBe(1);
+    expect(patch.research?.findings).toBe("premier tour\n\nsecond tour");
+    expect(patch.research?.messages).toHaveLength(2);
+  });
+
+  it("extract : échoue (AnalysisGenerationError) si la recherche ne trouve pas assez de cas vérifiés", async () => {
     const client = {
       messages: {
-        create: vi.fn(async () => ({ stop_reason: "end_turn", content: [{ type: "text", text: "notes" }] })),
+        create: vi.fn(),
         parse: vi.fn(async (args: { system: string }) => {
           if (args.system.includes("extrais des cas réels")) {
             return { stop_reason: "end_turn", parsed_output: { cases: [] } };
@@ -106,11 +181,16 @@ describe("performAnalysisStepUnit (vraie fonction) — une seule unité à la fo
         }),
       },
     };
-    const progress: AnalysisStepProgress = { ...EMPTY_ANALYSIS_PROGRESS, brief: BRIEF };
+    const progress: AnalysisStepProgress = {
+      ...EMPTY_ANALYSIS_PROGRESS,
+      brief: BRIEF,
+      research: { messages: [], resumes: 0, findings: "notes", realSources: [], done: true },
+    };
 
     await expect(
-      performAnalysisStepUnit(client as never, INPUT, progress, { kind: "recherche" }),
+      performAnalysisStepUnit(client as never, INPUT, progress, { kind: "extract" }),
     ).rejects.toThrow(AnalysisGenerationError);
+    expect(client.messages.create).not.toHaveBeenCalled();
   });
 
   it("rédige UNE SEULE section à la fois et renvoie un patch contenant uniquement cette section", async () => {
