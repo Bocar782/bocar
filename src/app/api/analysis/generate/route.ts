@@ -5,7 +5,6 @@ import { saveDeepAnalysis } from "@/lib/analysis/persist";
 import type { DeepAnalysisStage } from "@/lib/analysis/schemas";
 import {
   QuotaExceededError,
-  consumeReservation,
   releaseReservation,
   reserveGenerationSlot,
 } from "@/lib/courses/reservation";
@@ -81,21 +80,29 @@ export async function POST(request: Request) {
 
         // L'analyse est générée : on la renvoie même si la sauvegarde
         // échoue (ex. migration SQL pas encore appliquée côté Supabase),
-        // pour ne pas perdre le travail déjà fait. La réservation n'est
-        // consommée que si la sauvegarde a réellement réussi.
+        // pour ne pas perdre le travail déjà fait. `saveDeepAnalysis`
+        // transmet `reservationId` au RPC `save_generated_analysis`
+        // (Prompt 05.17.1), qui vérifie, verrouille et marque lui-même
+        // cette réservation `completed` dans la MÊME transaction que
+        // l'enregistrement de l'analyse (voir
+        // 0020_restrict_content_tables_to_owner_select.sql) : il ne faut
+        // donc PAS appeler `consumeReservation` ici (double consommation),
+        // exactement comme pour `saveCourse`/`save_generated_course`. Si
+        // la sauvegarde échoue, la réservation reste `pending` (annulée
+        // avec le reste par cette même transaction) et doit être libérée
+        // ici.
         let analysisId: string | null = null;
         let saveWarning: string | null = null;
         try {
-          analysisId = await saveDeepAnalysis(supabase, user.id, analysis);
-          await consumeReservation(supabase, reservationId, analysisId);
+          analysisId = await saveDeepAnalysis(supabase, analysis, reservationId);
         } catch (saveError) {
           // Prompt 05.16.1 (correctif E3, audit de sécurité 05.16) :
-          // `saveDeepAnalysis`/`consumeReservation` encapsulent toujours une
-          // erreur Supabase/Postgres brute dans un `Error` générique —
-          // jamais une erreur métier conçue pour être affichée. Le détail
-          // technique ne doit donc jamais atteindre le navigateur : seul un
-          // message générique est envoyé dans `saveWarning`, le détail réel
-          // reste uniquement dans les logs serveur.
+          // `saveDeepAnalysis` encapsule toujours une erreur
+          // Supabase/Postgres brute dans un `Error` générique — jamais une
+          // erreur métier conçue pour être affichée. Le détail technique ne
+          // doit donc jamais atteindre le navigateur : seul un message
+          // générique est envoyé dans `saveWarning`, le détail réel reste
+          // uniquement dans les logs serveur.
           console.error("Échec de l'enregistrement de l'analyse :", saveError);
           saveWarning =
             "L'analyse a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.";

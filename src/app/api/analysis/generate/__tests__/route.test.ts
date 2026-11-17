@@ -20,6 +20,15 @@ type RpcMockResult =
   | { single: () => Promise<{ data: unknown; error: Error | null }> }
   | Promise<{ data: unknown; error: Error | null }>;
 
+// Prompt 05.17.1 (correction de la faille critique de l'audit 05.17) :
+// `saveDeepAnalysis` passe désormais par le RPC `save_generated_analysis`
+// (plus d'insert direct via `.from("deep_analyses")`) — ce mock simule ce
+// RPC comme les autres.
+let saveAnalysisResult: { data: unknown; error: Error | null } = {
+  data: "analysis-id",
+  error: null,
+};
+
 function makeSupabaseMock() {
   const rpcCalls: RpcCall[] = [];
   const rpc = vi.fn((fnName: string, args: unknown): RpcMockResult => {
@@ -32,19 +41,13 @@ function makeSupabaseMock() {
         }),
       };
     }
+    if (fnName === "save_generated_analysis") {
+      return Promise.resolve(saveAnalysisResult);
+    }
     return Promise.resolve({ data: true, error: null });
   });
   return {
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
-    from: vi.fn((): {
-      insert: () => { select: () => { single: () => Promise<{ data: { id: string } | null; error: Error | null }> } };
-    } => ({
-      insert: () => ({
-        select: () => ({
-          single: async () => ({ data: { id: "analysis-id" }, error: null }),
-        }),
-      }),
-    })),
     rpc,
     rpcCalls,
   };
@@ -57,6 +60,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 beforeEach(() => {
+  saveAnalysisResult = { data: "analysis-id", error: null };
   currentSupabaseMock = makeSupabaseMock();
   mockGenerateDeepAnalysis.mockReset();
 });
@@ -120,16 +124,22 @@ describe("POST /api/analysis/generate (vrai route.ts + vrai persist.ts/reservati
     expect(releaseCalls).toHaveLength(1);
   });
 
-  it("enregistre l'analyse et consomme la réservation en cas de succès complet (non-régression)", async () => {
+  it("enregistre l'analyse via le RPC save_generated_analysis, SANS appeler consumeReservation séparément (non-régression + correction 05.17.1)", async () => {
     mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
 
     const { lines } = await callRoute();
 
     expect(lines.some((l) => l.stage === "done" && l.analysisId === "analysis-id")).toBe(true);
-    const consumeCalls = currentSupabaseMock.rpcCalls.filter(
-      (c) => c.fnName === "resolve_generation_slot" && (c.args as { p_status?: string }).p_status === "completed",
-    );
-    expect(consumeCalls).toHaveLength(1);
+    // save_generated_analysis a bien été appelé avec la réservation en cours.
+    const saveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "save_generated_analysis");
+    expect(saveCalls).toHaveLength(1);
+    expect((saveCalls[0].args as { p_reservation_id?: string }).p_reservation_id).toBe("res-1");
+    // Le RPC marque lui-même la réservation "completed" dans sa propre
+    // transaction (non simulée ici, voir les tests Postgres réels) : la
+    // route elle-même ne doit JAMAIS appeler resolve_generation_slot en
+    // plus, sous peine de double consommation.
+    const resolveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "resolve_generation_slot");
+    expect(resolveCalls).toHaveLength(0);
   });
 
   // Prompt 05.16.1 (correctif E3) : une erreur Supabase/Postgres simulée,
@@ -138,13 +148,7 @@ describe("POST /api/analysis/generate (vrai route.ts + vrai persist.ts/reservati
     mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
     const sensitiveDetail =
       'column "secret_internal_column" of relation "public.deep_analyses" violates not-null constraint "deep_analyses_secret_check"';
-    currentSupabaseMock.from = vi.fn(() => ({
-      insert: () => ({
-        select: () => ({
-          single: async () => ({ data: null, error: new Error(sensitiveDetail) }),
-        }),
-      }),
-    }));
+    saveAnalysisResult = { data: null, error: new Error(sensitiveDetail) };
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const { response, lines } = await callRoute();

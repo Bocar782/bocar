@@ -11,19 +11,16 @@ export async function updateChapterProgress(
 ) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("courses")
-      .update({
-        current_chapter_index: chapterIndex,
-        last_accessed_at: new Date().toISOString(),
-      })
-      .eq("id", courseId)
-      .eq("user_id", user.id);
+    // Prompt 05.17.1 (correction de la faille critique de l'audit 05.17) :
+    // passe par le RPC `update_chapter_progress` (voir
+    // 0020_restrict_content_tables_to_owner_select.sql) plutôt que par un
+    // update direct — `courses` n'a plus qu'une policy RLS de lecture.
+    // L'identité (auth.uid()) est vérifiée côté base de données ; inutile
+    // de récupérer l'utilisateur ici.
+    await supabase.rpc("update_chapter_progress", {
+      p_course_id: courseId,
+      p_chapter_index: chapterIndex,
+    });
   } catch {
     // ignoré
   }
@@ -175,20 +172,15 @@ export async function recordQuizScore(
 ) {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from("courses")
-      .update({
-        quiz_score: score,
-        quiz_total: total,
-        quiz_completed_at: new Date().toISOString(),
-      })
-      .eq("id", courseId)
-      .eq("user_id", user.id);
+    // Prompt 05.17.1 (correction de la faille critique de l'audit 05.17) :
+    // passe par le RPC `record_quiz_score` (voir
+    // 0020_restrict_content_tables_to_owner_select.sql) plutôt que par un
+    // update direct — `courses` n'a plus qu'une policy RLS de lecture.
+    await supabase.rpc("record_quiz_score", {
+      p_course_id: courseId,
+      p_score: score,
+      p_total: total,
+    });
   } catch {
     // ignoré
   }

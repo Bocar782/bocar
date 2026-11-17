@@ -9,32 +9,40 @@ type DeepAnalysisListItem = {
   caseCount: number;
 };
 
+// Prompt 05.17.1 (correction de la faille critique de l'audit 05.17) :
+// passe par le RPC `save_generated_analysis` (voir
+// 0020_restrict_content_tables_to_owner_select.sql) plutôt que par un
+// insert direct — `deep_analyses` n'a plus qu'une policy RLS de lecture.
+// Comme pour `saveCourse`/`save_generated_course`, l'identité
+// (auth.uid()) est déterminée côté base de données, jamais transmise ici
+// (pas de paramètre userId), et la réservation est vérifiée puis marquée
+// `completed` dans la MÊME transaction que l'insertion : il ne faut donc
+// PAS appeler `consumeReservation` séparément après celle-ci (voir
+// src/app/api/analysis/generate/route.ts).
 export async function saveDeepAnalysis(
   supabase: SupabaseClient,
-  userId: string,
   analysis: GeneratedDeepAnalysis,
+  reservationId: string,
 ): Promise<string> {
-  const { data, error } = await supabase
-    .from("deep_analyses")
-    .insert({
-      user_id: userId,
+  const { data, error } = await supabase.rpc("save_generated_analysis", {
+    p_analysis: {
       topic: analysis.topic,
       title: analysis.title,
       domain: analysis.domain,
       introduction: analysis.introduction,
       sections: analysis.sections,
       synthesis: analysis.synthesis,
-      key_lessons: analysis.keyLessons,
+      keyLessons: analysis.keyLessons,
       sources: analysis.sources,
-    })
-    .select("id")
-    .single();
+    },
+    p_reservation_id: reservationId,
+  });
 
   if (error || !data) {
     throw new Error(`Échec de l'enregistrement de l'analyse : ${error?.message}`);
   }
 
-  return data.id as string;
+  return data as string;
 }
 
 export async function listDeepAnalyses(
