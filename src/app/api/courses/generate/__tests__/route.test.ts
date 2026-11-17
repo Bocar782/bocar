@@ -154,4 +154,70 @@ describe("POST /api/courses/generate (vrai route.ts + vrai persist.ts/reservatio
     );
     expect(releaseCalls).toHaveLength(1);
   });
+
+  // Prompt 05.16.1 (correctif E3, audit de sécurité 05.16) : une erreur
+  // Supabase/Postgres simulée, contenant du détail interne (nom de table,
+  // colonne, contrainte), ne doit jamais atteindre la réponse HTTP.
+  it("ne révèle jamais le détail d'une erreur de sauvegarde Supabase simulée (table/colonne/contrainte)", async () => {
+    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
+    const sensitiveDetail =
+      'column "secret_internal_column" of relation "public.courses" violates not-null constraint "courses_secret_check"';
+    currentSupabaseMock.rpc.mockImplementation((fnName: string, args: unknown): RpcMockResult => {
+      currentSupabaseMock.rpcCalls.push({ fnName, args });
+      if (fnName === "reserve_generation_slot") {
+        return {
+          single: async () => ({
+            data: { ok: true, reservation_id: "res-1", is_pro: false, limit_count: 1, used_count: 1 },
+            error: null,
+          }),
+        };
+      }
+      if (fnName === "save_generated_course") {
+        return Promise.resolve({ data: null, error: new Error(sensitiveDetail) });
+      }
+      return Promise.resolve({ data: true, error: null });
+    });
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { response, lines } = await callRoute();
+    const fullBody = JSON.stringify(lines);
+
+    expect(response.status).toBe(200);
+    expect(fullBody).not.toContain("secret_internal_column");
+    expect(fullBody).not.toContain("constraint");
+    expect(fullBody).not.toContain("relation");
+    const doneLine = lines.find((l) => l.stage === "done");
+    expect(doneLine?.saveWarning).toBe(
+      "La formation a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.",
+    );
+    // Le détail reste disponible côté serveur (logs), juste jamais dans la réponse.
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("ne révèle jamais le détail d'une erreur inattendue (non métier) pendant la génération", async () => {
+    const sensitiveDetail = 'relation "public.secret_table" does not exist';
+    mockGenerateCourse.mockRejectedValue(new Error(sensitiveDetail));
+
+    const { response, lines } = await callRoute();
+    const fullBody = JSON.stringify(lines);
+
+    expect(response.status).toBe(200);
+    expect(fullBody).not.toContain("secret_table");
+    expect(fullBody).not.toContain("relation");
+    const errorLine = lines.find((l) => l.stage === "error");
+    expect(errorLine?.message).toBe("Une erreur est survenue pendant la génération. Réessaie dans un instant.");
+  });
+
+  it("conserve le message d'une CourseGenerationError (erreur métier conçue pour être affichée)", async () => {
+    const { CourseGenerationError } = await import("@/lib/courses/generate");
+    mockGenerateCourse.mockRejectedValue(
+      new CourseGenerationError("Le sujet proposé est trop vague pour construire une formation."),
+    );
+
+    const { lines } = await callRoute();
+
+    const errorLine = lines.find((l) => l.stage === "error");
+    expect(errorLine?.message).toBe("Le sujet proposé est trop vague pour construire une formation.");
+  });
 });

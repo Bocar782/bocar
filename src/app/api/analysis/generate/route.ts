@@ -85,20 +85,34 @@ export async function POST(request: Request) {
           analysisId = await saveDeepAnalysis(supabase, user.id, analysis);
           await consumeReservation(supabase, reservationId, analysisId);
         } catch (saveError) {
+          // Prompt 05.16.1 (correctif E3, audit de sécurité 05.16) :
+          // `saveDeepAnalysis`/`consumeReservation` encapsulent toujours une
+          // erreur Supabase/Postgres brute dans un `Error` générique —
+          // jamais une erreur métier conçue pour être affichée. Le détail
+          // technique ne doit donc jamais atteindre le navigateur : seul un
+          // message générique est envoyé dans `saveWarning`, le détail réel
+          // reste uniquement dans les logs serveur.
+          console.error("Échec de l'enregistrement de l'analyse :", saveError);
           saveWarning =
-            saveError instanceof Error
-              ? saveError.message
-              : "Échec de l'enregistrement de l'analyse.";
+            "L'analyse a été générée mais n'a pas pu être enregistrée. Réessaie, ou contacte le support si le problème persiste.";
           await releaseReservation(supabase, reservationId);
         }
 
         send({ stage: "done", analysisId, analysis, saveWarning });
       } catch (error) {
         await releaseReservation(supabase, reservationId);
-        const message =
-          error instanceof AnalysisGenerationError || error instanceof Error
-            ? error.message
-            : "Une erreur est survenue pendant l'analyse.";
+        // Prompt 05.16.1 (correctif E3) : seules les erreurs explicitement
+        // conçues pour être affichées (`AnalysisGenerationError`, levée avec
+        // un message déjà rédigé pour l'utilisateur) conservent leur
+        // message. Toute autre erreur ne doit jamais exposer son détail
+        // technique au navigateur ; elle reste uniquement dans les logs
+        // serveur.
+        const message = error instanceof AnalysisGenerationError
+          ? error.message
+          : "Une erreur est survenue pendant l'analyse. Réessaie dans un instant.";
+        if (!(error instanceof AnalysisGenerationError)) {
+          console.error("Erreur inattendue pendant la génération d'analyse :", error);
+        }
         send({ stage: "error", message });
       } finally {
         controller.close();

@@ -67,7 +67,12 @@ export function ChapterChat({
       });
 
       if (!response.ok || !response.body) {
-        throw new Error("La connexion à Tavyra a échoué.");
+        // Les erreurs métier conçues pour être affichées (ex. limite de
+        // messages atteinte, 429) renvoient un JSON `{ error }` lisible —
+        // on l'affiche tel quel plutôt qu'un message générique quand il est
+        // présent (voir route.ts, check_chat_rate_limit).
+        const payload = await response.clone().json().catch(() => null);
+        throw new Error(payload?.error ?? "La connexion à Tavyra a échoué.");
       }
 
       const reader = response.body.getReader();

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import { createAnthropicClient } from "@/lib/anthropic/client";
+import { ChatRateLimitExceededError, checkChatRateLimit } from "@/lib/chat/rate-limit";
 import { buildChatSystemPrompt } from "@/lib/courses/chat-context";
 import { getCourseById } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
@@ -67,6 +68,28 @@ export async function POST(request: Request) {
 
   if (!course) {
     return NextResponse.json({ error: "Formation introuvable." }, { status: 404 });
+  }
+
+  // Limite de fréquence (Prompt 05.16.1, correctif E1) : vérifiée et
+  // consommée atomiquement côté base de données, juste avant l'appel
+  // Anthropic — jamais avant (une requête qui aurait de toute façon échoué
+  // sur la validation ou l'introuvabilité de la formation ci-dessus ne
+  // consomme pas inutilement le quota de l'utilisateur). Voir
+  // check_chat_rate_limit() dans supabase/migrations/0016_chat_rate_limit.sql :
+  // l'identité (auth.uid()) et les limites Free/Pro sont entièrement
+  // déterminées côté serveur, jamais transmises ni fait confiance depuis ce
+  // code — impossible à contourner en appelant directement l'API avec un
+  // plan falsifié.
+  try {
+    await checkChatRateLimit(supabase);
+  } catch (err) {
+    if (err instanceof ChatRateLimitExceededError) {
+      return NextResponse.json({ error: err.message }, { status: 429 });
+    }
+    return NextResponse.json(
+      { error: "Impossible de vérifier ta limite de messages pour le moment. Réessaie dans un instant." },
+      { status: 503 },
+    );
   }
 
   const chapterIndex = Math.min(currentChapterIndex, course.chapters.length - 1);
