@@ -7,7 +7,7 @@ import { DeepAnalysisListItem } from "@/components/deep-analysis-list-item";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { listDeepAnalyses } from "@/lib/analysis/persist";
-import { getAnalysisUsageStatus, getUsageStatus } from "@/lib/courses/plan";
+import { getUsageStatuses } from "@/lib/courses/plan";
 import { listCourses } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
@@ -28,12 +28,15 @@ export default async function DashboardPage() {
   // Si la migration SQL n'a pas encore été appliquée côté Supabase, ne pas
   // faire planter tout le dashboard : l'utilisateur voit juste des listes
   // vides et un quota par défaut.
-  const [courses, analyses, usage, analysisUsage] = await Promise.all([
+  const [courses, analyses, usages] = await Promise.all([
     listCourses(supabase, user.id).catch(() => []),
     listDeepAnalyses(supabase, user.id).catch(() => []),
-    getUsageStatus(supabase, user.id).catch(() => DEFAULT_USAGE),
-    getAnalysisUsageStatus(supabase, user.id).catch(() => ({ ...DEFAULT_USAGE, limit: 0, remaining: 0 })),
+    getUsageStatuses(supabase, user.id).catch(() => ({
+      course: DEFAULT_USAGE,
+      analysis: { ...DEFAULT_USAGE, limit: 0, remaining: 0 },
+    })),
   ]);
+  const { course: usage, analysis: analysisUsage } = usages;
 
   const onFreePlan = !usage.isPro;
 

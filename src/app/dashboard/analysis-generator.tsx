@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { DeepAnalysisView } from "@/components/deep-analysis-view";
 import { GenerationProgress } from "@/components/generation-progress";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
+import { getGenerationStatus } from "@/lib/courses/generation-status";
 import { DEEP_STAGE_LABELS, type DeepAnalysisStage, type GeneratedDeepAnalysis } from "@/lib/analysis/schemas";
 
 const STAGE_ORDER: DeepAnalysisStage[] = [
@@ -20,7 +21,8 @@ const STAGE_ORDER: DeepAnalysisStage[] = [
 type Status = "idle" | "generating" | "done" | "error";
 
 type StreamEvent = {
-  stage: DeepAnalysisStage | "done" | "error";
+  reservationId?: string;
+  stage?: DeepAnalysisStage | "done" | "error";
   label?: string;
   analysis?: GeneratedDeepAnalysis;
   analysisId?: string | null;
@@ -29,6 +31,41 @@ type StreamEvent = {
 };
 
 const MAX_LENGTH = 500;
+// Prompt 05.19/05.20 (reprise après rechargement, même correction qu'en
+// 05.18.1 pour la génération de formation) : clé dédiée, jamais partagée
+// avec "tavyra:course-generation" — une analyse en cours ne doit jamais
+// être confondue avec une formation en cours.
+const SESSION_STORAGE_KEY = "tavyra:analysis-generation";
+// Un peu au-delà de maxDuration=300s côté serveur (route.ts) : passé ce
+// délai sans confirmation, on ne prétend plus que la génération est
+// "toujours en cours".
+const MAX_PLAUSIBLE_GENERATION_MS = 360_000;
+const STATUS_POLL_INTERVAL_MS = 5000;
+
+type StoredGeneration = { reservationId: string; topic: string; startedAt: number };
+
+function loadStoredGeneration(): StoredGeneration | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredGeneration;
+    if (!parsed.reservationId || !parsed.topic || !parsed.startedAt) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function storeGeneration(value: StoredGeneration | null) {
+  try {
+    if (value) sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(value));
+    else sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Stockage indisponible (navigation privée, etc.) : la reprise après
+    // rechargement ne fonctionnera pas, mais la génération en cours n'est
+    // jamais affectée — ignoré volontairement.
+  }
+}
 
 export function AnalysisGenerator({
   remainingGenerations,
@@ -38,13 +75,29 @@ export function AnalysisGenerator({
   isPro: boolean;
 }) {
   const router = useRouter();
-  const [topic, setTopic] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
+  // Prompt 05.19/05.20 : état initial calculé à partir d'une éventuelle
+  // génération déjà en cours — jamais défini via un `setState` synchrone
+  // dans un effet (voir l'effet ci-dessous, qui ne fait que RELIRE l'état
+  // côté serveur de façon asynchrone).
+  const [topic, setTopic] = useState(() => loadStoredGeneration()?.topic ?? "");
+  const [status, setStatus] = useState<Status>(() => (loadStoredGeneration() ? "generating" : "idle"));
   const [stage, setStage] = useState<DeepAnalysisStage>("cadrage");
   const [analysis, setAnalysis] = useState<GeneratedDeepAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(() =>
+    loadStoredGeneration() ? "Vérification de l'état de ton analyse en cours…" : null,
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const reservationRef = useRef<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Protection contre les doubles soumissions (même raisonnement qu'en
+  // 05.18.1 pour CourseGenerator) : vérifié ET positionné de façon
+  // SYNCHRONE, indépendamment du cycle de rendu React — un simple test sur
+  // `status` pourrait laisser passer un second appel si React regroupe
+  // plusieurs mises à jour d'état avant de redessiner.
+  const isGeneratingRef = useRef(false);
 
   function resizeTextarea() {
     const el = textareaRef.current;
@@ -53,10 +106,86 @@ export function AnalysisGenerator({
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }
 
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+
+  // Reprise après rechargement : au montage, si une génération a été
+  // lancée avant un rechargement de page (marqueur laissé en
+  // sessionStorage), on ne redémarre JAMAIS une nouvelle génération ni une
+  // nouvelle réservation — on va seulement RELIRE l'état réel de celle déjà
+  // en cours côté serveur.
+  useEffect(() => {
+    const loaded = loadStoredGeneration();
+    if (!loaded) return;
+    const stored = loaded;
+    reservationRef.current = stored.reservationId;
+
+    async function checkOnce() {
+      const result = await getGenerationStatus(stored.reservationId, "analysis");
+
+      if (result.status === "completed") {
+        stopPolling();
+        storeGeneration(null);
+        if (result.resourceId) {
+          router.push(`/dashboard/analyses/${result.resourceId}`);
+        } else {
+          setResumeNotice(null);
+          setStatus("done");
+        }
+        return;
+      }
+
+      if (result.status === "released" || result.status === "not_found") {
+        stopPolling();
+        storeGeneration(null);
+        setResumeNotice(null);
+        setError(
+          "L'analyse précédente s'est arrêtée (ou a expiré) avant la fin. Réessaie.",
+        );
+        setStatus("error");
+        return;
+      }
+
+      if (result.status === "unknown") {
+        // Jamais affirmer qu'elle continue si on ne peut pas le confirmer.
+        setResumeNotice(
+          "Impossible de confirmer l'état de ton analyse pour le moment (connexion instable). Nouvelle tentative dans quelques secondes…",
+        );
+        return;
+      }
+
+      // status === "pending" : réellement toujours en cours, confirmé.
+      const elapsed = Date.now() - stored.startedAt;
+      if (elapsed > MAX_PLAUSIBLE_GENERATION_MS) {
+        stopPolling();
+        storeGeneration(null);
+        setResumeNotice(null);
+        setError(
+          "Nous ne parvenons plus à confirmer l'état de cette analyse après un délai inhabituel. Réessaie — ton quota n'a pas été consommé si elle n'a pas abouti.",
+        );
+        setStatus("error");
+        return;
+      }
+      setResumeNotice("Ton analyse précédente est toujours en cours…");
+    }
+
+    checkOnce();
+    pollRef.current = setInterval(checkOnce, STATUS_POLL_INTERVAL_MS);
+    return () => stopPolling();
+    // Volontairement une seule fois au montage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
+    if (isGeneratingRef.current) return;
     const trimmed = topic.trim();
-    if (!trimmed || status === "generating") return;
+    if (!trimmed || status !== "idle") return;
+    isGeneratingRef.current = true;
 
     setStatus("generating");
     setStage("cadrage");
@@ -93,10 +222,20 @@ export function AnalysisGenerator({
 
           const parsed = JSON.parse(line) as StreamEvent;
 
+          if (parsed.reservationId) {
+            // Persisté AVANT tout autre traitement : si la page est
+            // rechargée à n'importe quel instant après cette ligne, elle
+            // pourra toujours retrouver cette génération (voir l'effet de
+            // reprise ci-dessus).
+            reservationRef.current = parsed.reservationId;
+            storeGeneration({ reservationId: parsed.reservationId, topic: trimmed, startedAt: Date.now() });
+            continue;
+          }
           if (parsed.stage === "error") {
             throw new Error(parsed.message ?? "L'analyse a échoué.");
           }
           if (parsed.stage === "done" && parsed.analysis) {
+            storeGeneration(null);
             setAnalysis(parsed.analysis);
             setSaveWarning(parsed.saveWarning ?? null);
             setStatus("done");
@@ -107,8 +246,11 @@ export function AnalysisGenerator({
         }
       }
     } catch (err) {
+      storeGeneration(null);
       setError(err instanceof Error ? err.message : "Une erreur est survenue.");
       setStatus("error");
+    } finally {
+      isGeneratingRef.current = false;
     }
   }
 
@@ -117,6 +259,7 @@ export function AnalysisGenerator({
     setTopic("");
     setAnalysis(null);
     setError(null);
+    setResumeNotice(null);
   }
 
   if (status === "done" && analysis) {
@@ -138,6 +281,11 @@ export function AnalysisGenerator({
   if (status === "generating") {
     return (
       <div className="flex w-full flex-col items-center py-16">
+        {resumeNotice && (
+          <Callout tone="info" role="status" className="mb-6 max-w-md text-center">
+            {resumeNotice}
+          </Callout>
+        )}
         <GenerationProgress
           currentStage={stage}
           stageOrder={STAGE_ORDER}

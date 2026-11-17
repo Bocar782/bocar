@@ -181,7 +181,7 @@ export function CourseGenerator({
     reservationRef.current = stored.reservationId;
 
     async function checkOnce() {
-      const result = await getGenerationStatus(stored.reservationId);
+      const result = await getGenerationStatus(stored.reservationId, "course");
 
       if (result.status === "completed") {
         stopPolling();

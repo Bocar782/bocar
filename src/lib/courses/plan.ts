@@ -102,12 +102,11 @@ export type UsageStatus = {
   resetsAt: string | null;
 };
 
-export async function getUsageStatus(
+async function computeUsageStatus(
+  subscription: SubscriptionRow | null,
   supabase: SupabaseClient,
   userId: string,
 ): Promise<UsageStatus> {
-  const subscription = await getActiveSubscription(supabase, userId);
-
   if (subscription) {
     const since = subscription.current_period_start ?? new Date(0).toISOString();
     const used = await countGenerationsSince(supabase, userId, since);
@@ -130,12 +129,11 @@ export async function getUsageStatus(
   };
 }
 
-export async function getAnalysisUsageStatus(
+async function computeAnalysisUsageStatus(
+  subscription: SubscriptionRow | null,
   supabase: SupabaseClient,
   userId: string,
 ): Promise<UsageStatus> {
-  const subscription = await getActiveSubscription(supabase, userId);
-
   // Réservée au plan Pro : un utilisateur gratuit n'a aucune génération
   // disponible, quel que soit son historique.
   if (!subscription) {
@@ -157,4 +155,44 @@ export async function getAnalysisUsageStatus(
     remaining: Math.max(0, PRO_PLAN_MONTHLY_ANALYSIS_LIMIT - used),
     resetsAt: subscription.current_period_end,
   };
+}
+
+export async function getUsageStatus(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<UsageStatus> {
+  const subscription = await getActiveSubscription(supabase, userId);
+  return computeUsageStatus(subscription, supabase, userId);
+}
+
+export async function getAnalysisUsageStatus(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<UsageStatus> {
+  const subscription = await getActiveSubscription(supabase, userId);
+  return computeAnalysisUsageStatus(subscription, supabase, userId);
+}
+
+/**
+ * Prompt 05.19/05.20 (optimisation) : équivalent exact d'appeler
+ * `getUsageStatus` PUIS `getAnalysisUsageStatus` (même résultat, mêmes
+ * règles), mais ne lit l'abonnement Stripe/Supabase qu'UNE SEULE fois au
+ * lieu de deux — les deux fonctions ci-dessus refont chacune cette même
+ * requête (`subscriptions` filtrée par `user_id`) alors qu'elle ne dépend
+ * que de l'utilisateur, jamais du type de quota. Repéré sur le tableau de
+ * bord (`dashboard/page.tsx`), où les deux étaient déjà appelées en
+ * parallèle via `Promise.all` — donc déjà deux allers-retours réseau
+ * identiques lancés simultanément, jamais un vrai gain de latence, juste
+ * une requête Supabase redondante à chaque chargement du tableau de bord.
+ */
+export async function getUsageStatuses(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ course: UsageStatus; analysis: UsageStatus }> {
+  const subscription = await getActiveSubscription(supabase, userId);
+  const [course, analysis] = await Promise.all([
+    computeUsageStatus(subscription, supabase, userId),
+    computeAnalysisUsageStatus(subscription, supabase, userId),
+  ]);
+  return { course, analysis };
 }

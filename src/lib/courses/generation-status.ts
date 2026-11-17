@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { ReservationKind } from "./reservation";
 
 export type GenerationStatus = {
   /**
@@ -33,8 +34,20 @@ export type GenerationStatus = {
  * comme pour le reste de ce projet. Ne lève jamais d'exception : une
  * incertitude (erreur réseau, etc.) est un statut "not_found" explicite —
  * jamais une prétention à tort que la génération continue.
+ *
+ * `kind` (Prompt 05.19/05.20) : réutilisé à l'identique pour la reprise
+ * après rechargement d'une analyse approfondie en cours de génération
+ * (`/api/analysis/generate`), qui souffrait jusqu'ici exactement du même
+ * problème que celui corrigé pour les formations en 05.18.1 — même table
+ * `generation_reservations`, seule la valeur de `kind` diffère
+ * ("course"/"analysis"). Filtré explicitement (comme `user_id`) pour
+ * qu'une réservation de formation ne puisse jamais être confondue avec
+ * celle d'une analyse, même si leurs identifiants se ressemblaient.
  */
-export async function getGenerationStatus(reservationId: string): Promise<GenerationStatus> {
+export async function getGenerationStatus(
+  reservationId: string,
+  kind: ReservationKind,
+): Promise<GenerationStatus> {
   try {
     const supabase = await createClient();
     const {
@@ -51,7 +64,7 @@ export async function getGenerationStatus(reservationId: string): Promise<Genera
       .select("status, resource_id, created_at")
       .eq("id", reservationId)
       .eq("user_id", user.id)
-      .eq("kind", "course")
+      .eq("kind", kind)
       .maybeSingle();
 
     if (error) {

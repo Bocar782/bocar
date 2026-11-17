@@ -1,8 +1,8 @@
 // Vrais tests (Prompt 05.17.3, correction du passage automatique
-// Pro -> Free de l'audit 05.17) : importent et exécutent le VRAI
-// src/lib/courses/plan.ts.
+// Pro -> Free de l'audit 05.17 ; étendus en 05.19/05.20 pour
+// `getUsageStatuses`). Importent et exécutent le VRAI src/lib/courses/plan.ts.
 import { describe, expect, it, vi } from "vitest";
-import { getUsageStatus, isOnFreePlan } from "@/lib/courses/plan";
+import { getUsageStatus, getUsageStatuses, isOnFreePlan } from "@/lib/courses/plan";
 
 function makeSupabase(subscriptionRow: Record<string, unknown> | null) {
   return {
@@ -14,16 +14,30 @@ function makeSupabase(subscriptionRow: Record<string, unknown> | null) {
           }),
         };
       }
-      if (table === "courses") {
+      // `countTotalGenerations`/`countGenerationsSince` (courses) et
+      // `countDeepAnalysesSince` (deep_analyses) partagent la même forme :
+      // `.eq()` seul est attendu directement (plan Free), `.gte()` ensuite
+      // pour le plan Pro (depuis le début d'une période de facturation).
+      if (table === "courses" || table === "deep_analyses") {
+        const resolved = { count: 0, error: null };
         return {
           select: () => ({
-            eq: () => ({ gte: async () => ({ count: 0, error: null }) }),
+            eq: () => ({
+              gte: async () => resolved,
+              then: (
+                resolve: (value: typeof resolved) => unknown,
+              ) => resolve(resolved),
+            }),
           }),
         };
       }
       throw new Error(`Table inattendue dans ce mock : ${table}`);
     }),
   };
+}
+
+function countCallsTo(supabase: ReturnType<typeof makeSupabase>, table: string): number {
+  return supabase.from.mock.calls.filter(([calledTable]) => calledTable === table).length;
 }
 
 describe("isOnFreePlan / getUsageStatus — abonnement actif (non-régression)", () => {
@@ -90,5 +104,34 @@ describe("isOnFreePlan — filet de sécurité 05.17.3 (expiration de période m
     });
 
     expect(await isOnFreePlan(supabase as never, "user-1")).toBe(false);
+  });
+});
+
+describe("getUsageStatuses (Prompt 05.19/05.20) — équivalent combiné, sans requête dupliquée", () => {
+  it("lit l'abonnement une seule fois (au lieu de deux) pour produire les deux statuts", async () => {
+    const future = new Date(Date.now() + 1000 * 60 * 60 * 24 * 10).toISOString();
+    const subscriptionRow = {
+      status: "active",
+      current_period_start: new Date().toISOString(),
+      current_period_end: future,
+    };
+    const supabase = makeSupabase(subscriptionRow);
+
+    const { course, analysis } = await getUsageStatuses(supabase as never, "user-1");
+
+    expect(course.isPro).toBe(true);
+    expect(analysis.isPro).toBe(true);
+    expect(countCallsTo(supabase, "subscriptions")).toBe(1);
+  });
+
+  it("produit exactement le même résultat que getUsageStatus/getAnalysisUsageStatus appelés séparément (Free, sans abonnement)", async () => {
+    const supabaseCombined = makeSupabase(null);
+    const supabaseSeparate = makeSupabase(null);
+
+    const combined = await getUsageStatuses(supabaseCombined as never, "user-1");
+    const separateCourse = await getUsageStatus(supabaseSeparate as never, "user-1");
+
+    expect(combined.course).toEqual(separateCourse);
+    expect(combined.analysis).toEqual({ isPro: false, used: 0, limit: 0, remaining: 0, resetsAt: null });
   });
 });

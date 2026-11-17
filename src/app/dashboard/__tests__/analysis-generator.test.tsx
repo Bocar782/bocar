@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 //
-// Vrai test (Prompt 05.18, audit des parcours utilisateur) : importe et
-// rend le VRAI composant AnalysisGenerator dans un DOM jsdom, et simule un
-// vrai flux NDJSON tel qu'émis par /api/analysis/generate (route.ts) —
-// seule la frontière externe (`fetch`) est mockée. Même constat que pour
-// CourseGenerator : aucun test n'existait jusqu'ici pour la logique
-// client (parsing du flux, quota Free/Pro, erreur).
+// Vrai test (Prompt 05.18, audit des parcours utilisateur ; étendu en
+// 05.19/05.20 pour la reprise après rechargement et la double soumission,
+// exactement comme CourseGenerator en 05.18.1) : importe et rend le VRAI
+// composant AnalysisGenerator dans un DOM jsdom, et simule un vrai flux
+// NDJSON tel qu'émis par /api/analysis/generate (route.ts) — seules les
+// frontières externes (`fetch`, `getGenerationStatus`, sessionStorage)
+// sont mockées/contrôlées.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,8 +15,14 @@ import type { GeneratedDeepAnalysis } from "@/lib/analysis/schemas";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockRefresh = vi.fn();
+const mockPush = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: mockRefresh }),
+  useRouter: () => ({ refresh: mockRefresh, push: mockPush }),
+}));
+
+const mockGetGenerationStatus = vi.fn();
+vi.mock("@/lib/courses/generation-status", () => ({
+  getGenerationStatus: (...args: unknown[]) => mockGetGenerationStatus(...args),
 }));
 
 let container: HTMLDivElement;
@@ -26,6 +33,9 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mockRefresh.mockClear();
+  mockPush.mockClear();
+  mockGetGenerationStatus.mockReset();
+  sessionStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -156,6 +166,125 @@ describe("AnalysisGenerator (vrai composant, Prompt 05.18)", () => {
     expect(container.textContent).toContain(
       "Le sujet proposé ne permet pas d'identifier de cas réels pertinents.",
     );
+    expect(container.querySelector("textarea")).not.toBeNull();
+  });
+
+  it("persiste reservationId dès sa réception, avant la fin de la génération (reprise après rechargement)", async () => {
+    mockFetchStream([
+      { reservationId: "res-analysis-1" },
+      { stage: "cadrage" },
+      { stage: "done", analysisId: "analysis-123", analysis: FAKE_ANALYSIS, saveWarning: null },
+    ]);
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+    await typeSubjectAndSubmit("Un sujet de test");
+
+    expect(container.textContent).toContain("Analyse test générée");
+    // Nettoyé une fois l'analyse terminée avec succès.
+    expect(sessionStorage.getItem("tavyra:analysis-generation")).toBeNull();
+  });
+
+  it("protège contre une double soumission (deux soumissions rapides du formulaire ne lancent qu'un seul fetch)", async () => {
+    let callCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        callCount += 1;
+        return {
+          ok: true,
+          status: 200,
+          body: ndjsonStream([{ stage: "done", analysisId: "a1", analysis: FAKE_ANALYSIS, saveWarning: null }]),
+          json: async () => ({}),
+        };
+      }),
+    );
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    const form = container.querySelector("form") as HTMLFormElement;
+    await act(async () => {
+      NATIVE_TEXTAREA_VALUE_SETTER.call(textarea, "Un sujet de test");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(callCount).toBe(1);
+  });
+});
+
+describe("AnalysisGenerator — rechargement pendant une génération (Prompt 05.19/05.20)", () => {
+  it("affiche un avis clair et retrouve l'état réel (toujours en cours) plutôt que de redémarrer de zéro", async () => {
+    sessionStorage.setItem(
+      "tavyra:analysis-generation",
+      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    mockGetGenerationStatus.mockResolvedValue({ status: "pending", resourceId: null, createdAt: null });
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+
+    expect(container.textContent).toMatch(/vérification|toujours en cours/i);
+    expect(mockGetGenerationStatus).toHaveBeenCalledWith("res-stored", "analysis");
+  });
+
+  it("redirige vers l'analyse terminée si le serveur confirme qu'elle est 'completed'", async () => {
+    sessionStorage.setItem(
+      "tavyra:analysis-generation",
+      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    mockGetGenerationStatus.mockResolvedValue({
+      status: "completed",
+      resourceId: "analysis-xyz",
+      createdAt: null,
+    });
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockPush).toHaveBeenCalledWith("/dashboard/analyses/analysis-xyz");
+    expect(sessionStorage.getItem("tavyra:analysis-generation")).toBeNull();
+  });
+
+  it("affiche un message d'échec si le serveur confirme que la réservation a été libérée (génération ratée)", async () => {
+    sessionStorage.setItem(
+      "tavyra:analysis-generation",
+      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    mockGetGenerationStatus.mockResolvedValue({ status: "released", resourceId: null, createdAt: null });
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.textContent).toMatch(/arrêtée|expiré/i);
+    expect(sessionStorage.getItem("tavyra:analysis-generation")).toBeNull();
+  });
+
+  it("ne prétend JAMAIS qu'une génération continue si son état ne peut pas être confirmé (statut 'unknown')", async () => {
+    sessionStorage.setItem(
+      "tavyra:analysis-generation",
+      JSON.stringify({ reservationId: "res-stored", topic: "Sujet repris", startedAt: Date.now() }),
+    );
+    mockGetGenerationStatus.mockResolvedValue({ status: "unknown", resourceId: null, createdAt: null });
+
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.textContent).toMatch(/impossible de confirmer/i);
+  });
+
+  it("sans aucune génération en cours en sessionStorage, démarre normalement en 'idle' (non-régression)", async () => {
+    await renderGenerator({ remainingGenerations: 1, isPro: true });
+
+    expect(mockGetGenerationStatus).not.toHaveBeenCalled();
     expect(container.querySelector("textarea")).not.toBeNull();
   });
 });

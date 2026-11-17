@@ -492,7 +492,7 @@ describe("CourseGenerator — rechargement pendant une génération (Prompt 05.1
     await renderGenerator({ remainingGenerations: 1, locked: false });
 
     expect(container.textContent).toMatch(/vérification|toujours en cours/i);
-    expect(mockGetGenerationStatus).toHaveBeenCalledWith("res-stored");
+    expect(mockGetGenerationStatus).toHaveBeenCalledWith("res-stored", "course");
   });
 
   it("redirige vers la formation terminée si le serveur confirme qu'elle est 'completed'", async () => {

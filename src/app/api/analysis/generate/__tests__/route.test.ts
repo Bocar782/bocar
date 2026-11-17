@@ -191,4 +191,15 @@ describe("POST /api/analysis/generate (vrai route.ts + vrai persist.ts/reservati
     const errorLine = lines.find((l) => l.stage === "error");
     expect(errorLine?.message).toBe("Le sujet proposé ne permet pas d'identifier de cas réels pertinents.");
   });
+
+  // Prompt 05.19/05.20 : même correction qu'en 05.18.1 pour
+  // /api/courses/generate — nécessaire pour que le client puisse reprendre
+  // après un rechargement pendant une analyse en cours.
+  it("transmet reservationId comme toute première ligne du flux NDJSON, avant le moindre évènement de progression", async () => {
+    mockGenerateDeepAnalysis.mockResolvedValue(FAKE_ANALYSIS);
+
+    const { lines } = await callRoute();
+
+    expect(lines[0]).toEqual({ reservationId: "res-1" });
+  });
 });

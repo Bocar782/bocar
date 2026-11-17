@@ -70,6 +70,14 @@ export async function POST(request: Request) {
         controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
       }
 
+      // Prompt 05.19/05.20 : même correction qu'en 05.18.1 pour
+      // /api/courses/generate — transmis en tout premier, avant le moindre
+      // appel IA, pour que le client puisse le persister (sessionStorage)
+      // avant même qu'un rechargement de page ne devienne possible.
+      // `getGenerationStatus(id, "analysis")` permet ensuite de retrouver
+      // l'état exact de cette réservation après un rechargement.
+      send({ reservationId });
+
       try {
         const analysis = await generateDeepAnalysis(
           topic,

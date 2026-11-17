@@ -23,12 +23,17 @@ export default async function CourseDetailPage(
     redirect("/login");
   }
 
-  const course = await getCourseById(supabase, id);
+  // Prompt 05.19/05.20 (optimisation) : les deux requêtes sont totalement
+  // indépendantes (l'une lit la formation, l'autre l'abonnement) — aucune
+  // raison de les enchaîner séquentiellement.
+  const [course, locked] = await Promise.all([
+    getCourseById(supabase, id),
+    isOnFreePlan(supabase, user.id),
+  ]);
   if (!course) {
     notFound();
   }
 
-  const locked = await isOnFreePlan(supabase, user.id);
   const access = computeCourseAccess(course, locked);
   const maxChapterIndex = locked ? access.unlockedCount - 1 : undefined;
 
