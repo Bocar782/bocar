@@ -1,17 +1,33 @@
-// Vrais tests automatisés (Prompt 05.9, dernières sécurisations) :
-// importent et exécutent le VRAI handler POST de route.ts (pas une copie
-// de son flux try/catch) ainsi que le vrai src/lib/courses/persist.ts et
-// src/lib/courses/reservation.ts qu'il appelle en interne. Seules les
-// frontières externes (client Supabase, generateCourse) sont mockées.
-// Aucun appel réel à Anthropic ni à Supabase.
+// Vrais tests automatisés (Prompt 05.9, dernières sécurisations ; étendus
+// en 05.18.1 pour le parcours "plan validé") : importent et exécutent le
+// VRAI handler POST de route.ts (pas une copie de son flux try/catch) ainsi
+// que le vrai src/lib/courses/persist.ts et src/lib/courses/reservation.ts
+// qu'il appelle en interne. Seules les frontières externes (client
+// Supabase, generateCourse/generateCourseFromPlan) sont mockées. Aucun
+// appel réel à Anthropic ni à Supabase. `validateProgrammeStructure` est la
+// VRAIE fonction (pure, sans IA ni réseau) : on veut vérifier son vrai
+// comportement de rejet avant réservation, pas une version simulée.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GeneratedCourse } from "@/lib/courses/schemas";
+import type { Analysis, GeneratedCourse, Programme, VerifiedExample } from "@/lib/courses/schemas";
 
 const mockGenerateCourse = vi.fn();
+const mockGenerateCourseFromPlan = vi.fn();
 
-vi.mock("@/lib/courses/generate", () => ({
-  generateCourse: (...args: unknown[]) => mockGenerateCourse(...args),
-  CourseGenerationError: class CourseGenerationError extends Error {},
+vi.mock("@/lib/courses/generate", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/courses/generate")>(
+    "@/lib/courses/generate",
+  );
+  return {
+    generateCourse: (...args: unknown[]) => mockGenerateCourse(...args),
+    generateCourseFromPlan: (...args: unknown[]) => mockGenerateCourseFromPlan(...args),
+    validateProgrammeStructure: actual.validateProgrammeStructure,
+    CourseGenerationError: class CourseGenerationError extends Error {},
+  };
+});
+
+const mockCreateAnthropicClient = vi.fn(() => ({ fakeClient: true }));
+vi.mock("@/lib/anthropic/client", () => ({
+  createAnthropicClient: () => mockCreateAnthropicClient(),
 }));
 
 type RpcCall = { fnName: string; args: unknown };
@@ -58,6 +74,8 @@ vi.mock("@/lib/supabase/server", () => ({
 beforeEach(() => {
   currentSupabaseMock = makeSupabaseMock();
   mockGenerateCourse.mockReset();
+  mockGenerateCourseFromPlan.mockReset();
+  mockCreateAnthropicClient.mockClear();
 });
 
 const FAKE_COURSE: GeneratedCourse = {
@@ -74,23 +92,84 @@ const FAKE_COURSE: GeneratedCourse = {
   quiz: [],
 };
 
-async function callRoute(origin?: string) {
+async function callRoute(origin?: string, body?: Record<string, unknown>) {
   const { POST } = await import("@/app/api/courses/generate/route");
   const response = await POST(
     new Request("http://localhost/api/courses/generate", {
       method: "POST",
       headers: origin ? { origin } : undefined,
-      body: JSON.stringify({ topic: "Un sujet de test" }),
+      body: JSON.stringify(body ?? { topic: "Un sujet de test" }),
     }),
   );
+  if (response.status !== 200) {
+    const json = await response.json().catch(() => null);
+    return { response, lines: [], json };
+  }
   const text = await response.text();
   const lines = text
     .trim()
     .split("\n")
     .filter(Boolean)
     .map((l) => JSON.parse(l) as Record<string, unknown>);
-  return { response, lines };
+  return { response, lines, json: null as Record<string, unknown> | null };
 }
+
+const FAKE_ANALYSIS: Analysis = {
+  title: "Formation test",
+  domain: "Test",
+  level: "débutant",
+  angle: "pratique",
+  usesRealWorldExamples: false,
+  moduleCount: 2,
+};
+
+const FAKE_VERIFIED_EXAMPLES: VerifiedExample[] = [];
+
+const VALID_PROGRAMME: Programme = {
+  introduction: "Introduction",
+  objectives: ["Objectif"],
+  summaryAngle: "Angle",
+  modules: [
+    {
+      title: "Module 1",
+      objective: "Objectif module 1",
+      chapters: [
+        { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
+        { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
+        { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
+      ],
+    },
+    {
+      title: "Module 2",
+      objective: "Objectif module 2",
+      chapters: [
+        { title: "Leçon 4", summary: "Résumé 4", exampleIndex: null },
+        { title: "Leçon 5", summary: "Résumé 5", exampleIndex: null },
+        { title: "Leçon 6", summary: "Résumé 6", exampleIndex: null },
+      ],
+    },
+  ],
+};
+
+// Structure invalide : un seul module (le minimum réel est 2, voir
+// MIN_MODULE_COUNT dans generate.ts) — doit être rejetée par
+// validateProgrammeStructure() avant toute réservation de quota.
+const INVALID_PROGRAMME: Programme = {
+  introduction: "Introduction",
+  objectives: ["Objectif"],
+  summaryAngle: "Angle",
+  modules: [
+    {
+      title: "Module 1",
+      objective: "Objectif module 1",
+      chapters: [
+        { title: "Leçon 1", summary: "Résumé 1", exampleIndex: null },
+        { title: "Leçon 2", summary: "Résumé 2", exampleIndex: null },
+        { title: "Leçon 3", summary: "Résumé 3", exampleIndex: null },
+      ],
+    },
+  ],
+};
 
 describe("POST /api/courses/generate (vrai route.ts + vraie vérification d'origine)", () => {
   it("renvoie 403 pour une origine externe non autorisée, avant toute génération", async () => {
@@ -237,5 +316,66 @@ describe("POST /api/courses/generate (vrai route.ts + vrai persist.ts/reservatio
 
     const errorLine = lines.find((l) => l.stage === "error");
     expect(errorLine?.message).toBe("Le sujet proposé est trop vague pour construire une formation.");
+  });
+});
+
+// Prompt 05.18.1 : parcours "plan validé" (diagnostic guidé) — un plan
+// construit par /api/courses/plan, potentiellement modifié par
+// l'utilisateur, est transmis dans le corps de la requête.
+describe("POST /api/courses/generate — plan validé (Prompt 05.18.1)", () => {
+  it("rejette un plan dont la structure est invalide (ex: un seul module) AVANT toute réservation de quota", async () => {
+    const { response, json } = await callRoute(undefined, {
+      topic: "Un sujet de test",
+      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: INVALID_PROGRAMME },
+    });
+
+    expect(response.status).toBe(400);
+    expect(json?.error).toMatch(/structure/i);
+    expect(mockGenerateCourse).not.toHaveBeenCalled();
+    expect(mockGenerateCourseFromPlan).not.toHaveBeenCalled();
+    const reserveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "reserve_generation_slot");
+    expect(reserveCalls).toHaveLength(0);
+  });
+
+  it("réserve un quota puis appelle generateCourseFromPlan (jamais generateCourse) pour un plan valide", async () => {
+    mockGenerateCourseFromPlan.mockResolvedValue(FAKE_COURSE);
+
+    const { lines } = await callRoute(undefined, {
+      topic: "Un sujet de test",
+      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: VALID_PROGRAMME },
+    });
+
+    expect(lines.some((l) => l.stage === "done" && l.courseId === "course-id")).toBe(true);
+    expect(mockGenerateCourse).not.toHaveBeenCalled();
+    expect(mockGenerateCourseFromPlan).toHaveBeenCalledWith(
+      { fakeClient: true },
+      "Un sujet de test",
+      FAKE_ANALYSIS,
+      FAKE_VERIFIED_EXAMPLES,
+      VALID_PROGRAMME,
+      expect.any(Function),
+    );
+
+    const reserveCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "reserve_generation_slot");
+    expect(reserveCalls).toHaveLength(1);
+  });
+
+  it("transmet reservationId comme toute première ligne du flux NDJSON, avant le moindre évènement de progression", async () => {
+    mockGenerateCourseFromPlan.mockResolvedValue(FAKE_COURSE);
+
+    const { lines } = await callRoute(undefined, {
+      topic: "Un sujet de test",
+      plan: { analysis: FAKE_ANALYSIS, verifiedExamples: FAKE_VERIFIED_EXAMPLES, programme: VALID_PROGRAMME },
+    });
+
+    expect(lines[0]).toEqual({ reservationId: "res-1" });
+  });
+
+  it("applique le même comportement pour le parcours 'configuration rapide' (sans plan) : reservationId toujours en première ligne", async () => {
+    mockGenerateCourse.mockResolvedValue(FAKE_COURSE);
+
+    const { lines } = await callRoute();
+
+    expect(lines[0]).toEqual({ reservationId: "res-1" });
   });
 });

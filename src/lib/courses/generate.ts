@@ -6,6 +6,7 @@ import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
+  DiagnosticStepSchema,
   FinalQuizSchema,
   ModuleQuizSchema,
   ProgrammeSchema,
@@ -14,6 +15,8 @@ import {
   type Analysis,
   type ChapterContent,
   type CourseSummary,
+  type DiagnosticAnswer,
+  type DiagnosticQuestion,
   type GeneratedChapter,
   type GeneratedCourse,
   type GeneratedModule,
@@ -162,11 +165,31 @@ async function parseStructured<Schema extends z.ZodType>(
 
 // --- Étape 1 : analyse du sujet ---
 
-async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis> {
+/**
+ * Formate les réponses au diagnostic (Prompt 05.18.1) en un paragraphe
+ * injecté dans les prompts d'analyse et de construction du programme —
+ * jamais analysé/parsé, juste du contexte additionnel en langage naturel.
+ * Chaîne vide si `answers` est vide ou absent : `analyzeTopic`/
+ * `buildProgramme` produisent alors un prompt IDENTIQUE à avant cette
+ * évolution (comportement du parcours "configuration rapide" inchangé).
+ */
+function formatDiagnosticContext(answers?: DiagnosticAnswer[]): string {
+  if (!answers || answers.length === 0) return "";
+  const qa = answers
+    .map((a) => `- ${a.question} → ${a.answer}`)
+    .join("\n");
+  return `\n\nRéponses de l'utilisateur au diagnostic préalable (à prendre réellement en compte pour adapter le niveau, le contenu et les exemples) :\n${qa}`;
+}
+
+async function analyzeTopic(
+  client: Anthropic,
+  topic: string,
+  diagnosticAnswers?: DiagnosticAnswer[],
+): Promise<Analysis> {
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
-    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.`,
+    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.${formatDiagnosticContext(diagnosticAnswers)}`,
     schema: AnalysisSchema,
     maxTokens: 2048,
   });
@@ -178,6 +201,94 @@ async function analyzeTopic(client: Anthropic, topic: string): Promise<Analysis>
     ...result,
     moduleCount: Math.min(MAX_MODULE_COUNT, Math.max(MIN_MODULE_COUNT, Math.round(result.moduleCount))),
   };
+}
+
+// --- Diagnostic adaptatif (Prompt 05.18.1) ---
+
+// Bornes imposées en CODE, jamais seulement dans le prompt (même principe
+// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 3ᵉ
+// question répondue, mais jamais avant ; elle ne peut jamais en poser plus
+// de 5, même si elle l'annonce.
+export const MIN_DIAGNOSTIC_QUESTIONS = 3;
+export const MAX_DIAGNOSTIC_QUESTIONS = 5;
+
+/**
+ * Génère la PROCHAINE question de diagnostic, en tenant compte des réponses
+ * déjà données — jamais une liste figée décidée d'avance : chaque appel ne
+ * voit que ce qui a déjà été répondu, donc la question qu'il produit
+ * s'adapte réellement (par ex. ne redemande pas le niveau si la réponse à
+ * la question précédente l'a déjà révélé, creuse au contraire un point
+ * encore flou). Retourne `null` quand le diagnostic est terminé : soit
+ * parce que l'IA l'a décidé (jamais avant `MIN_DIAGNOSTIC_QUESTIONS`
+ * questions répondues), soit parce que `MAX_DIAGNOSTIC_QUESTIONS` est déjà
+ * atteint (dans ce cas, le plafond est appliqué AVANT tout appel IA — pas
+ * même la peine de demander).
+ */
+export async function generateDiagnosticQuestion(
+  client: Anthropic,
+  topic: string,
+  previousAnswers: DiagnosticAnswer[],
+): Promise<DiagnosticQuestion | null> {
+  if (previousAnswers.length >= MAX_DIAGNOSTIC_QUESTIONS) {
+    return null;
+  }
+
+  const history =
+    previousAnswers.length > 0
+      ? previousAnswers.map((a, i) => `${i + 1}. ${a.question} → ${a.answer}`).join("\n")
+      : "(aucune question posée encore — c'est la première)";
+
+  const result = await parseStructured(client, {
+    system:
+      "Tu es Tavyra. Avant de construire une formation, tu poses quelques questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données — pour comprendre : le niveau actuel de la personne, ses objectifs concrets, ses connaissances préalables, son contexte d'utilisation, le temps qu'elle veut y consacrer, et ses préférences pédagogiques. Jamais deux questions qui demandent la même chose. Pose une question fermée à choix (3 à 5 choix courts) chaque fois que c'est possible ; une question ouverte seulement si une réponse libre est vraiment nécessaire.",
+    user: `Sujet de la formation demandée : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nPose la question suivante la plus utile pour cerner les besoins réels de la personne sur CE sujet précis (jamais une question générique qui s'appliquerait à n'importe quel sujet). Si tu estimes avoir déjà assez d'informations pour construire un bon plan (entre ${MIN_DIAGNOSTIC_QUESTIONS} et ${MAX_DIAGNOSTIC_QUESTIONS} questions au total), réponds done=true sans question. Ne dépasse jamais ${MAX_DIAGNOSTIC_QUESTIONS} questions au total.`,
+    schema: DiagnosticStepSchema,
+    maxTokens: 1024,
+  });
+
+  const alreadyAsked = previousAnswers.length;
+  const mustAskAnother = alreadyAsked < MIN_DIAGNOSTIC_QUESTIONS;
+
+  if (result.question && (mustAskAnother || !result.done)) {
+    return result.question;
+  }
+  if (!mustAskAnother) {
+    return null;
+  }
+  // Le modèle a répondu done=true (ou aucune question) avant le minimum
+  // imposé : ne jamais s'arrêter plus tôt que prévu, mais ne pas re-tenter
+  // indéfiniment non plus — une seule relance avec une consigne plus ferme.
+  const retry = await parseStructured(client, {
+    system:
+      "Tu es Tavyra. Avant de construire une formation, tu poses quelques questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données.",
+    user: `Sujet : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nIl est encore trop tôt pour arrêter le diagnostic (minimum ${MIN_DIAGNOSTIC_QUESTIONS} questions). Pose une question de diagnostic supplémentaire, utile et non répétitive.`,
+    schema: DiagnosticStepSchema,
+    maxTokens: 1024,
+  });
+  if (retry.question) return retry.question;
+  throw new CourseGenerationError(
+    "Impossible de générer les questions de diagnostic pour ce sujet.",
+  );
+}
+
+/**
+ * Estimation purement déterministe (jamais demandée à l'IA) du temps de
+ * lecture total d'une formation, à partir du nombre réel de leçons/quiz —
+ * "si elle peut être calculée raisonnablement" : un ordre de grandeur
+ * suffit, jamais présenté comme une mesure précise.
+ */
+export const MINUTES_PER_CHAPTER = 8;
+export const MINUTES_PER_MODULE_QUIZ = 5;
+export const MINUTES_FINAL_QUIZ = 10;
+
+export function estimateCourseDurationMinutes(programme: Pick<Programme, "modules">): number {
+  const chapterCount = programme.modules.reduce((sum, m) => sum + m.chapters.length, 0);
+  const moduleQuizCount = programme.modules.length;
+  return (
+    chapterCount * MINUTES_PER_CHAPTER +
+    moduleQuizCount * MINUTES_PER_MODULE_QUIZ +
+    MINUTES_FINAL_QUIZ
+  );
 }
 
 // --- Étape 2 : recherche d'exemples réels vérifiés ---
@@ -318,10 +429,25 @@ export function validateProgrammeStructure(programme: Programme): string[] {
  * leçon, de quiz ou de résumé — avec une erreur explicite : on n'accepte
  * jamais silencieusement une structure hors limites.
  */
+/** Résumé textuel compact d'un programme, pour le réinjecter dans un prompt d'ajustement (jamais pour autre chose : aucun parsing, juste du contexte). */
+function describeProgrammeForPrompt(programme?: Programme): string {
+  if (!programme) return "(aucun plan précédent disponible)";
+  return programme.modules
+    .map(
+      (m, i) =>
+        `Module ${i + 1} — "${m.title}" (objectif : ${m.objective})\n` +
+        m.chapters.map((c, j) => `  ${j + 1}. ${c.title} — ${c.summary}`).join("\n"),
+    )
+    .join("\n\n");
+}
+
 async function buildProgramme(
   client: Anthropic,
   analysis: Analysis,
   verifiedExamples: VerifiedExample[],
+  diagnosticAnswers?: DiagnosticAnswer[],
+  adjustmentRequest?: string,
+  previousProgramme?: Programme,
 ): Promise<Programme> {
   const examplesList =
     verifiedExamples.length > 0
@@ -333,7 +459,16 @@ async function buildProgramme(
   const system =
     "Tu es Tavyra. Tu construis le plan détaillé d'une formation structurée en modules : introduction, objectifs pédagogiques, et une liste de modules progressifs, chacun avec un titre précis, un objectif pédagogique clair et plusieurs leçons cohérentes. La structure doit être adaptée au sujet (une formation finance n'a pas la même structure qu'une formation histoire) ; le découpage en modules et en leçons doit refléter la complexité réelle du sujet, jamais un gabarit fixe imposé artificiellement. Chaque module doit apporter des notions distinctes : évite toute répétition de contenu entre modules.";
 
-  const baseUser = `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} modules, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Règles STRICTES à respecter : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules au total, chacun avec un titre précis, un véritable objectif pédagogique (jamais vide, ce que l'apprenant saura faire précisément après ce module), et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}`;
+  // Prompt 05.18.1 : demande d'ajustement explicite de l'utilisateur sur un
+  // plan déjà proposé — jamais analysée/validée ici, transmise telle
+  // quelle, exactement comme le sujet lui-même. Le plan précédent est
+  // inclus comme point de départ concret (jamais régénéré en ignorant ce
+  // qui existait déjà) : seuls les points demandés doivent changer.
+  const adjustmentNote = adjustmentRequest?.trim()
+    ? `\n\nPlan proposé précédemment, à prendre comme point de départ :\n${describeProgrammeForPrompt(previousProgramme)}\n\nL'utilisateur a demandé cet ajustement sur cette proposition — respecte-le autant que possible, en conservant le reste du plan tel quel, sans jamais sortir des règles strictes ci-dessous : "${adjustmentRequest.trim()}"`
+    : "";
+
+  const baseUser = `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} modules, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Règles STRICTES à respecter : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules au total, chacun avec un titre précis, un véritable objectif pédagogique (jamais vide, ce que l'apprenant saura faire précisément après ce module), et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}${formatDiagnosticContext(diagnosticAnswers)}${adjustmentNote}`;
 
   let programme = await parseStructured(client, {
     system,
@@ -685,25 +820,98 @@ async function writeModuleQuiz(
 
 // --- Orchestration complète ---
 
-export async function generateCourse(
+export type CoursePlan = {
+  analysis: Analysis;
+  verifiedExamples: VerifiedExample[];
+  programme: Programme;
+  estimatedMinutes: number;
+};
+
+/**
+ * Étapes "analyse → recherche → programme" (Prompt 05.18.1) : construit le
+ * PLAN d'une formation (modules, leçons, objectifs) sans jamais rédiger le
+ * contenu des leçons ni consommer de réservation de quota — ces appels sont
+ * nettement moins coûteux que la rédaction complète, et peuvent être
+ * relancés (ajustement du plan) sans jamais toucher au quota de
+ * génération. `diagnosticAnswers`/`adjustmentRequest` sont facultatifs :
+ * absents, le plan produit est identique à celui du parcours "configuration
+ * rapide" (`generateCourse` ci-dessous), qui appelle cette même fonction
+ * sans rien y ajouter.
+ */
+export async function buildCoursePlan(
+  client: Anthropic,
   topic: string,
-  onProgress: Progress,
-): Promise<GeneratedCourse> {
-  const client = createAnthropicClient();
+  options?: {
+    diagnosticAnswers?: DiagnosticAnswer[];
+    adjustmentRequest?: string;
+    /** Ré-utilise une analyse déjà faite plutôt que d'en refaire une — pour une simple demande d'ajustement du plan, qui ne change ni le domaine ni le niveau déjà déterminés. */
+    previousAnalysis?: Analysis;
+    previousVerifiedExamples?: VerifiedExample[];
+    previousProgramme?: Programme;
+    onProgress?: Progress;
+  },
+): Promise<CoursePlan> {
+  const onProgress = options?.onProgress ?? (() => {});
 
-  onProgress("analyse", STAGE_LABELS.analyse);
-  const analysis = await analyzeTopic(client, topic);
+  let analysis: Analysis;
+  let verifiedExamples: VerifiedExample[];
 
-  onProgress("recherche", STAGE_LABELS.recherche);
-  let verifiedExamples: VerifiedExample[] = [];
-  if (analysis.usesRealWorldExamples) {
-    const { findings, realSources } = await searchRealExamples(client, analysis);
-    verifiedExamples = await extractVerifiedExamples(client, analysis, findings, realSources);
+  if (options?.previousAnalysis) {
+    // Demande d'ajustement sur un plan déjà construit : on ne refait pas
+    // l'analyse ni la recherche d'exemples, seulement le programme — plus
+    // rapide, et évite de changer le domaine/niveau déjà déterminés pour
+    // un simple ajustement du plan.
+    analysis = options.previousAnalysis;
+    verifiedExamples = options.previousVerifiedExamples ?? [];
+  } else {
+    onProgress("analyse", STAGE_LABELS.analyse);
+    analysis = await analyzeTopic(client, topic, options?.diagnosticAnswers);
+
+    onProgress("recherche", STAGE_LABELS.recherche);
+    verifiedExamples = [];
+    if (analysis.usesRealWorldExamples) {
+      const { findings, realSources } = await searchRealExamples(client, analysis);
+      verifiedExamples = await extractVerifiedExamples(client, analysis, findings, realSources);
+    }
   }
 
   onProgress("programme", STAGE_LABELS.programme);
-  const programme = await buildProgramme(client, analysis, verifiedExamples);
+  const programme = await buildProgramme(
+    client,
+    analysis,
+    verifiedExamples,
+    options?.diagnosticAnswers,
+    options?.adjustmentRequest,
+    options?.previousProgramme,
+  );
 
+  return {
+    analysis,
+    verifiedExamples,
+    programme,
+    estimatedMinutes: estimateCourseDurationMinutes(programme),
+  };
+}
+
+/**
+ * Étapes "chapitres → résumé/quiz" (Prompt 05.18.1) : rédige le contenu
+ * complet à partir d'un plan déjà construit (et éventuellement modifié par
+ * l'utilisateur) — jamais appelée sans réservation de quota déjà validée
+ * par l'appelant (voir route.ts). `validateProgrammeStructure` doit avoir
+ * déjà été vérifiée par l'appelant sur `programme` avant cet appel (un plan
+ * édité à la main par l'utilisateur peut ne plus respecter les bornes :
+ * cette fonction ne revérifie pas elle-même, exactement comme avant cette
+ * évolution — c'est `buildProgramme` qui vérifiait déjà la structure QU'IL
+ * venait de produire, jamais celle d'un appelant).
+ */
+export async function generateCourseFromPlan(
+  client: Anthropic,
+  topic: string,
+  analysis: Analysis,
+  verifiedExamples: VerifiedExample[],
+  programme: Programme,
+  onProgress: Progress,
+): Promise<GeneratedCourse> {
   onProgress("chapitres", STAGE_LABELS.chapitres);
   const flatPlans = flattenModulePlans(programme.modules);
   const totalChapters = flatPlans.length;
@@ -830,4 +1038,21 @@ export async function generateCourse(
     keyPoints: summary.keyPoints,
     quiz,
   };
+}
+
+/**
+ * Parcours "configuration rapide" (comportement strictement inchangé
+ * depuis avant le Prompt 05.18.1) : construit le plan puis rédige la
+ * formation complète en un seul appel, sans diagnostic ni validation
+ * intermédiaire du plan par l'utilisateur.
+ */
+export async function generateCourse(
+  topic: string,
+  onProgress: Progress,
+): Promise<GeneratedCourse> {
+  const client = createAnthropicClient();
+  const { analysis, verifiedExamples, programme } = await buildCoursePlan(client, topic, {
+    onProgress,
+  });
+  return generateCourseFromPlan(client, topic, analysis, verifiedExamples, programme, onProgress);
 }

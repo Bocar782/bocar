@@ -95,6 +95,41 @@ export const ProgrammeSchema = z.object({
 export type Programme = z.infer<typeof ProgrammeSchema>;
 export type ProgrammeModule = Programme["modules"][number];
 
+// --- Diagnostic adaptatif avant génération (Prompt 05.18.1) ---
+
+/**
+ * Une question de diagnostic, posée une à la fois : la question suivante
+ * est générée en tenant compte de la réponse à celle-ci (voir
+ * `generateDiagnosticQuestion` dans generate.ts) — jamais une liste figée
+ * décidée d'avance.
+ */
+export const DiagnosticQuestionSchema = z.object({
+  id: z.string().min(1).describe("Identifiant court et stable de cette question (slug)"),
+  question: z.string().min(1),
+  type: z.enum(["single_choice", "text"]),
+  /** Uniquement pour `type === "single_choice"` ; `null` pour `"text"`. */
+  choices: z.array(z.string()).nullable(),
+});
+export type DiagnosticQuestion = z.infer<typeof DiagnosticQuestionSchema>;
+
+/**
+ * Décision du modèle à chaque étape du diagnostic : soit une question de
+ * plus, soit `done: true` (assez d'informations recueillies). Le CODE
+ * (jamais seulement ce champ) impose en plus un minimum de 3 et un maximum
+ * de 5 questions au total — voir `generateDiagnosticQuestion`.
+ */
+export const DiagnosticStepSchema = z.object({
+  done: z.boolean(),
+  question: DiagnosticQuestionSchema.nullable(),
+});
+
+/** Une question déjà répondue par l'utilisateur, transmise au tour suivant. */
+export type DiagnosticAnswer = {
+  questionId: string;
+  question: string;
+  answer: string;
+};
+
 export const ChapterContentSchema = z.object({
   // Consignes de profondeur/structure (Prompt 05.11, suite à l'audit 05.10)
   // transmises ici, au niveau du schéma : s'appliquent donc à TOUT appelant
