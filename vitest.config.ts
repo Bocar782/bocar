@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Config minimale : seul "@/*" (voir tsconfig.json) doit être résolu pour
 // que les tests puissent importer les vrais modules du projet avec les
@@ -15,5 +15,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Prompt 05.18 : exclut la suite Playwright (e2e/*.spec.ts), qui n'est
+    // exécutable que par `playwright test` (son propre test runner, fixture
+    // `page`/`test` incompatible avec celle de Vitest), jamais par Vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
