@@ -1,8 +1,9 @@
 -- Durcissement de search_path sur les 4 dernières fonctions SECURITY
 -- DEFINER encore en `set search_path = public` (Prompt 05.16.5/05.16.6,
 -- suite de l'audit de sécurité 05.16). À exécuter après
--- 0017_chat_rate_limit_cleanup.sql (déjà exécutée sur Supabase —
--- NE PAS la modifier ni la rejouer).
+-- 0017_chat_rate_limit_cleanup.sql et après la migration 0018 déjà
+-- appliquée sur Supabase (son contenu n'est pas présent dans ce dépôt —
+-- NE PAS la modifier ni la rejouer, et ne pas rejouer non plus 0017).
 --
 -- Constat (audit 05.16.5, lecture seule) : `reserve_generation_slot` et
 -- `resolve_generation_slot` (0007), ainsi que `start_quiz_attempt` et
