@@ -2,8 +2,10 @@ import { z } from "zod";
 import { NextResponse } from "next/server";
 import { createAnthropicClient } from "@/lib/anthropic/client";
 import { ChatRateLimitExceededError, checkChatRateLimit } from "@/lib/chat/rate-limit";
+import { computeCourseAccess } from "@/lib/courses/access";
 import { buildChatSystemPrompt } from "@/lib/courses/chat-context";
 import { getCourseById } from "@/lib/courses/persist";
+import { isOnFreePlan } from "@/lib/courses/plan";
 import { checkRequestOrigin } from "@/lib/security/origin-check";
 import { createClient } from "@/lib/supabase/server";
 
@@ -72,6 +74,30 @@ export async function POST(request: Request) {
 
   if (!course) {
     return NextResponse.json({ error: "Formation introuvable." }, { status: 404 });
+  }
+
+  // Prompt 05.17.2 (correction E2 de l'audit 05.17) : `currentChapterIndex`
+  // vient du navigateur et n'est JAMAIS fait confiance au-delà d'une simple
+  // position dans la formation — le plan réel de l'utilisateur est relu ici
+  // depuis Supabase (jamais transmis par le client) pour déterminer le
+  // chapitre le plus avancé auquel il a réellement droit. Avant cette
+  // correction, `currentChapterIndex` n'était plafonné qu'à
+  // `course.chapters.length - 1` : un utilisateur gratuit pouvait demander
+  // le contexte de n'importe quel chapitre verrouillé, y compris le
+  // dernier, et en recevoir le contenu complet dans la réponse de Tavyra.
+  // Vérifié AVANT la consommation de la limite de fréquence ci-dessous, pour
+  // qu'une demande de toute façon refusée ne consomme jamais inutilement ce
+  // quota.
+  const locked = await isOnFreePlan(supabase, user.id);
+  const { unlockedCount } = computeCourseAccess(course, locked);
+  if (currentChapterIndex >= unlockedCount) {
+    return NextResponse.json(
+      {
+        error:
+          "Ce chapitre fait partie du contenu verrouillé. Débloque la formation complète pour en discuter avec Tavyra.",
+      },
+      { status: 403 },
+    );
   }
 
   // Limite de fréquence (Prompt 05.16.1, correctif E1) : vérifiée et

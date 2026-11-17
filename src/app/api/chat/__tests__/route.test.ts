@@ -28,6 +28,43 @@ const FAKE_COURSE: GeneratedCourse = {
   quiz: [],
 };
 
+// Formation à 3 chapitres (position 0/1/2) pour les tests de verrouillage
+// E2 (Prompt 05.17.2) : avec FREE_PLAN_UNLOCKED_CHAPTERS = 2, seuls les
+// chapitres 0 et 1 sont débloqués pour un utilisateur Free — le chapitre 2
+// contient un marqueur unique pour prouver qu'il n'atteint jamais le
+// contexte envoyé à Anthropic.
+const FAKE_COURSE_MULTI: GeneratedCourse = {
+  ...FAKE_COURSE,
+  chapters: [
+    {
+      position: 0,
+      title: "Chapitre 1",
+      explanation: "Explication du chapitre 1",
+      keyTakeaway: "Retenir 1",
+      example: { isReal: false, description: "Exemple 1", sourceUrl: null, sourceTitle: null },
+    },
+    {
+      position: 1,
+      title: "Chapitre 2",
+      explanation: "Explication du chapitre 2",
+      keyTakeaway: "Retenir 2",
+      example: { isReal: false, description: "Exemple 2", sourceUrl: null, sourceTitle: null },
+    },
+    {
+      position: 2,
+      title: "Chapitre 3 (verrouillé pour le plan gratuit)",
+      explanation: "SECRET_CHAPTER_2_CONTENT — ne doit jamais atteindre Anthropic pour un Free",
+      keyTakeaway: "SECRET_CHAPTER_2_TAKEAWAY",
+      example: {
+        isReal: false,
+        description: "SECRET_CHAPTER_2_EXAMPLE",
+        sourceUrl: null,
+        sourceTitle: null,
+      },
+    },
+  ],
+};
+
 const mockGetCourseById = vi.fn();
 vi.mock("@/lib/courses/persist", () => ({
   getCourseById: (...args: unknown[]) => mockGetCourseById(...args),
@@ -54,11 +91,33 @@ type RateLimitRpcResult = {
   }>;
 };
 
-function makeSupabaseMock(rateLimitResult: RateLimitRpcResult["single"]) {
+type SubscriptionRow = { status: string } | null;
+
+function makeSupabaseMock(
+  rateLimitResult: RateLimitRpcResult["single"],
+  // `null` = aucun abonnement actif (plan Free, comportement par défaut
+  // des tests déjà existants — non-régression).
+  subscriptionRow: SubscriptionRow = null,
+) {
   const rpcCalls: { fnName: string; args: unknown }[] = [];
   const rpc = vi.fn((fnName: string, args?: unknown): RateLimitRpcResult => {
     rpcCalls.push({ fnName, args });
     return { single: rateLimitResult };
+  });
+  // `isOnFreePlan()` (src/lib/courses/plan.ts) ne lit QUE `subscriptions`,
+  // via `.from(...).select(...).eq(...).maybeSingle()` — seule cette
+  // chaîne est simulée ici.
+  const from = vi.fn((table: string) => {
+    if (table !== "subscriptions") {
+      throw new Error(`Table inattendue dans ce mock : ${table}`);
+    }
+    return {
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: subscriptionRow, error: null }),
+        }),
+      }),
+    };
   });
   return {
     auth: {
@@ -68,6 +127,7 @@ function makeSupabaseMock(rateLimitResult: RateLimitRpcResult["single"]) {
     },
     rpc,
     rpcCalls,
+    from,
   };
 }
 
@@ -238,5 +298,84 @@ describe("POST /api/chat (vrai route.ts + vrai rate-limit.ts)", () => {
     // requête ne lui est transmis.
     const rateLimitCall = currentSupabaseMock.rpcCalls.find((c) => c.fnName === "check_chat_rate_limit");
     expect(rateLimitCall?.args).toBeUndefined();
+  });
+
+  // Prompt 05.17.2 (correction E2 de l'audit 05.17) : le serveur relit le
+  // vrai plan de l'utilisateur et n'accorde jamais le contenu d'un
+  // chapitre verrouillé, quelle que soit la valeur de `currentChapterIndex`
+  // envoyée par le navigateur.
+  describe("vérification du plan et du chapitre demandé (correction E2, Prompt 05.17.2)", () => {
+    it("refuse (403) un plan Free demandant un chapitre verrouillé, sans jamais appeler Anthropic ni consommer la limite de fréquence", async () => {
+      mockGetCourseById.mockResolvedValue(FAKE_COURSE_MULTI);
+      currentSupabaseMock = makeSupabaseMock(okRateLimit, null);
+
+      const response = await callRoute({
+        ...VALID_BODY,
+        courseId: VALID_BODY.courseId,
+        currentChapterIndex: 2, // verrouillé : FREE_PLAN_UNLOCKED_CHAPTERS = 2 (positions 0 et 1 seulement).
+      });
+
+      expect(response.status).toBe(403);
+      expect(mockAnthropicStream).not.toHaveBeenCalled();
+      const rateLimitCalls = currentSupabaseMock.rpcCalls.filter(
+        (c) => c.fnName === "check_chat_rate_limit",
+      );
+      expect(rateLimitCalls).toHaveLength(0);
+    });
+
+    it("laisse passer un plan Free demandant le dernier chapitre débloqué (non-régression)", async () => {
+      mockGetCourseById.mockResolvedValue(FAKE_COURSE_MULTI);
+      currentSupabaseMock = makeSupabaseMock(okRateLimit, null);
+
+      const response = await callRoute({ ...VALID_BODY, currentChapterIndex: 1 });
+
+      expect(response.status).toBe(200);
+      expect(mockAnthropicStream).toHaveBeenCalledTimes(1);
+    });
+
+    it("ne transmet jamais le contenu d'un chapitre verrouillé au contexte de l'IA, même indirectement", async () => {
+      mockGetCourseById.mockResolvedValue(FAKE_COURSE_MULTI);
+      currentSupabaseMock = makeSupabaseMock(okRateLimit, null);
+
+      // Le seul chapitre que ce Free peut légitimement demander ici est le
+      // chapitre 1 (dernier débloqué) : on vérifie que le prompt système
+      // envoyé à Anthropic ne contient AUCUN des marqueurs du chapitre 2
+      // (verrouillé), ni dans le contenu "actuel" ni dans un éventuel
+      // résumé des chapitres "déjà vus".
+      await callRoute({ ...VALID_BODY, currentChapterIndex: 1 });
+
+      expect(mockAnthropicStream).toHaveBeenCalledTimes(1);
+      const call = mockAnthropicStream.mock.calls[0][0] as { system: string };
+      expect(call.system).not.toContain("SECRET_CHAPTER_2_CONTENT");
+      expect(call.system).not.toContain("SECRET_CHAPTER_2_TAKEAWAY");
+      expect(call.system).not.toContain("SECRET_CHAPTER_2_EXAMPLE");
+    });
+
+    it("conserve l'accès complet pour un plan Pro, y compris au dernier chapitre (non-régression)", async () => {
+      mockGetCourseById.mockResolvedValue(FAKE_COURSE_MULTI);
+      currentSupabaseMock = makeSupabaseMock(okRateLimit, { status: "active" });
+
+      const response = await callRoute({ ...VALID_BODY, currentChapterIndex: 2 });
+
+      expect(response.status).toBe(200);
+      expect(mockAnthropicStream).toHaveBeenCalledTimes(1);
+      const call = mockAnthropicStream.mock.calls[0][0] as { system: string };
+      expect(call.system).toContain("SECRET_CHAPTER_2_CONTENT");
+    });
+
+    it("un champ de plan forgé dans le corps de la requête n'a aucun effet : le plan réel (Free) reste appliqué", async () => {
+      mockGetCourseById.mockResolvedValue(FAKE_COURSE_MULTI);
+      currentSupabaseMock = makeSupabaseMock(okRateLimit, null);
+
+      const response = await callRoute({
+        ...VALID_BODY,
+        currentChapterIndex: 2,
+        isPro: true,
+        plan: "pro",
+      });
+
+      expect(response.status).toBe(403);
+      expect(mockAnthropicStream).not.toHaveBeenCalled();
+    });
   });
 });
