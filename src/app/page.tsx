@@ -10,7 +10,6 @@ import { InterfaceShowcase } from "@/components/marketing/interface-showcase";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
 import { PricingSection } from "@/components/marketing/pricing-section";
 import { Reveal } from "@/components/marketing/reveal";
-import { Testimonials } from "@/components/marketing/testimonials";
 import { TopicExamples } from "@/components/marketing/topic-examples";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { getSiteUrl } from "@/lib/site-url";
@@ -245,18 +244,6 @@ export default function Home() {
           <div className="mt-12">
             <Reveal>
               <InterfaceShowcase />
-            </Reveal>
-          </div>
-        </section>
-
-        {/* Avis */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <SectionHeading eyebrow="Avis" title="Ce que les premiers utilisateurs en pensent" />
-          </Reveal>
-          <div className="mt-12">
-            <Reveal>
-              <Testimonials />
             </Reveal>
           </div>
         </section>

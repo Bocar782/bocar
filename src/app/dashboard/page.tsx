@@ -127,11 +127,11 @@ export default async function DashboardPage() {
         </section>
 
         {courses.length > 0 && (
-          <section className="mt-10 w-full max-w-2xl">
+          <section className="mt-10 w-full max-w-4xl">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
               Mes formations
             </h2>
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {courses.map((course) => (
                 <CourseListItem key={course.id} course={course} />
               ))}
@@ -140,11 +140,11 @@ export default async function DashboardPage() {
         )}
 
         {analyses.length > 0 && (
-          <section className="mt-10 w-full max-w-2xl">
+          <section className="mt-10 w-full max-w-4xl">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
               Mes analyses approfondies
             </h2>
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {analyses.map((analysis) => (
                 <DeepAnalysisListItem key={analysis.id} analysis={analysis} />
               ))}
