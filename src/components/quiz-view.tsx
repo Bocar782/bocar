@@ -161,8 +161,20 @@ export function QuizView({
         <Card variant="elevated">
           {phase === "intro" && (
             <div className="flex flex-col items-center py-6 text-center">
-              <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-              <p className="mt-2 max-w-sm text-sm text-foreground-muted">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+                <svg aria-hidden width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M9 11l2.5 2.5L16 9"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                </svg>
+              </span>
+              <h2 className="mt-4 text-lg font-semibold text-foreground">{title}</h2>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-foreground-muted">
                 {quiz.length} questions {description}
               </p>
               <Button onClick={start} className="mt-6">
@@ -172,14 +184,24 @@ export function QuizView({
           )}
 
           {phase === "active" && (
-            <QuestionCard
-              question={quiz[currentIndex]}
-              index={currentIndex}
-              total={quiz.length}
-              selected={answers[currentIndex]}
-              onToggle={toggleChoice}
-              onNext={goNext}
-            />
+            <div>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet transition-[width] duration-500 ease-out"
+                  style={{ width: `${((currentIndex + 1) / quiz.length) * 100}%` }}
+                />
+              </div>
+              <div key={currentIndex} className="preset-fade mt-6">
+                <QuestionCard
+                  question={quiz[currentIndex]}
+                  index={currentIndex}
+                  total={quiz.length}
+                  selected={answers[currentIndex]}
+                  onToggle={toggleChoice}
+                  onNext={goNext}
+                />
+              </div>
+            </div>
           )}
 
           {phase === "results" && (
@@ -188,11 +210,24 @@ export function QuizView({
                 <h2 className="text-lg font-semibold text-foreground">
                   Résultat du quiz
                 </h2>
-                <p className="mt-2 text-4xl font-semibold tracking-tight text-foreground">
-                  {score}
-                  <span className="text-foreground-muted">/{quiz.length}</span>
-                </p>
-                <p className="mt-1 text-sm text-foreground-muted">
+                <div
+                  className="relative mt-5 flex h-32 w-32 items-center justify-center rounded-full"
+                  style={{
+                    background: `conic-gradient(var(--accent-violet) ${
+                      (score / quiz.length) * 360
+                    }deg, rgba(255,255,255,0.06) 0deg)`,
+                  }}
+                  role="img"
+                  aria-label={`Score : ${score} sur ${quiz.length}`}
+                >
+                  <div className="flex h-[104px] w-[104px] flex-col items-center justify-center rounded-full bg-background-elevated">
+                    <p className="text-3xl font-semibold tracking-tight text-foreground">
+                      {score}
+                      <span className="text-lg text-foreground-muted">/{quiz.length}</span>
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm text-foreground-muted">
                   {score === quiz.length
                     ? "Sans fautes, bravo !"
                     : score >= quiz.length * 0.7
@@ -298,7 +333,7 @@ function QuestionCard({
               key={i}
               type="button"
               onClick={() => onToggle(i)}
-              className={`rounded-xl border px-4 py-4 text-center text-sm font-medium transition-colors ${
+              className={`rounded-xl border px-4 py-4 text-center text-sm font-medium transition-all active:scale-[0.98] ${
                 selected.includes(i)
                   ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
                   : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
@@ -315,7 +350,7 @@ function QuestionCard({
               key={i}
               type="button"
               onClick={() => onToggle(i)}
-              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${
                 selected.includes(i)
                   ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
                   : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
@@ -375,19 +410,19 @@ function ReviewQuestion({
   const isCorrect = isAnswerCorrect(question, selected);
 
   return (
-    <div className="rounded-2xl border border-border-subtle bg-white/[0.02] p-5">
+    <Card padding="sm">
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-foreground">
           {index + 1}. {question.question}
         </p>
         <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+          className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
             isCorrect
-              ? "bg-emerald-500/10 text-emerald-300"
-              : "bg-red-500/10 text-red-300"
+              ? "bg-success/10 text-success-light"
+              : "bg-danger/10 text-danger-light"
           }`}
         >
-          {isCorrect ? "Correct" : "Incorrect"}
+          {isCorrect ? "✓ Correct" : "✕ Incorrect"}
         </span>
       </div>
 
@@ -398,11 +433,11 @@ function ReviewQuestion({
           return (
             <p
               key={i}
-              className={`rounded-lg px-3 py-2 text-sm ${
+              className={`rounded-lg px-3 py-2 text-sm transition-colors ${
                 isCorrectChoice
-                  ? "bg-emerald-500/10 text-emerald-300"
+                  ? "bg-success/10 text-success-light"
                   : isUserChoice
-                    ? "bg-red-500/10 text-red-300"
+                    ? "bg-danger/10 text-danger-light"
                     : "text-foreground-muted"
               }`}
             >
@@ -418,6 +453,6 @@ function ReviewQuestion({
         <span className="font-medium text-foreground-muted/90">Explication : </span>
         {question.explanation}
       </p>
-    </div>
+    </Card>
   );
 }

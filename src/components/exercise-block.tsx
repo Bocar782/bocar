@@ -17,10 +17,22 @@ export function ExerciseBlock({ exercise }: { exercise: { prompt: string; soluti
   const [revealed, setRevealed] = useState(false);
   return (
     <Card variant="accent-blue" className="mt-4">
-      <span className="text-xs font-semibold uppercase tracking-wide text-accent-blue-light">
-        Exercice pratique
-      </span>
-      <div className="mt-2 text-sm leading-relaxed text-foreground">
+      {/* Puce ✎ : même glyphe que l'entrée "Quiz du module" du sommaire
+          (course-sidebar.tsx) — signale "à faire soi-même", distingue
+          immédiatement ce bloc interactif des encadrés "Exemple concret" et
+          "À retenir" qui partagent par ailleurs la même teinte bleue. */}
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-blue/15 text-sm text-accent-blue-light"
+        >
+          ✎
+        </span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent-blue-light">
+          Exercice pratique
+        </span>
+      </div>
+      <div className="mt-2.5 text-sm leading-relaxed text-foreground">
         <MarkdownContent content={exercise.prompt} />
       </div>
       <button
@@ -33,7 +45,12 @@ export function ExerciseBlock({ exercise }: { exercise: { prompt: string; soluti
       </button>
       {revealed && (
         <div className="mt-3 rounded-lg border border-accent-violet/25 bg-accent-violet/[0.08] p-3 text-sm leading-relaxed text-foreground">
-          <MarkdownContent content={exercise.solution} />
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-violet-light">
+            Correction
+          </span>
+          <div className="mt-1.5">
+            <MarkdownContent content={exercise.solution} />
+          </div>
         </div>
       )}
     </Card>

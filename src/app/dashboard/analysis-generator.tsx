@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { DeepAnalysisView } from "@/components/deep-analysis-view";
 import { GenerationProgress } from "@/components/generation-progress";
+import { IconTelescope } from "@/components/marketing/icons";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -342,7 +343,10 @@ export function AnalysisGenerator({
   if (!isPro) {
     return (
       <Card variant="panel" className="w-full max-w-2xl text-center">
-        <p className="text-sm font-medium text-foreground">Fonctionnalité réservée au plan Pro</p>
+        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+          <IconTelescope width={22} height={22} />
+        </span>
+        <p className="mt-4 text-sm font-medium text-foreground">Fonctionnalité réservée au plan Pro</p>
         <p className="mt-2 text-sm text-foreground-muted">
           L&apos;analyse approfondie mène des recherches web poussées sur des cas
           réels et produit un contenu bien plus long qu&apos;une formation
@@ -358,7 +362,10 @@ export function AnalysisGenerator({
   if (quotaReached) {
     return (
       <Card variant="panel" className="w-full max-w-2xl text-center">
-        <p className="text-sm font-medium text-foreground">Limite mensuelle atteinte</p>
+        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+          <IconTelescope width={22} height={22} />
+        </span>
+        <p className="mt-4 text-sm font-medium text-foreground">Limite mensuelle atteinte</p>
         <p className="mt-2 text-sm text-foreground-muted">
           Tu as utilisé tes analyses approfondies pour cette période de
           facturation. Le quota se réinitialise automatiquement à ton
@@ -370,6 +377,15 @@ export function AnalysisGenerator({
 
   return (
     <div className="w-full max-w-2xl">
+      <div className="mb-6 flex flex-col items-center text-center">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+          <IconTelescope width={22} height={22} />
+        </span>
+        <h2 className="mt-3 text-lg font-semibold text-foreground">Analyse approfondie</h2>
+        <p className="mt-1 max-w-sm text-sm text-foreground-muted">
+          Des cas réels et vérifiés, recherchés sur le web, pour creuser un sujet en profondeur.
+        </p>
+      </div>
       {error && <Callout tone="error" className="mb-4">{error}</Callout>}
       <form onSubmit={handleSubmit} className="group relative rounded-[28px] p-px">
         <div

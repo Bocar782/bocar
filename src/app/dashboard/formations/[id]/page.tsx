@@ -54,13 +54,13 @@ export default async function CourseDetailPage(
       <header className="relative z-10 px-6 py-6 sm:px-10">
         <Link
           href="/dashboard"
-          className="text-sm text-foreground-muted transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-white/[0.03] px-3.5 py-1.5 text-sm text-foreground-muted transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-foreground"
         >
           ← Retour au tableau de bord
         </Link>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24">
+      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24 pt-2">
         <CourseView course={safeCourse} courseId={id} locked={locked} />
       </main>
 

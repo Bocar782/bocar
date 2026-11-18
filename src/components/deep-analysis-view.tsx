@@ -9,6 +9,12 @@ const OUTCOME_TONE: Record<string, BadgeTone> = {
   "mixte": "warning",
 };
 
+const OUTCOME_DOT: Record<string, string> = {
+  "succès": "bg-success",
+  "échec": "bg-danger",
+  "mixte": "bg-warning",
+};
+
 function SectionCard({ section }: { section: GeneratedDeepAnalysis["sections"][number] }) {
   return (
     <Card>
@@ -72,9 +78,38 @@ export function DeepAnalysisView({ analysis }: { analysis: GeneratedDeepAnalysis
         <MarkdownContent content={analysis.introduction} />
       </div>
 
-      <div className="mt-8 space-y-6">
+      {/* Sommaire des cas : navigation directe, utile dès que l'analyse
+          dépasse 2-3 cas (jusqu'à 7 d'après le pipeline de génération). */}
+      <nav
+        aria-label="Cas analysés"
+        className="mt-8 rounded-2xl border border-border-subtle bg-white/[0.02] p-4"
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">
+          {analysis.sections.length} cas analysé{analysis.sections.length > 1 ? "s" : ""}
+        </span>
+        <ol className="mt-3 flex flex-wrap gap-2">
+          {analysis.sections.map((section, i) => (
+            <li key={i}>
+              <a
+                href={`#cas-${i}`}
+                className="flex items-center gap-1.5 rounded-full border border-border-subtle bg-white/[0.02] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-white/20 hover:text-foreground"
+              >
+                <span
+                  aria-hidden
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${OUTCOME_DOT[section.outcome] ?? "bg-foreground-muted"}`}
+                />
+                <span className="max-w-[10rem] truncate">{section.name}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <div className="mt-6 space-y-6">
         {analysis.sections.map((section, i) => (
-          <SectionCard key={i} section={section} />
+          <div key={i} id={`cas-${i}`} className="scroll-mt-20">
+            <SectionCard section={section} />
+          </div>
         ))}
       </div>
 

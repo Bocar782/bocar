@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { GeneratedCourse } from "@/lib/courses/schemas";
 import { useCurrentChapterIndex } from "@/lib/use-current-chapter";
+import { BrandMark } from "./brand-mark";
+import { IconChat } from "./marketing/icons";
 import { MarkdownContent } from "./markdown-content";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -110,7 +112,7 @@ export function ChapterChat({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Fermer le chat avec Tavyra" : "Ouvrir le chat avec Tavyra"}
-        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-transform hover:scale-105 sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
+        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:scale-105 hover:shadow-[0_10px_40px_-6px_var(--accent-violet)] sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
       >
         {open ? (
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -135,97 +137,102 @@ export function ChapterChat({
 
       {open && (
         <div className="fixed bottom-20 right-4 z-50 flex h-[32rem] max-h-[70vh] w-[23rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-border-subtle bg-background-elevated/95 shadow-2xl backdrop-blur-xl sm:bottom-24 sm:right-6">
-          <header className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3.5">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue to-accent-violet text-xs font-semibold text-white">
-              L
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">Tavyra</p>
-              {currentChapter && (
-                <p className="truncate text-xs text-foreground-muted">
-                  Chapitre {currentChapterIndex + 1} · {currentChapter.title}
+            <div
+              aria-hidden
+              className="h-px w-full shrink-0 bg-gradient-to-r from-accent-blue/60 via-accent-violet/60 to-accent-blue/60"
+            />
+            <header className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3.5">
+              <BrandMark size={28} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Tavyra</p>
+                {currentChapter && (
+                  <p className="truncate text-xs text-foreground-muted">
+                    Chapitre {currentChapterIndex + 1} · {currentChapter.title}
+                  </p>
+                )}
+              </div>
+            </header>
+
+            <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+              {messages.length === 0 && (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-foreground-muted">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+                      <IconChat width={16} height={16} />
+                    </span>
+                    <span>Une question sur ce chapitre ? Demande-moi par exemple :</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => sendMessage(suggestion)}
+                        className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-foreground"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {messages.map((message, i) => (
+                <div
+                  key={i}
+                  className={message.role === "user" ? "flex justify-end" : "flex justify-start"}
+                >
+                  {message.role === "user" ? (
+                    <p className="max-w-[85%] rounded-2xl rounded-tr-sm bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-2 text-sm text-white shadow-[0_4px_16px_-6px_var(--accent-violet)]">
+                      {message.content}
+                    </p>
+                  ) : message.content ? (
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border-subtle bg-white/[0.04] px-3.5 py-2 text-sm text-foreground">
+                      <MarkdownContent content={message.content} />
+                    </div>
+                  ) : (
+                    <div className="flex gap-1 rounded-2xl rounded-tl-sm border border-border-subtle bg-white/[0.04] px-3.5 py-3">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light" />
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light [animation-delay:150ms]" />
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light [animation-delay:300ms]" />
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {error && (
+                <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {error}
                 </p>
               )}
             </div>
-          </header>
 
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {messages.length === 0 && (
-              <>
-                <p className="text-sm text-foreground-muted">
-                  Une question sur ce chapitre ? Demande-moi par exemple :
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => sendMessage(suggestion)}
-                      className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-foreground"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {messages.map((message, i) => (
-              <div
-                key={i}
-                className={message.role === "user" ? "flex justify-end" : "flex justify-start"}
+            <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border-subtle p-3">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Pose ta question..."
+                maxLength={2000}
+                className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted/60 outline-none transition-colors focus:border-accent-violet/60"
+              />
+              <button
+                type="submit"
+                disabled={isStreaming || !input.trim()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-accent-blue to-accent-violet text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
+                aria-label="Envoyer"
               >
-                {message.role === "user" ? (
-                  <p className="max-w-[85%] rounded-2xl bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-2 text-sm text-white">
-                    {message.content}
-                  </p>
-                ) : message.content ? (
-                  <div className="max-w-[85%] rounded-2xl bg-white/[0.04] px-3.5 py-2 text-sm text-foreground">
-                    <MarkdownContent content={message.content} />
-                  </div>
-                ) : (
-                  <div className="flex gap-1 rounded-2xl bg-white/[0.04] px-3.5 py-3">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground-muted" />
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground-muted [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-foreground-muted [animation-delay:300ms]" />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {error && (
-              <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                {error}
-              </p>
-            )}
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M3.5 8h9M8.5 3.5 13 8l-4.5 4.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            </form>
           </div>
-
-          <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border-subtle p-3">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Pose ta question..."
-              maxLength={2000}
-              className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted/60 outline-none focus:border-accent-violet/60"
-            />
-            <button
-              type="submit"
-              disabled={isStreaming || !input.trim()}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-accent-blue to-accent-violet text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Envoyer"
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M3.5 8h9M8.5 3.5 13 8l-4.5 4.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </form>
-        </div>
       )}
     </>
   );

@@ -145,7 +145,7 @@ export function QuizHistory({
               {attempts.map((attempt) => (
                 <li
                   key={attempt.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3 transition-colors hover:bg-white/[0.04]"
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-foreground-muted">

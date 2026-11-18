@@ -51,7 +51,7 @@ function ChapterCard({
       className="scroll-mt-6 rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-mono text-accent-violet-light">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-accent-blue/15 to-accent-violet/15 px-3 py-1 text-xs font-semibold text-accent-violet-light">
           Chapitre {index + 1}
         </span>
         {chapter.id && onToggleComplete && (
@@ -83,17 +83,18 @@ function ChapterCard({
           </button>
         )}
       </div>
-      <h3 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+      <h3 className="mt-3 text-2xl font-semibold leading-snug tracking-tight text-foreground">
         {chapter.title}
       </h3>
 
-      <div className="mt-4">
+      <div className="mt-5 text-[0.95rem]">
         <MarkdownContent content={chapter.explanation} />
       </div>
 
       <Card variant="accent-blue" className="mt-2">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-medium uppercase tracking-wide text-accent-blue-light">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-accent-blue-light">
+            <span aria-hidden>🔎</span>
             {chapter.example.isReal ? "Exemple concret" : "Exemple illustratif (fictif)"}
           </span>
           {chapter.example.isReal && chapter.example.sourceUrl && (
@@ -113,7 +114,8 @@ function ChapterCard({
       </Card>
 
       <Card variant="accent-violet" className="mt-4">
-        <span className="text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
+          <span aria-hidden>★</span>
           À retenir
         </span>
         <p className="mt-1.5 text-sm leading-relaxed text-foreground">
@@ -179,14 +181,19 @@ function SummarySection({ course }: { course: GeneratedCourse }) {
   return (
     <section id="resume-section" className="mt-8 scroll-mt-6">
       <Card variant="elevated">
-        <h2 className="text-lg font-semibold text-foreground">Résumé final</h2>
+        <span className="text-xs font-semibold uppercase tracking-wide text-accent-blue-light">
+          Formation terminée
+        </span>
+        <h2 className="mt-1.5 text-xl font-semibold tracking-tight text-foreground">
+          Résumé final
+        </h2>
         <div className="mt-3">
           <MarkdownContent content={course.summary} />
         </div>
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-3 space-y-2.5 border-t border-border-subtle pt-4">
           {course.keyPoints.map((point, i) => (
             <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-foreground">
-              <span className="mt-0.5 text-accent-blue-light">★</span>
+              <span className="mt-0.5 shrink-0 text-accent-blue-light">★</span>
               <span>{point}</span>
             </li>
           ))}
@@ -396,42 +403,45 @@ export function CourseView({
 
       <div className="mx-auto w-full max-w-3xl lg:mx-0 lg:min-w-0 lg:flex-1">
         <div id="formation-top" className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
-          <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1">
+          <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1 font-medium text-foreground">
             {course.domain}
           </span>
           <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1">
             Niveau {course.level}
           </span>
           {isLockedForThisCourse && (
-            <span className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1">
+            <span className="rounded-full border border-accent-violet/25 bg-accent-violet/[0.08] px-3 py-1 text-accent-violet-light">
               Formation gratuite
             </span>
           )}
         </div>
 
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+        <h1 className="mt-4 text-balance text-3xl font-semibold leading-[1.15] tracking-tight text-foreground sm:text-4xl">
           {course.title}
         </h1>
 
-        <div className="mt-6">
+        <div className="mt-6 text-[0.95rem]">
           <MarkdownContent content={course.introduction} />
         </div>
 
         <section className="mt-2 rounded-2xl border border-border-subtle bg-white/[0.02] p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-            Objectifs
+          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+            <span aria-hidden className="text-accent-violet-light">
+              ◆
+            </span>
+            Objectifs de la formation
           </h2>
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-4 space-y-2.5">
             {course.objectives.map((objective, i) => (
               <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-foreground">
-                <span className="mt-0.5 text-accent-violet-light">✓</span>
+                <span className="mt-0.5 shrink-0 text-accent-violet-light">✓</span>
                 <span>{objective}</span>
               </li>
             ))}
           </ul>
         </section>
 
-        <div className="mt-8 space-y-6">{unlockedBlocks.map(renderBlock)}</div>
+        <div className="mt-10 space-y-6">{unlockedBlocks.map(renderBlock)}</div>
 
         {isLockedForThisCourse ? (
           <LockedPreview

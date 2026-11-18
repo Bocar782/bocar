@@ -51,6 +51,54 @@ type PlanContext = {
 
 type ServerPlan = { analysis: Analysis; verifiedExamples: VerifiedExample[]; programme: Programme };
 
+// Repères de parcours (purement visuels) : les 4 grandes phases réelles du
+// state machine ci-dessus, jamais un détail interne inventé — le
+// diagnostic lui-même pose un nombre de questions variable (adaptatif),
+// donc ce repère ne prétend jamais connaître à l'avance combien il en reste.
+const JOURNEY_PHASES = ["Sujet", "Diagnostic", "Plan", "Génération"] as const;
+
+function phaseIndexForStatus(status: Status): number {
+  switch (status) {
+    case "diagnostic":
+      return 1;
+    case "building_plan":
+    case "plan_review":
+      return 2;
+    case "generating":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+function JourneyBreadcrumb({ status }: { status: Status }) {
+  const activeIndex = phaseIndexForStatus(status);
+  return (
+    <div className="mb-6 flex items-center justify-center gap-2" aria-hidden>
+      {JOURNEY_PHASES.map((phase, i) => (
+        <div key={phase} className="flex items-center gap-2">
+          <span
+            className={`text-xs font-medium transition-colors ${
+              i === activeIndex
+                ? "text-foreground"
+                : i < activeIndex
+                  ? "text-accent-violet-light"
+                  : "text-foreground-muted/50"
+            }`}
+          >
+            {phase}
+          </span>
+          {i < JOURNEY_PHASES.length - 1 && (
+            <span
+              className={`h-px w-6 ${i < activeIndex ? "bg-accent-violet/50" : "bg-border-subtle"}`}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const MAX_LENGTH = 500;
 const MAX_ANSWER_LENGTH = 500;
 const SESSION_STORAGE_KEY = "tavyra:course-generation";
@@ -562,6 +610,7 @@ export function CourseGenerator({
   if (status === "generating") {
     return (
       <div className="flex w-full flex-col items-center py-16">
+        <JourneyBreadcrumb status={status} />
         {resumeNotice && (
           <Callout tone="info" role="status" className="mb-6 max-w-md text-center">
             {resumeNotice}
@@ -578,10 +627,16 @@ export function CourseGenerator({
   if (quotaReached) {
     return (
       <Card variant="panel" className="w-full max-w-2xl text-center">
-        <p className="text-sm font-medium text-foreground">
+        <span
+          aria-hidden
+          className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light"
+        >
+          ✦
+        </span>
+        <p className="mt-4 text-sm font-medium text-foreground">
           {locked ? "Limite du plan gratuit atteinte" : "Limite mensuelle atteinte"}
         </p>
-        <p className="mt-2 text-sm text-foreground-muted">
+        <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
           {locked
             ? "Le plan gratuit permet de générer une formation. Débloque la formation complète pour continuer à apprendre avec Tavyra."
             : "Tu as utilisé tes formations pour cette période de facturation. Le quota se réinitialise automatiquement à ton prochain renouvellement."}
@@ -598,28 +653,46 @@ export function CourseGenerator({
   if (status === "diagnostic" && currentQuestion) {
     return (
       <div className="w-full max-w-2xl">
+        <JourneyBreadcrumb status={status} />
         {error && <Callout tone="error" className="mb-4">{error}</Callout>}
-        <Card variant="panel">
-          <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+        <Card variant="elevated">
+          <div className="flex items-center gap-2">
+            {/* Puces de progression du diagnostic : pas de total fixe affiché
+                (adaptatif, le nombre de questions n'est pas connu à l'avance)
+                — seulement les questions déjà répondues, honnêtement. */}
+            {Array.from({ length: diagnosticAnswers.length + 1 }).map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 rounded-full transition-all ${
+                  i === diagnosticAnswers.length
+                    ? "w-6 bg-gradient-to-r from-accent-blue to-accent-violet"
+                    : "w-1.5 bg-accent-violet/40"
+                }`}
+              />
+            ))}
+          </div>
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-foreground-muted">
             Question {diagnosticAnswers.length + 1}
           </p>
-          <h3 className="mt-2 text-lg font-semibold text-foreground">{currentQuestion.question}</h3>
+          <h3 className="mt-2 text-xl font-semibold leading-snug text-foreground">
+            {currentQuestion.question}
+          </h3>
 
           {currentQuestion.type === "single_choice" && currentQuestion.choices ? (
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-5 flex flex-col gap-2">
               {currentQuestion.choices.map((choice) => (
                 <button
                   key={choice}
                   type="button"
                   onClick={() => answerDiagnosticQuestion(choice)}
-                  className="rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3 text-left text-sm text-foreground transition-colors hover:border-accent-violet/60 hover:bg-white/[0.05]"
+                  className="rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3.5 text-left text-sm text-foreground transition-all hover:border-accent-violet/60 hover:bg-white/[0.05] hover:pl-5"
                 >
                   {choice}
                 </button>
               ))}
             </div>
           ) : (
-            <div className="mt-4">
+            <div className="mt-5">
               <textarea
                 value={diagnosticChoice}
                 onChange={(e) => setDiagnosticChoice(e.target.value.slice(0, MAX_ANSWER_LENGTH))}
@@ -654,6 +727,7 @@ export function CourseGenerator({
   if (status === "building_plan") {
     return (
       <div className="flex w-full flex-col items-center py-16">
+        <JourneyBreadcrumb status={status} />
         <GenerationProgress currentStage="analyse" />
         <p className="mt-4 text-sm text-foreground-muted">Préparation du plan de ta formation…</p>
       </div>
@@ -664,67 +738,89 @@ export function CourseGenerator({
     const { programme } = plan;
     return (
       <div className="w-full max-w-3xl">
+        <JourneyBreadcrumb status={status} />
         {error && <Callout tone="error" className="mb-4">{error}</Callout>}
         <Card variant="panel">
-          <h2 className="text-lg font-semibold text-foreground">Plan proposé</h2>
-          <p className="mt-2 text-sm text-foreground-muted">{programme.introduction}</p>
-          <p className="mt-2 text-xs font-medium text-accent-violet-light">
-            Durée estimée : environ {Math.round(plan.estimatedMinutes / 10) * 10} minutes
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">Plan proposé</h2>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-accent-violet/25 bg-accent-violet/[0.08] px-3 py-1 text-xs font-medium text-accent-violet-light">
+              ~{Math.round(plan.estimatedMinutes / 10) * 10} min
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-foreground-muted">{programme.introduction}</p>
 
-          <ul className="mt-4 space-y-1.5 text-sm text-foreground">
+          <ul className="mt-5 space-y-2 text-sm text-foreground">
             {programme.objectives.map((objective, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="text-accent-violet-light">✓</span>
+              <li key={i} className="flex gap-2.5">
+                <span className="mt-0.5 shrink-0 text-accent-violet-light">✓</span>
                 <span>{objective}</span>
               </li>
             ))}
           </ul>
 
-          <div className="mt-6 space-y-6">
+          <p className="mt-8 text-xs font-medium uppercase tracking-wide text-foreground-muted">
+            Modifie librement chaque module avant de lancer la génération
+          </p>
+          <div className="mt-3 space-y-5">
             {programme.modules.map((module, moduleIndex) => (
-              <div key={moduleIndex} className="rounded-2xl border border-border-subtle bg-white/[0.02] p-4">
-                <label className="block">
-                  <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                    Module {moduleIndex + 1} — titre
+              <div
+                key={moduleIndex}
+                className="overflow-hidden rounded-2xl border border-border-subtle bg-white/[0.02]"
+              >
+                <div className="flex items-center gap-3 border-b border-border-subtle bg-white/[0.02] px-4 py-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-[11px] font-semibold text-white">
+                    {moduleIndex + 1}
                   </span>
-                  <input
-                    value={module.title}
-                    onChange={(e) => updateModuleField(moduleIndex, "title", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground focus:border-accent-violet/60 focus:outline-none"
-                  />
-                </label>
-                <label className="mt-2 block">
                   <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                    Objectif pédagogique
+                    Module {moduleIndex + 1}
                   </span>
-                  <input
-                    value={module.objective}
-                    onChange={(e) => updateModuleField(moduleIndex, "objective", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground focus:border-accent-violet/60 focus:outline-none"
-                  />
-                </label>
+                </div>
+                <div className="p-4">
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                      Titre
+                    </span>
+                    <input
+                      value={module.title}
+                      onChange={(e) => updateModuleField(moduleIndex, "title", e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm font-medium text-foreground transition-colors focus:border-accent-violet/60 focus:bg-white/[0.05] focus:outline-none"
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                      Objectif pédagogique
+                    </span>
+                    <input
+                      value={module.objective}
+                      onChange={(e) => updateModuleField(moduleIndex, "objective", e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground transition-colors focus:border-accent-violet/60 focus:bg-white/[0.05] focus:outline-none"
+                    />
+                  </label>
 
-                <ul className="mt-3 space-y-2">
-                  {module.chapters.map((chapter, chapterIndex) => (
-                    <li key={chapterIndex} className="rounded-lg border border-border-subtle/60 bg-white/[0.02] p-2.5">
-                      <input
-                        value={chapter.title}
-                        onChange={(e) =>
-                          updateChapterField(moduleIndex, chapterIndex, "title", e.target.value)
-                        }
-                        className="w-full bg-transparent text-sm font-medium text-foreground focus:outline-none"
-                      />
-                      <input
-                        value={chapter.summary}
-                        onChange={(e) =>
-                          updateChapterField(moduleIndex, chapterIndex, "summary", e.target.value)
-                        }
-                        className="mt-1 w-full bg-transparent text-xs text-foreground-muted focus:outline-none"
-                      />
-                    </li>
-                  ))}
-                </ul>
+                  <ul className="mt-3 space-y-2">
+                    {module.chapters.map((chapter, chapterIndex) => (
+                      <li
+                        key={chapterIndex}
+                        className="rounded-lg border border-border-subtle/60 bg-white/[0.02] p-2.5 transition-colors focus-within:border-accent-violet/40"
+                      >
+                        <input
+                          value={chapter.title}
+                          onChange={(e) =>
+                            updateChapterField(moduleIndex, chapterIndex, "title", e.target.value)
+                          }
+                          className="w-full bg-transparent text-sm font-medium text-foreground focus:outline-none"
+                        />
+                        <input
+                          value={chapter.summary}
+                          onChange={(e) =>
+                            updateChapterField(moduleIndex, chapterIndex, "summary", e.target.value)
+                          }
+                          className="mt-1 w-full bg-transparent text-xs text-foreground-muted focus:outline-none"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             ))}
           </div>

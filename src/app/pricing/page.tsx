@@ -48,7 +48,7 @@ export default async function PricingPage() {
         </p>
 
         <div className="mt-12 grid w-full gap-6 sm:grid-cols-2">
-          <div className="rounded-[28px] border border-border-subtle bg-white/[0.02] p-6 sm:p-8">
+          <Card padding="md">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
               Gratuit
             </h2>
@@ -79,9 +79,12 @@ export default async function PricingPage() {
                 {onFreePlan ? "Ton plan actuel" : "Plan précédent"}
               </div>
             )}
-          </div>
+          </Card>
 
-          <Card variant="elevated" className="h-full">
+          <Card variant="elevated" className="relative h-full">
+            <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_20px_-4px_var(--accent-violet)]">
+              Recommandé
+            </span>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
               Pro
             </h2>
