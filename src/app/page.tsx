@@ -81,32 +81,38 @@ export default function Home() {
 
       {/* Hero */}
       <main className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 pb-32 pt-16 sm:pt-20">
-        <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/[0.03] px-4 py-1.5 text-xs text-foreground-muted">
+        <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/[0.03] px-4 py-1.5 text-xs text-foreground-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-accent-violet" />
           Propulsé par l&apos;IA — pas un chatbot, une vraie formation
         </span>
 
-        <h1 className="max-w-3xl text-balance text-center text-4xl font-semibold leading-[1.1] tracking-tight sm:text-6xl">
+        <h1 className="max-w-4xl text-balance text-center text-[2.75rem] font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
           Transforme n&apos;importe quel sujet en{" "}
           <span className="text-gradient">une formation interactive, claire et personnalisée</span>
         </h1>
 
-        <p className="mt-6 max-w-xl text-balance text-center text-lg text-foreground-muted">
-          Décris ce que tu veux apprendre. Tavyra génère une formation complète
-          et structurée — chapitres progressifs, exemples concrets, exercices
-          pratiques et quiz — adaptée à ton niveau, en quelques minutes.
+        <p className="mt-7 max-w-2xl text-balance text-center text-lg leading-relaxed text-foreground-muted sm:text-xl">
+          Décris ce que tu veux apprendre. Tavyra construit une vraie formation structurée
+          — chapitres progressifs, exemples concrets, exercices et quiz — en quelques minutes.
+        </p>
+
+        <p className="mt-3 max-w-xl text-balance text-center text-sm text-foreground-muted/80">
+          Pensé pour les <span className="font-medium text-foreground">entrepreneurs</span> qui
+          veulent comprendre vite, et les{" "}
+          <span className="font-medium text-foreground">étudiants</span> qui veulent vraiment
+          maîtriser leur sujet.
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
           <MagneticButton
             href="/signup"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-8 py-4 text-base font-semibold text-white shadow-[0_8px_40px_-6px_var(--accent-violet)] transition-all hover:brightness-110"
           >
             Créer ma première formation →
           </MagneticButton>
           <a
             href="#comment-ca-marche"
-            className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/5 px-7 py-3.5 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-7 py-4 text-sm font-medium text-foreground-muted transition-colors hover:border-white/20 hover:text-foreground"
           >
             Découvrir comment ça fonctionne
           </a>
@@ -119,6 +125,9 @@ export default function Home() {
 
         {/* Démonstration visuelle */}
         <div className="mt-20 w-full sm:mt-28">
+          <p className="mb-5 text-center text-xs font-medium uppercase tracking-[0.2em] text-foreground-muted">
+            Essaie-le toi-même, en direct
+          </p>
           <Reveal>
             <WowDemo />
           </Reveal>

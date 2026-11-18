@@ -15,9 +15,14 @@ export const FAQ_ITEMS = [
       "Pratiquement n'importe quel sujet : business, finance, marketing, sciences, histoire, préparation d'examens... Décris ton besoin, Tavyra adapte la structure de la formation au domaine.",
   },
   {
-    question: "Tavyra peut-elle comprendre ma formation ?",
+    question: "Puis-je poser des questions pendant que j'apprends ?",
     answer:
       "Oui : pendant que tu lis, tu peux poser des questions à Tavyra directement sur le chapitre en cours. Elle connaît le contenu exact de ta formation et répond dans ce contexte.",
+  },
+  {
+    question: "En quoi Tavyra est différent de ChatGPT ou d'un chatbot classique ?",
+    answer:
+      "Un chatbot répond à une question à la fois, dans une conversation qui s'oublie. Tavyra construit à l'avance un parcours complet et structuré sur ton sujet — chapitres progressifs, exemples vérifiés, quiz — que tu peux relire, reprendre où tu en étais, et suivre comme une vraie formation plutôt que recomposer toi-même une suite de réponses.",
   },
   {
     question: "Comment fonctionnent les quiz ?",

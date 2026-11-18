@@ -24,18 +24,27 @@ const AUDIENCES = [
 export function AudienceBenefits() {
   return (
     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-      {AUDIENCES.map((audience) => (
+      {AUDIENCES.map((audience, i) => (
         <div
           key={audience.title}
-          className="h-full rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
+          className="relative h-full overflow-hidden rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
+          <div
+            aria-hidden
+            className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-3xl ${
+              i === 0 ? "bg-accent-blue/10" : "bg-accent-violet/10"
+            }`}
+          />
+          <span className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">
             <audience.Icon width={22} height={22} />
           </span>
-          <h3 className="mt-4 text-lg font-semibold text-foreground">{audience.title}</h3>
-          <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-foreground-muted">
+          <h3 className="relative mt-4 text-lg font-semibold text-foreground">{audience.title}</h3>
+          <ul className="relative mt-4 space-y-3 text-sm leading-relaxed text-foreground-muted">
             {audience.points.map((point) => (
-              <li key={point}>{point}</li>
+              <li key={point} className="flex gap-2.5">
+                <span className="mt-0.5 shrink-0 text-accent-violet-light">✓</span>
+                <span>{point}</span>
+              </li>
             ))}
           </ul>
         </div>

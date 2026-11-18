@@ -20,7 +20,7 @@ describe("FAQ (vrai code) — plus de mention générique \"le SaaS\"", () => {
     const allText = FAQ_ITEMS.map((item) => `${item.question} ${item.answer}`).join(" ");
     expect(allText).not.toMatch(/le SaaS/i);
     expect(FAQ_ITEMS[0].question).toBe("Comment fonctionne Tavyra ?");
-    expect(FAQ_ITEMS[7].question).toBe("Puis-je utiliser Tavyra sur téléphone ?");
+    expect(FAQ_ITEMS.at(-1)?.question).toBe("Puis-je utiliser Tavyra sur téléphone ?");
   });
 });
 
