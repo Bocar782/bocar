@@ -23,6 +23,39 @@
   --danger-light: #fca5a5;
 }
 
+/* Prompt 05.26 : thème clair premium, scopé à la landing page uniquement
+   (classe posée sur la racine de page.tsx). Le reste de l'application
+   continue de consommer les tokens de :root (thème sombre) sans aucun
+   changement — ces variables ne s'appliquent qu'au sous-arbre qui porte
+   la classe. */
+.theme-landing-light {
+  --background: #fbfaf9;
+  --background-elevated: #ffffff;
+  --foreground: #18171f;
+  --foreground-muted: #68667a;
+  --border-subtle: rgba(24, 23, 31, 0.08);
+  --accent-violet: #7c3aed;
+  --accent-violet-light: #9333ea;
+  --accent-blue: #3461e6;
+  --accent-blue-light: #2f5bd1;
+}
+
+/* Réaffirme localement les tokens sombres d'origine pour les blocs
+   "produit réel" (WowDemo, MockFrame) qui restent volontairement sombres
+   à l'intérieur d'une page claire — un accent de contraste assumé, pas une
+   incohérence oubliée. */
+.theme-dark-accent {
+  --background: #06070f;
+  --background-elevated: #0b0d1c;
+  --foreground: #f4f4fb;
+  --foreground-muted: #9797ad;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --accent-violet: #8b5cf6;
+  --accent-violet-light: #c4b5fd;
+  --accent-blue: #4c7cf3;
+  --accent-blue-light: #7fa6ff;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-background-elevated: var(--background-elevated);
@@ -168,6 +201,71 @@ body {
   pointer-events: none;
 }
 
+/* Variantes claires de l'aurora/grain/grille ci-dessus — mêmes animations
+   et géométrie, opacités et teintes adaptées à un fond blanc cassé plutôt
+   qu'à un fond noir (voir .theme-landing-light). */
+.aurora-light {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aurora-light::before,
+.aurora-light::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  opacity: 0.16;
+}
+
+.aurora-light::before {
+  top: -18rem;
+  left: 50%;
+  translate: -50% 0;
+  width: 46rem;
+  height: 32rem;
+  background: radial-gradient(
+    closest-side,
+    var(--accent-violet) 0%,
+    transparent 100%
+  );
+  animation: aurora-drift-a 26s ease-in-out infinite alternate;
+}
+
+.aurora-light::after {
+  top: 6rem;
+  right: -12rem;
+  width: 34rem;
+  height: 34rem;
+  background: radial-gradient(
+    closest-side,
+    var(--accent-blue) 0%,
+    transparent 100%
+  );
+  opacity: 0.1;
+  animation: aurora-drift-b 32s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-light::before,
+  .aurora-light::after {
+    animation: none;
+  }
+}
+
+.grain-overlay-light {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
 /* Grille très subtile pour donner de la texture au fond sans distraire */
 .grid-overlay {
   position: absolute;
@@ -176,6 +274,18 @@ body {
   background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black 40%, transparent 100%);
+  pointer-events: none;
+}
+
+.grid-overlay-light {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(24, 23, 31, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(24, 23, 31, 0.045) 1px, transparent 1px);
   background-size: 64px 64px;
   mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black 40%, transparent 100%);
   pointer-events: none;
