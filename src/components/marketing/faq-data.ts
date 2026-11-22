@@ -45,3 +45,15 @@ export const FAQ_ITEMS = [
       "Oui, l'interface est entièrement responsive : génération, lecture des formations, chat et quiz fonctionnent aussi bien sur mobile, tablette que sur ordinateur.",
   },
 ];
+
+// Prompt 05.31 : sous-ensemble volontairement court (5 sur 9), réutilisé
+// à l'identique par /pricing et par la section FAQ de la landing — jamais
+// deux listes qui pourraient diverger.
+const SHORT_FAQ_QUESTIONS = new Set([
+  "Comment fonctionne Tavyra ?",
+  "Quels sujets puis-je apprendre ?",
+  "Comment fonctionnent les quiz ?",
+  "Puis-je annuler mon abonnement ?",
+  "Puis-je utiliser Tavyra sur téléphone ?",
+]);
+export const SHORT_FAQ_ITEMS = FAQ_ITEMS.filter((item) => SHORT_FAQ_QUESTIONS.has(item.question));

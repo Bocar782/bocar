@@ -2,12 +2,17 @@ import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { SiteHeader } from "@/components/site-header";
 import { AudienceBenefits } from "@/components/marketing/audience-benefits";
+import { Faq } from "@/components/marketing/faq";
+import { SHORT_FAQ_ITEMS } from "@/components/marketing/faq-data";
 import { FeatureBand } from "@/components/marketing/feature-band";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
+import { PricingCards } from "@/components/marketing/pricing-cards";
 import { Reveal } from "@/components/marketing/reveal";
 import { WowDemo } from "@/components/marketing/wow-demo";
+import { isOnFreePlan } from "@/lib/courses/plan";
 import { getSiteUrl } from "@/lib/site-url";
+import { createClient } from "@/lib/supabase/server";
 
 const SOFTWARE_APPLICATION_JSON_LD = {
   "@context": "https://schema.org",
@@ -50,7 +55,17 @@ function SectionHeading({
   );
 }
 
-export default function Home() {
+export default async function Home() {
+  // Prompt 05.31 : la landing affiche désormais une section Tarifs réelle
+  // (auth-aware, via PricingCards partagé avec /pricing) — nécessite de
+  // savoir si un visiteur est connecté et son statut d'abonnement, comme
+  // /pricing/page.tsx.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const onFreePlan = user ? await isOnFreePlan(supabase, user.id) : true;
+
   return (
     <div className="theme-landing-light relative flex-1 overflow-x-clip bg-background text-foreground">
       <script
@@ -157,7 +172,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Pour qui — bande teintée, dernière section de la page, rien après */}
+        {/* Pour qui — bande teintée */}
         <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
           <div className="mx-auto max-w-6xl px-6">
             <SectionHeading
@@ -168,6 +183,59 @@ export default function Home() {
             <div className="mt-12">
               <Reveal>
                 <AudienceBenefits />
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* Pourquoi nous — Prompt 05.31, résumé réel (même texte que
+            /pourquoi-nous) avec lien vers la page complète, pas une
+            duplication intégrale. */}
+        <section className="relative mx-auto mt-24 max-w-6xl px-6 sm:mt-28">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
+              Pourquoi nous
+            </span>
+            <h2 className="mt-3 text-balance font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Pourquoi nous existons
+            </h2>
+            <p className="mt-4 text-balance text-base leading-relaxed text-foreground-muted">
+              Tavyra n&apos;est pas né d&apos;une envie de faire « encore un outil IA ». Il est né
+              d&apos;un constat simple : apprendre un nouveau sujet aujourd&apos;hui est
+              inutilement difficile — pas par manque d&apos;information, mais par excès.
+            </p>
+            <Link
+              href="/pourquoi-nous"
+              className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-accent-violet-light transition-colors hover:text-foreground"
+            >
+              En savoir plus →
+            </Link>
+          </div>
+        </section>
+
+        {/* Tarifs — Prompt 05.31, mêmes offres que /pricing (PricingCards
+            partagé, jamais de divergence) */}
+        <section id="tarifs" className="relative mx-auto mt-24 max-w-6xl scroll-mt-20 px-6 sm:mt-28">
+          <SectionHeading
+            eyebrow="Tarifs"
+            title="Des tarifs simples"
+            description="Commence gratuitement, débloque la suite quand tu es prêt à aller plus loin."
+          />
+          <div className="mt-12">
+            <Reveal>
+              <PricingCards user={user} onFreePlan={onFreePlan} />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* FAQ — Prompt 05.31, bande teintée, sous-ensemble court partagé
+            avec /pricing, dernière section de la page */}
+        <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <SectionHeading eyebrow="FAQ" title="Questions fréquentes" />
+            <div className="mt-10">
+              <Reveal>
+                <Faq items={SHORT_FAQ_ITEMS} />
               </Reveal>
             </div>
           </div>

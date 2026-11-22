@@ -27,36 +27,41 @@ describe("FAQ (vrai code) — plus de mention générique \"le SaaS\"", () => {
 describe("Landing (vrai code, page.tsx) — hero honnête", () => {
   it("ne prétend plus un nombre d'utilisateurs non vérifiable", async () => {
     const { default: Home } = await import("@/app/page");
-    const html = renderToStaticMarkup(<Home />);
+    const html = renderToStaticMarkup(await Home());
     expect(html).not.toMatch(/\+\s*5\s*000\s*utilisateurs/i);
     expect(html).toContain("Gratuit, sans carte bancaire");
   });
 
   it("ne contient plus aucun lien mort vers Confidentialité/CGU", async () => {
     const { default: Home } = await import("@/app/page");
-    const html = renderToStaticMarkup(<Home />);
+    const html = renderToStaticMarkup(await Home());
     expect(html).toContain('href="/confidentialite"');
     expect(html).toContain('href="/conditions-utilisation"');
   });
 
   it("met en avant les bénéfices pour les élèves ET les entrepreneurs", async () => {
     const { default: Home } = await import("@/app/page");
-    const html = renderToStaticMarkup(<Home />);
+    const html = renderToStaticMarkup(await Home());
     expect(html).toContain("Pour les élèves et étudiants");
     expect(html).toContain("Pour les entrepreneurs");
   });
 
-  it("s'arrête à la section \"Pour qui\" (Prompt 05.27) : plus de Tarifs/FAQ sur l'accueil", async () => {
+  it("affiche Pourquoi nous, Tarifs et FAQ après la section \"Pour qui\" (Prompt 05.31)", async () => {
     const { default: Home } = await import("@/app/page");
-    const html = renderToStaticMarkup(<Home />);
-    expect(html).toContain("Une solution pensée pour tous");
-    expect(html).not.toContain("Des tarifs simples");
-    expect(html).not.toContain("Questions fréquentes");
+    const html = renderToStaticMarkup(await Home());
+    const posPourQui = html.indexOf("Une solution pensée pour tous");
+    const posPourquoiNous = html.indexOf("Pourquoi nous existons");
+    const posTarifs = html.indexOf("Des tarifs simples");
+    const posFaq = html.indexOf("Questions fréquentes");
+    expect(posPourQui).toBeGreaterThan(-1);
+    expect(posPourquoiNous).toBeGreaterThan(posPourQui);
+    expect(posTarifs).toBeGreaterThan(posPourquoiNous);
+    expect(posFaq).toBeGreaterThan(posTarifs);
   });
 
   it("ne promet pas un accès à vie non garanti par le fonctionnement réel des offres", async () => {
     const { default: Home } = await import("@/app/page");
-    const html = renderToStaticMarkup(<Home />);
+    const html = renderToStaticMarkup(await Home());
     expect(html).not.toMatch(/accès à vie/i);
   });
 });
