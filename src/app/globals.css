@@ -74,15 +74,19 @@ body {
    ponctuel rare, --accent-violet devient la seule couleur d'accent
    structurante. */
 .theme-landing-light {
-  --background: #fbf9f5;
-  --background-elevated: #f4f0e8;
+  /* Prompt 05.28 : fond violet clair (remplace l'ivoire du 05.27) qui
+     coordonne avec l'accent violet des sections plutôt qu'un blanc neutre.
+     --background-elevated sert de bande alternée entre les sections
+     (voir page.tsx), un ton légèrement plus soutenu que --background. */
+  --background: #f5f1fc;
+  --background-elevated: #ece2fa;
   --background-card: #ffffff;
   --foreground: #1c1a22;
-  --foreground-muted: #6f6b7a;
-  --border-subtle: rgba(28, 26, 34, 0.09);
+  --foreground-muted: #716c87;
+  --border-subtle: rgba(109, 40, 217, 0.14);
   --accent-violet: #6d28d9;
   --accent-violet-light: #6d28d9;
-  --accent-violet-tint: #ede6fb;
+  --accent-violet-tint: #e4d7f7;
 }
 
 /* Réaffirme localement les tokens sombres d'origine pour les aperçus de

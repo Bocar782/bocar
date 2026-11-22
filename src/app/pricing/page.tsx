@@ -3,7 +3,10 @@ import { BackgroundGlow } from "@/components/background-glow";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Faq } from "@/components/marketing/faq";
+import { FAQ_ITEMS } from "@/components/marketing/faq-data";
 import {
+  EXPERT_PLAN_PRICE_EUR,
   FREE_PLAN_FEATURES,
   FREE_PLAN_LIMITATION,
   isOnFreePlan,
@@ -11,6 +14,17 @@ import {
   PRO_PLAN_PRICE_EUR,
 } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
+
+// Prompt 05.28 : sous-ensemble volontairement court (5 sur 9) des vraies
+// questions de faq-data.ts — "pas trop longue", pas de contenu inventé.
+const PRICING_FAQ_QUESTIONS = new Set([
+  "Comment fonctionne Tavyra ?",
+  "Quels sujets puis-je apprendre ?",
+  "Comment fonctionnent les quiz ?",
+  "Puis-je annuler mon abonnement ?",
+  "Puis-je utiliser Tavyra sur téléphone ?",
+]);
+const PRICING_FAQ_ITEMS = FAQ_ITEMS.filter((item) => PRICING_FAQ_QUESTIONS.has(item.question));
 
 export default async function PricingPage() {
   const supabase = await createClient();
@@ -47,7 +61,7 @@ export default async function PricingPage() {
           plus loin.
         </p>
 
-        <div className="mt-12 grid w-full gap-6 sm:grid-cols-2">
+        <div className="mt-12 grid w-full gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <Card padding="md">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
               Gratuit
@@ -130,6 +144,40 @@ export default async function PricingPage() {
               </div>
             )}
           </Card>
+
+          {/* Prompt 05.28 : offre affichée uniquement — aucun prix Stripe
+              ni entitlement réel derrière pour l'instant (voir plan.ts),
+              donc bouton désactivé plutôt qu'un faux appel à l'action. */}
+          <Card className="relative h-full opacity-90">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+              Expert
+            </h2>
+            <p className="mt-3 text-3xl font-semibold text-foreground">
+              {EXPERT_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
+              <span className="text-base font-normal text-foreground-muted"> / mois</span>
+            </p>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Pour aller encore plus loin — fonctionnalités bientôt détaillées.
+            </p>
+
+            <p className="mt-6 text-sm text-foreground-muted">
+              Les avantages de cette offre seront précisés avant son ouverture.
+            </p>
+
+            <Button disabled fullWidth className="mt-8">
+              Bientôt disponible
+            </Button>
+          </Card>
+        </div>
+
+        {/* FAQ — Prompt 05.28, sous-ensemble court des vraies questions */}
+        <div className="mt-20 w-full">
+          <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground">
+            Questions fréquentes
+          </h2>
+          <div className="mt-8">
+            <Faq items={PRICING_FAQ_ITEMS} />
+          </div>
         </div>
 
         <p className="mt-10 text-sm text-foreground-muted">

@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { FAQ_ITEMS } from "./faq-data";
 
-export function Faq() {
+// `items` optionnel (Prompt 05.28) : par défaut la liste complète, mais
+// /pricing passe un sous-ensemble volontairement court ("pas trop longue").
+export function Faq({ items = FAQ_ITEMS }: { items?: typeof FAQ_ITEMS }) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-3">
-      {FAQ_ITEMS.map((item, i) => {
+      {items.map((item, i) => {
         const isOpen = openIndex === i;
         return (
           <div

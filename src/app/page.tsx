@@ -60,9 +60,9 @@ export default function Home() {
       <BackgroundGlow variant="light" />
       <SiteHeader variant="light" />
 
-      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-32 pt-16 sm:pt-20">
+      <main className="relative z-10 w-full pb-32 pt-16 sm:pt-20">
         {/* Hero — composition éditoriale asymétrique 55/45, pas de centrage */}
-        <section className="relative grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-10">
+        <section className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 lg:grid-cols-[1.15fr_1fr] lg:gap-10">
           <div aria-hidden className="hero-glow-light" />
 
           <div className="relative z-10">
@@ -116,26 +116,32 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Démonstration interactive — intégrée à la suite du hero, pas un
-            bloc isolé avec légende flottante */}
-        <section className="mt-24 w-full sm:mt-28">
-          <div className="mx-auto max-w-4xl">
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
-              En direct
-            </span>
-            <p className="mt-2 max-w-md text-balance font-display text-xl font-semibold text-foreground sm:text-2xl">
-              Regarde Tavyra construire une formation, avec ton propre sujet
-            </p>
-          </div>
-          <div className="mt-8">
-            <Reveal>
-              <WowDemo />
-            </Reveal>
+        {/* Démonstration interactive — bande teintée (Prompt 05.28, rupture
+            visuelle entre les sections) ; intégrée à la suite du hero, pas
+            un bloc isolé avec légende flottante */}
+        <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="mx-auto max-w-4xl">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
+                En direct
+              </span>
+              <p className="mt-2 max-w-md text-balance font-display text-xl font-semibold text-foreground sm:text-2xl">
+                Regarde Tavyra construire une formation, avec ton propre sujet
+              </p>
+            </div>
+            <div className="mt-8">
+              <Reveal>
+                <WowDemo />
+              </Reveal>
+            </div>
           </div>
         </section>
 
         {/* Fonctionnalités — bandeau à filets, pas de cartes répétées */}
-        <section id="fonctionnalites" className="mt-24 w-full scroll-mt-20 sm:mt-28">
+        <section
+          id="fonctionnalites"
+          className="relative mx-auto mt-24 max-w-6xl scroll-mt-20 px-6 sm:mt-28"
+        >
           <div className="mx-auto max-w-2xl text-center">
             <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
               Fonctionnalités
@@ -151,17 +157,19 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Pour qui — dernière section de la page, rien après */}
-        <section className="mt-24 w-full sm:mt-28">
-          <SectionHeading
-            eyebrow="Pour qui"
-            title="Une solution pensée pour tous"
-            description="Que tu apprennes pour toi ou pour ton business, Tavyra s'adapte à ton objectif."
-          />
-          <div className="mt-12">
-            <Reveal>
-              <AudienceBenefits />
-            </Reveal>
+        {/* Pour qui — bande teintée, dernière section de la page, rien après */}
+        <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <SectionHeading
+              eyebrow="Pour qui"
+              title="Une solution pensée pour tous"
+              description="Que tu apprennes pour toi ou pour ton business, Tavyra s'adapte à ton objectif."
+            />
+            <div className="mt-12">
+              <Reveal>
+                <AudienceBenefits />
+              </Reveal>
+            </div>
           </div>
         </section>
       </main>

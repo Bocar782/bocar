@@ -6,6 +6,13 @@ import { countGenerationsSince, countTotalGenerations } from "./persist";
 export const FREE_PLAN_COURSE_LIMIT = 1; // à vie
 export const FREE_PLAN_UNLOCKED_CHAPTERS = 2;
 export const PRO_PLAN_PRICE_EUR = 9.99;
+
+// Prompt 05.28 : 3e offre affichée sur /pricing, prix uniquement — pas
+// encore de prix Stripe ni d'entitlements réels pour ce palier (voir
+// pricing/page.tsx, bouton désactivé "Bientôt disponible"). Ne pas
+// utiliser cette constante pour accorder un accès tant qu'aucune logique
+// d'abonnement Expert n'existe réellement.
+export const EXPERT_PLAN_PRICE_EUR = 24.99;
 export const PRO_PLAN_MONTHLY_COURSE_LIMIT = 3; // réinitialisé à chaque période de facturation
 
 // L'analyse approfondie coûte nettement plus cher (recherche web + génération
