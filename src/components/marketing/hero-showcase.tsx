@@ -4,11 +4,12 @@ import { MockFrame } from "./interface-showcase";
 // l'interface Tavyra (mêmes contenus que interface-showcase.tsx, jamais
 // inventés), composition volontairement simple : un cadre principal, un
 // second plus petit qui chevauche légèrement son coin inférieur gauche.
-// Reste sombre (theme-dark-accent) en contraste assumé sur la page claire.
 // Sur mobile, seul le cadre principal est affiché (pas de chevauchement).
+// Prompt 05.29 : theme-dark-accent retiré — la landing est désormais
+// pleinement violet foncé, plus besoin d'un îlot sombre en contraste.
 export function HeroShowcase() {
   return (
-    <div className="theme-dark-accent relative mx-auto w-full max-w-md pb-28 lg:max-w-none">
+    <div className="relative mx-auto w-full max-w-md pb-28 lg:max-w-none">
       <MockFrame
         label="Tableau de bord"
         className="relative z-10 w-full shadow-[0_32px_70px_-28px_rgba(28,26,34,0.45)]"

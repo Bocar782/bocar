@@ -2,10 +2,12 @@ import { MockFrame } from "./interface-showcase";
 import { IconGraduationCap, IconRocket } from "./icons";
 
 // Prompt 05.27 : deux compositions délibérément différentes (pas deux
-// cartes jumelles) — étudiants : carte blanche, texte puis aperçu ;
-// entrepreneurs : pas de carte, aperçu puis texte, séparé par un simple
-// filet. Les aperçus MockFrame restent sombres (identité réelle du
-// produit) et montrent des contenus déjà réels, jamais inventés.
+// cartes jumelles) — étudiants : carte (bg-background-card), texte puis
+// aperçu ; entrepreneurs : pas de carte, aperçu puis texte, séparé par un
+// simple filet. Les aperçus MockFrame montrent des contenus déjà réels du
+// produit, jamais inventés. Prompt 05.29 : ne sont plus volontairement
+// assombris par rapport au reste de la page — toute la landing est
+// désormais violet foncé, donc plus besoin d'un contraste séparé.
 
 const STUDENT_POINTS = [
   "Réviser un chapitre du programme ou préparer un examen avec une formation construite sur mesure.",
@@ -36,7 +38,7 @@ export function AudienceBenefits() {
             </li>
           ))}
         </ul>
-        <div className="theme-dark-accent mt-6">
+        <div className="mt-6">
           <MockFrame label="Formation">
             <span className="text-[11px] font-mono text-accent-violet-light">Chapitre 2</span>
             <p className="mt-1 text-sm font-semibold text-foreground">La diversification du portefeuille</p>
@@ -54,7 +56,7 @@ export function AudienceBenefits() {
 
       {/* Entrepreneurs : pas de carte, aperçu en haut, texte en bas */}
       <div className="border-t border-border-subtle pt-7 lg:border-t-0 lg:border-l lg:pl-10 lg:pt-0">
-        <div className="theme-dark-accent">
+        <div>
           <MockFrame label="Chat avec Tavyra">
             <div className="space-y-2">
               <div className="ml-auto max-w-[80%] rounded-lg rounded-tr-sm bg-white/[0.06] px-3 py-2 text-xs text-foreground">

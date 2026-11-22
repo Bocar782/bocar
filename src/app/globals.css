@@ -74,19 +74,22 @@ body {
    ponctuel rare, --accent-violet devient la seule couleur d'accent
    structurante. */
 .theme-landing-light {
-  /* Prompt 05.28 : fond violet clair (remplace l'ivoire du 05.27) qui
-     coordonne avec l'accent violet des sections plutôt qu'un blanc neutre.
-     --background-elevated sert de bande alternée entre les sections
-     (voir page.tsx), un ton légèrement plus soutenu que --background. */
-  --background: #f5f1fc;
-  --background-elevated: #ece2fa;
-  --background-card: #ffffff;
-  --foreground: #1c1a22;
-  --foreground-muted: #716c87;
-  --border-subtle: rgba(109, 40, 217, 0.14);
-  --accent-violet: #6d28d9;
-  --accent-violet-light: #6d28d9;
-  --accent-violet-tint: #e4d7f7;
+  /* Prompt 05.29 : fond violet foncé pleine page (remplace le violet clair
+     du 05.28, jugé trop proche du blanc) — plus aucune zone blanche sur la
+     landing, y compris les cartes. --background-elevated/--background-card
+     restent des tons plus clairs MAIS toujours violets (jamais blancs),
+     pour garder de la profondeur entre bande/carte/fond. Le nom de la
+     classe (historique, depuis le 05.27) ne reflète plus "clair" à la
+     lettre, mais reste le point d'entrée du thème scopé à la landing. */
+  --background: #190f2e;
+  --background-elevated: #23153f;
+  --background-card: #2b1a4d;
+  --foreground: #f3eefb;
+  --foreground-muted: #b7a7d6;
+  --border-subtle: rgba(199, 178, 255, 0.16);
+  --accent-violet: #9333ea;
+  --accent-violet-light: #c9a8ff;
+  --accent-violet-tint: rgba(147, 51, 234, 0.22);
 }
 
 /* Réaffirme localement les tokens sombres d'origine pour les aperçus de
@@ -109,14 +112,15 @@ body {
 
 /* Grain papier statique, très discret : remplace l'aurora animée et la
    grille de points sur la landing (Prompt 05.27) — aucun mouvement, juste
-   une texture, dans l'esprit d'un papier premium plutôt que d'un fond
-   d'IA générative. */
+   une texture. Prompt 05.29 : mode de fusion "overlay" (plutôt que
+   "multiply", quasi invisible sur un fond sombre) pour rester perceptible
+   maintenant que la landing est en violet foncé. */
 .paper-grain {
   position: absolute;
   inset: 0;
   z-index: 0;
-  opacity: 0.045;
-  mix-blend-mode: multiply;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
   pointer-events: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
