@@ -6,15 +6,15 @@ import { BrandMark } from "./brand-mark";
 import { useActiveSection } from "./marketing/use-active-section";
 
 const NAV_LINKS = [
-  { label: "Comment ça marche", href: "/#comment-ca-marche", id: "comment-ca-marche" },
-  { label: "Fonctionnalités", href: "/#avantages", id: "avantages" },
-  { label: "Tarifs", href: "/#tarifs", id: "tarifs" },
+  { label: "Fonctionnalités", href: "/#fonctionnalites", id: "fonctionnalites" },
+  { label: "Tarifs", href: "/pricing", id: null },
   { label: "Pourquoi nous", href: "/pourquoi-nous", id: null },
 ];
 
 const SECTION_IDS = NAV_LINKS.map((link) => link.id).filter((id): id is string => id !== null);
 
-export function SiteHeader() {
+export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" }) {
+  const isLight = variant === "light";
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const activeSection = useActiveSection(SECTION_IDS);
@@ -36,7 +36,11 @@ export function SiteHeader() {
           : "border-b border-transparent"
       }`}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+      <div
+        className={`mx-auto flex max-w-6xl items-center justify-between px-6 ${
+          isLight ? "h-16" : "py-5"
+        }`}
+      >
         <Link href="/" className="flex items-center gap-2">
           <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Tavyra</span>
@@ -65,7 +69,11 @@ export function SiteHeader() {
           </Link>
           <Link
             href="/signup"
-            className="rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
+            className={
+              isLight
+                ? "rounded-lg bg-accent-violet px-4 py-2 text-sm font-medium text-white transition-colors hover:brightness-110"
+                : "rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
+            }
           >
             Essayer gratuitement
           </Link>
@@ -76,7 +84,11 @@ export function SiteHeader() {
           onClick={() => setOpen((v) => !v)}
           aria-label="Menu"
           aria-expanded={open}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-white/5 text-foreground lg:hidden"
+          className={
+            isLight
+              ? "flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-foreground lg:hidden"
+              : "flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-white/5 text-foreground lg:hidden"
+          }
         >
           <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none">
             {open ? (
@@ -106,7 +118,9 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+                className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
+                  isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
+                }`}
               >
                 {link.label}
               </a>
@@ -114,14 +128,20 @@ export function SiteHeader() {
             <Link
               href="/login"
               onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
+              className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
+                isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
+              }`}
             >
               Connexion
             </Link>
             <Link
               href="/signup"
               onClick={() => setOpen(false)}
-              className="mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2.5 text-center text-sm font-semibold text-white"
+              className={
+                isLight
+                  ? "mt-2 rounded-lg bg-accent-violet px-4 py-2.5 text-center text-sm font-semibold text-white"
+                  : "mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2.5 text-center text-sm font-semibold text-white"
+              }
             >
               Essayer gratuitement
             </Link>

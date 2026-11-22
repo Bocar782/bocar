@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
@@ -11,6 +11,20 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Prompt 05.27 : serif d'affichage pour les grands titres de la landing
+// (voir --font-display dans globals.css). `display: "swap"` + un repli
+// système explicite évitent tout texte invisible et tout blocage de build
+// si Google Fonts est injoignable au build (le build échoue sinon, voir
+// vérification ci-dessous).
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal"],
+  display: "swap",
+  fallback: ["Georgia", "serif"],
 });
 
 const TITLE = "Tavyra — Transforme n'importe quel sujet en formation sur mesure";
@@ -48,7 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}

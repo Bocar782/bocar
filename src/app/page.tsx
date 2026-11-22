@@ -2,15 +2,10 @@ import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { SiteHeader } from "@/components/site-header";
 import { AudienceBenefits } from "@/components/marketing/audience-benefits";
-import { Benefits } from "@/components/marketing/benefits";
-import { ComparisonTable } from "@/components/marketing/comparison-table";
-import { Faq } from "@/components/marketing/faq";
-import { FAQ_ITEMS } from "@/components/marketing/faq-data";
-import { InterfaceShowcase } from "@/components/marketing/interface-showcase";
+import { FeatureBand } from "@/components/marketing/feature-band";
+import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
-import { PricingSection } from "@/components/marketing/pricing-section";
 import { Reveal } from "@/components/marketing/reveal";
-import { TopicExamples } from "@/components/marketing/topic-examples";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { getSiteUrl } from "@/lib/site-url";
 
@@ -29,16 +24,6 @@ const SOFTWARE_APPLICATION_JSON_LD = {
   ],
 };
 
-const FAQ_JSON_LD = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: FAQ_ITEMS.map((item) => ({
-    "@type": "Question",
-    name: item.question,
-    acceptedAnswer: { "@type": "Answer", text: item.answer },
-  })),
-};
-
 function SectionHeading({
   eyebrow,
   title,
@@ -50,10 +35,10 @@ function SectionHeading({
 }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
-      <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet-light">
+      <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
         {eyebrow}
       </span>
-      <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+      <h2 className="mt-3 text-balance font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
         {title}
       </h2>
       {description && (
@@ -67,250 +52,117 @@ function SectionHeading({
 
 export default function Home() {
   return (
-    <div className="relative flex-1 overflow-x-clip">
+    <div className="theme-landing-light relative flex-1 overflow-x-clip bg-background text-foreground">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
-      />
-      <BackgroundGlow />
-      <SiteHeader />
+      <BackgroundGlow variant="light" />
+      <SiteHeader variant="light" />
 
-      {/* Hero */}
-      <main className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 pb-32 pt-16 sm:pt-20">
-        <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/[0.03] px-4 py-1.5 text-xs text-foreground-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent-violet" />
-          Propulsé par l&apos;IA — pas un chatbot, une vraie formation
-        </span>
+      <main className="relative z-10 mx-auto max-w-6xl px-6 pb-32 pt-16 sm:pt-20">
+        {/* Hero — composition éditoriale asymétrique 55/45, pas de centrage */}
+        <section className="relative grid grid-cols-1 items-center gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-10">
+          <div aria-hidden className="hero-glow-light" />
 
-        <h1 className="max-w-4xl text-balance text-center text-[2.75rem] font-semibold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-          Transforme n&apos;importe quel sujet en{" "}
-          <span className="text-gradient">une formation interactive, claire et personnalisée</span>
-        </h1>
+          <div className="relative z-10">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-background-card px-4 py-1.5 text-xs text-foreground-muted shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent-violet" />
+              Propulsé par l&apos;IA — pas un chatbot, une vraie formation
+            </span>
 
-        <p className="mt-7 max-w-2xl text-balance text-center text-lg leading-relaxed text-foreground-muted sm:text-xl">
-          Décris ce que tu veux apprendre. Tavyra construit une vraie formation structurée
-          — chapitres progressifs, exemples concrets, exercices et quiz — en quelques minutes.
-        </p>
+            <h1 className="mt-7 max-w-xl text-balance font-display text-[2.5rem] font-semibold leading-[1.08] tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem]">
+              Transforme n&apos;importe quel sujet en{" "}
+              <span className="text-accent-violet">
+                une formation interactive, claire et personnalisée
+              </span>
+            </h1>
 
-        <p className="mt-3 max-w-xl text-balance text-center text-sm text-foreground-muted/80">
-          Pensé pour les <span className="font-medium text-foreground">entrepreneurs</span> qui
-          veulent comprendre vite, et les{" "}
-          <span className="font-medium text-foreground">étudiants</span> qui veulent vraiment
-          maîtriser leur sujet.
-        </p>
+            <p className="mt-6 max-w-lg text-balance text-lg leading-relaxed text-foreground-muted">
+              Décris ce que tu veux apprendre. Tavyra construit une vraie formation structurée
+              — chapitres progressifs, exemples concrets, exercices et quiz — en quelques minutes.
+            </p>
 
-        <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
-          <MagneticButton
-            href="/signup"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-8 py-4 text-base font-semibold text-white shadow-[0_8px_40px_-6px_var(--accent-violet)] transition-all hover:brightness-110"
-          >
-            Créer ma première formation →
-          </MagneticButton>
-          <a
-            href="#comment-ca-marche"
-            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-7 py-4 text-sm font-medium text-foreground-muted transition-colors hover:border-white/20 hover:text-foreground"
-          >
-            Découvrir comment ça fonctionne
-          </a>
-        </div>
+            <p className="mt-3 max-w-md text-sm text-foreground-muted/80">
+              Pensé pour les <span className="font-medium text-foreground">entrepreneurs</span> qui
+              veulent comprendre vite, et les{" "}
+              <span className="font-medium text-foreground">étudiants</span> qui veulent vraiment
+              maîtriser leur sujet.
+            </p>
 
-        <p className="mt-8 text-xs text-foreground-muted">
-          <span className="font-semibold text-foreground">Gratuit, sans carte bancaire</span>{" "}
-          pour ta première formation complète
-        </p>
+            <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+              <MagneticButton
+                href="/signup"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent-violet px-7 py-3.5 text-base font-semibold text-white shadow-[0_12px_32px_-10px_rgba(109,40,217,0.45)] transition-all hover:brightness-110"
+              >
+                Créer ma première formation →
+              </MagneticButton>
+              <a
+                href="#fonctionnalites"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground-muted transition-colors hover:text-foreground"
+              >
+                Découvrir les fonctionnalités →
+              </a>
+            </div>
 
-        {/* Démonstration visuelle */}
-        <div className="mt-20 w-full sm:mt-28">
-          <p className="mb-5 text-center text-xs font-medium uppercase tracking-[0.2em] text-foreground-muted">
-            Essaie-le toi-même, en direct
-          </p>
-          <Reveal>
-            <WowDemo />
-          </Reveal>
-        </div>
+            <p className="mt-6 text-xs text-foreground-muted">
+              <span className="font-semibold text-foreground">Gratuit, sans carte bancaire</span>{" "}
+              pour ta première formation complète
+            </p>
+          </div>
 
-        {/* Comment ça marche */}
-        <section id="comment-ca-marche" className="mt-32 w-full scroll-mt-20 sm:mt-40">
-          <Reveal>
-            <SectionHeading
-              eyebrow="Comment ça marche"
-              title="Trois étapes, zéro prompt à maîtriser"
-              description="Pas besoin de savoir formuler une demande parfaite : décris simplement ton besoin."
-            />
-          </Reveal>
-          <div className="mt-12 grid w-full grid-cols-1 gap-8 sm:grid-cols-3">
-            {[
-              {
-                number: "01",
-                title: "Décris ce que tu veux apprendre",
-                description:
-                  "Un mot, une phrase, une envie floue : pas besoin de savoir formuler un prompt parfait.",
-              },
-              {
-                number: "02",
-                title: "Tavyra structure ta formation",
-                description:
-                  "Objectifs, chapitres, exemples concrets et cas pratiques, adaptés à ton niveau et à ton sujet.",
-              },
-              {
-                number: "03",
-                title: "Apprends, teste, progresse",
-                description:
-                  "Avance à ton rythme, pose tes questions à Tavyra et valide tes acquis avec un quiz final.",
-              },
-            ].map((step, i) => (
-              <Reveal key={step.number} delay={i * 100}>
-                <div className="h-full rounded-2xl border border-border-subtle bg-white/[0.02] p-6">
-                  <span className="text-sm font-mono text-accent-violet-light">
-                    {step.number}
-                  </span>
-                  <h3 className="mt-3 text-base font-semibold text-foreground">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
-                    {step.description}
-                  </p>
-                </div>
-              </Reveal>
-            ))}
+          <div className="relative z-10">
+            <HeroShowcase />
           </div>
         </section>
 
-        {/* Exemples de sujets */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <SectionHeading
-              eyebrow="Un sujet, n'importe lequel"
-              title="Business, sciences, histoire, examens..."
-              description="Tavyra adapte la structure de la formation au domaine — voici quelques exemples parmi une infinité de sujets possibles."
-            />
-          </Reveal>
-          <div className="mt-12">
+        {/* Démonstration interactive — intégrée à la suite du hero, pas un
+            bloc isolé avec légende flottante */}
+        <section className="mt-24 w-full sm:mt-28">
+          <div className="mx-auto max-w-4xl">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
+              En direct
+            </span>
+            <p className="mt-2 max-w-md text-balance font-display text-xl font-semibold text-foreground sm:text-2xl">
+              Regarde Tavyra construire une formation, avec ton propre sujet
+            </p>
+          </div>
+          <div className="mt-8">
             <Reveal>
-              <TopicExamples />
+              <WowDemo />
             </Reveal>
           </div>
         </section>
 
-        {/* Avantages */}
-        <section id="avantages" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
-          <div aria-hidden className="section-tint-violet" />
-          <Reveal>
-            <SectionHeading
-              eyebrow="Pourquoi Tavyra"
-              title="Une vraie pédagogie, pas une réponse générée à la va-vite"
-            />
-          </Reveal>
+        {/* Fonctionnalités — bandeau à filets, pas de cartes répétées */}
+        <section id="fonctionnalites" className="mt-24 w-full scroll-mt-20 sm:mt-28">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet">
+              Fonctionnalités
+            </span>
+            <h2 className="mt-3 text-balance font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Une vraie pédagogie, pas une réponse générée à la va-vite
+            </h2>
+          </div>
           <div className="mt-12">
             <Reveal>
-              <Benefits />
+              <FeatureBand />
             </Reveal>
           </div>
         </section>
 
-        {/* Pour qui */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <SectionHeading
-              eyebrow="Pour qui"
-              title="Que tu apprennes pour toi ou pour ton business"
-              description="Tavyra s'adapte à ton objectif, pas l'inverse."
-            />
-          </Reveal>
+        {/* Pour qui — dernière section de la page, rien après */}
+        <section className="mt-24 w-full sm:mt-28">
+          <SectionHeading
+            eyebrow="Pour qui"
+            title="Une solution pensée pour tous"
+            description="Que tu apprennes pour toi ou pour ton business, Tavyra s'adapte à ton objectif."
+          />
           <div className="mt-12">
             <Reveal>
               <AudienceBenefits />
             </Reveal>
           </div>
-        </section>
-
-        {/* Comparatif */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <SectionHeading
-              eyebrow="La différence"
-              title="Tavyra n'est pas un chatbot, ni un cours en ligne de plus"
-            />
-          </Reveal>
-          <div className="mt-12">
-            <Reveal>
-              <ComparisonTable />
-            </Reveal>
-          </div>
-        </section>
-
-        {/* Présentation de l'interface */}
-        <section className="relative mt-32 w-full sm:mt-40">
-          <div aria-hidden className="section-tint-blue" />
-          <Reveal>
-            <SectionHeading
-              eyebrow="À l'intérieur de Tavyra"
-              title="Un tableau de bord pensé pour apprendre, pas pour discuter"
-            />
-          </Reveal>
-          <div className="mt-12">
-            <Reveal>
-              <InterfaceShowcase />
-            </Reveal>
-          </div>
-        </section>
-
-        {/* Tarifs */}
-        <section id="tarifs" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
-          <div aria-hidden className="section-tint-violet" />
-          <Reveal>
-            <SectionHeading
-              eyebrow="Tarifs"
-              title="Des tarifs simples"
-              description="Commence gratuitement, débloque la suite quand tu es prêt à aller plus loin."
-            />
-          </Reveal>
-          <div className="mt-12">
-            <Reveal>
-              <PricingSection />
-            </Reveal>
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <SectionHeading eyebrow="FAQ" title="Questions fréquentes" />
-          </Reveal>
-          <div className="mt-12">
-            <Reveal>
-              <Faq />
-            </Reveal>
-          </div>
-        </section>
-
-        {/* CTA final */}
-        <section className="mt-32 w-full sm:mt-40">
-          <Reveal>
-            <div className="relative overflow-hidden rounded-[32px] border border-border-subtle bg-background-elevated/80 px-6 py-16 text-center sm:px-16">
-              <div
-                aria-hidden
-                className="absolute inset-0 bg-gradient-to-br from-accent-blue/15 via-transparent to-accent-violet/15"
-              />
-              <div className="relative">
-                <h2 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                  Prêt à apprendre autrement ?
-                </h2>
-                <p className="mx-auto mt-4 max-w-md text-balance text-foreground-muted">
-                  Ta première formation est gratuite. Décris ton sujet, Tavyra
-                  s&apos;occupe du reste.
-                </p>
-                <MagneticButton
-                  href="/signup"
-                  className="mt-8 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
-                >
-                  Créer ma première formation →
-                </MagneticButton>
-              </div>
-            </div>
-          </Reveal>
         </section>
       </main>
 

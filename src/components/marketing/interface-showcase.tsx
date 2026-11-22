@@ -1,15 +1,22 @@
-function MockFrame({
+// Exporté (Prompt 05.27) : réutilisé tel quel par hero-showcase.tsx et
+// audience-benefits.tsx pour montrer de vrais aperçus de l'interface
+// Tavyra — toujours sombre (identité visuelle réelle du produit), jamais
+// retouché pour s'accorder à la landing claire qui l'entoure.
+export function MockFrame({
   label,
   className = "",
+  style,
   children,
 }: {
   label: string;
   className?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-border-subtle bg-background-elevated/80 ${className}`}
+      className={`overflow-hidden rounded-xl border border-border-subtle bg-background-card ${className}`}
+      style={style}
     >
       <div className="flex items-center gap-1.5 border-b border-border-subtle px-4 py-2.5">
         <span className="h-2 w-2 rounded-full bg-white/10" />
