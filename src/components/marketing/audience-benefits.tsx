@@ -24,8 +24,13 @@ const ENTREPRENEUR_POINTS = [
 export function AudienceBenefits() {
   return (
     <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-16">
-      {/* Étudiants : carte blanche, texte en haut, aperçu en bas */}
-      <div className="rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
+      {/* Étudiants : carte, texte en haut, aperçu en bas. Prompt 05.30 :
+          petit filet dégradé brillant en haut de carte. */}
+      <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
+        <div
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] via-accent-violet to-[#8b5cf6]"
+        />
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
           <IconGraduationCap width={20} height={20} />
         </span>

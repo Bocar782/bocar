@@ -33,7 +33,9 @@ export function FeatureBand() {
     <div className="grid grid-cols-1 divide-y divide-border-subtle sm:grid-cols-2 sm:gap-x-10 lg:grid-cols-4 lg:gap-x-0 lg:divide-x lg:divide-y-0">
       {FEATURES.map((feature) => (
         <div key={feature.title} className="flex flex-col gap-2.5 py-6 first:pt-0 lg:px-8 lg:py-0 lg:first:pl-0">
-          <feature.Icon width={18} height={18} className="text-accent-violet" />
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#8b5cf6] to-accent-violet text-white shadow-[0_4px_14px_-6px_rgba(147,51,234,0.55)]">
+            <feature.Icon width={16} height={16} />
+          </span>
           <h3 className="text-sm font-semibold text-foreground">{feature.title}</h3>
           <p className="text-sm leading-relaxed text-foreground-muted">{feature.description}</p>
         </div>

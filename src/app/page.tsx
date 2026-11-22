@@ -93,7 +93,7 @@ export default function Home() {
             <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
               <MagneticButton
                 href="/signup"
-                className="inline-flex items-center gap-2 rounded-lg bg-accent-violet px-7 py-3.5 text-base font-semibold text-white shadow-[0_12px_32px_-10px_rgba(147,51,234,0.55)] transition-all hover:brightness-110"
+                className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-7 py-3.5 text-base font-semibold text-white shadow-[0_12px_32px_-10px_rgba(147,51,234,0.55)] transition-all hover:brightness-110"
               >
                 Créer ma première formation →
               </MagneticButton>
