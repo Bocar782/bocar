@@ -45,6 +45,22 @@ describe("Landing (vrai code, page.tsx) — hero honnête", () => {
     expect(html).toContain("Pour les élèves et étudiants");
     expect(html).toContain("Pour les entrepreneurs");
   });
+
+  it("s'arrête à la section \"Pour qui\" (Prompt 05.25) : plus de Tarifs/FAQ sur l'accueil", async () => {
+    const { default: Home } = await import("@/app/page");
+    const html = renderToStaticMarkup(<Home />);
+    expect(html).toContain("Une solution pensée pour tous");
+    // Les tarifs et la FAQ restent fonctionnels ailleurs (/pricing, données
+    // FAQ_ITEMS conservées) — seulement retirés de cette page précise.
+    expect(html).not.toContain("Des tarifs simples");
+    expect(html).not.toContain("Questions fréquentes");
+  });
+
+  it("ne promet pas un accès à vie non garanti par le fonctionnement réel des offres", async () => {
+    const { default: Home } = await import("@/app/page");
+    const html = renderToStaticMarkup(<Home />);
+    expect(html).not.toMatch(/accès à vie/i);
+  });
 });
 
 describe("Parité des avantages Pro/Gratuit entre la landing et /pricing (vrai code)", () => {
