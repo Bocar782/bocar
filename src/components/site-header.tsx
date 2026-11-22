@@ -6,8 +6,9 @@ import { BrandMark } from "./brand-mark";
 import { useActiveSection } from "./marketing/use-active-section";
 
 const NAV_LINKS = [
-  { label: "Fonctionnalités", href: "/#fonctionnalites", id: "fonctionnalites" },
-  { label: "Tarifs", href: "/pricing", id: null },
+  { label: "Comment ça marche", href: "/#comment-ca-marche", id: "comment-ca-marche" },
+  { label: "Fonctionnalités", href: "/#avantages", id: "avantages" },
+  { label: "Tarifs", href: "/#tarifs", id: "tarifs" },
   { label: "Pourquoi nous", href: "/pourquoi-nous", id: null },
 ];
 

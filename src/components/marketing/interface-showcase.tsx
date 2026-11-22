@@ -1,4 +1,4 @@
-export function MockFrame({
+function MockFrame({
   label,
   className = "",
   children,

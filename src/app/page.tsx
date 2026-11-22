@@ -2,9 +2,15 @@ import Link from "next/link";
 import { BackgroundGlow } from "@/components/background-glow";
 import { SiteHeader } from "@/components/site-header";
 import { AudienceBenefits } from "@/components/marketing/audience-benefits";
-import { FeatureStrip } from "@/components/marketing/feature-strip";
+import { Benefits } from "@/components/marketing/benefits";
+import { ComparisonTable } from "@/components/marketing/comparison-table";
+import { Faq } from "@/components/marketing/faq";
+import { FAQ_ITEMS } from "@/components/marketing/faq-data";
+import { InterfaceShowcase } from "@/components/marketing/interface-showcase";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
+import { PricingSection } from "@/components/marketing/pricing-section";
 import { Reveal } from "@/components/marketing/reveal";
+import { TopicExamples } from "@/components/marketing/topic-examples";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { getSiteUrl } from "@/lib/site-url";
 
@@ -21,6 +27,16 @@ const SOFTWARE_APPLICATION_JSON_LD = {
     { "@type": "Offer", name: "Gratuit", price: "0", priceCurrency: "EUR" },
     { "@type": "Offer", name: "Pro", price: "9.99", priceCurrency: "EUR" },
   ],
+};
+
+const FAQ_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ_ITEMS.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: { "@type": "Answer", text: item.answer },
+  })),
 };
 
 function SectionHeading({
@@ -55,6 +71,10 @@ export default function Home() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
       />
       <BackgroundGlow />
       <SiteHeader />
@@ -91,10 +111,10 @@ export default function Home() {
             Créer ma première formation →
           </MagneticButton>
           <a
-            href="#fonctionnalites"
+            href="#comment-ca-marche"
             className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-7 py-4 text-sm font-medium text-foreground-muted transition-colors hover:border-white/20 hover:text-foreground"
           >
-            Découvrir les fonctionnalités
+            Découvrir comment ça fonctionne
           </a>
         </div>
 
@@ -103,45 +123,194 @@ export default function Home() {
           pour ta première formation complète
         </p>
 
-        {/* Démonstration visuelle — intégrée directement à la suite du hero,
-            sans bloc isolé : prolonge la même respiration visuelle plutôt
-            qu'une section à part. */}
-        <div className="mt-14 w-full sm:mt-16">
+        {/* Démonstration visuelle */}
+        <div className="mt-20 w-full sm:mt-28">
+          <p className="mb-5 text-center text-xs font-medium uppercase tracking-[0.2em] text-foreground-muted">
+            Essaie-le toi-même, en direct
+          </p>
           <Reveal>
             <WowDemo />
           </Reveal>
         </div>
 
-        {/* Fonctionnalités (bandeau condensé, remplace l'ancienne grille de
-            6 cartes — direction premium : moins de blocs, plus de clarté) */}
-        <section id="fonctionnalites" className="mt-24 w-full scroll-mt-20 sm:mt-28">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-violet-light">
-              Fonctionnalités
-            </span>
-            <h2 className="mt-3 text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-              Une vraie pédagogie, pas une réponse générée à la va-vite
-            </h2>
+        {/* Comment ça marche */}
+        <section id="comment-ca-marche" className="mt-32 w-full scroll-mt-20 sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="Comment ça marche"
+              title="Trois étapes, zéro prompt à maîtriser"
+              description="Pas besoin de savoir formuler une demande parfaite : décris simplement ton besoin."
+            />
+          </Reveal>
+          <div className="mt-12 grid w-full grid-cols-1 gap-8 sm:grid-cols-3">
+            {[
+              {
+                number: "01",
+                title: "Décris ce que tu veux apprendre",
+                description:
+                  "Un mot, une phrase, une envie floue : pas besoin de savoir formuler un prompt parfait.",
+              },
+              {
+                number: "02",
+                title: "Tavyra structure ta formation",
+                description:
+                  "Objectifs, chapitres, exemples concrets et cas pratiques, adaptés à ton niveau et à ton sujet.",
+              },
+              {
+                number: "03",
+                title: "Apprends, teste, progresse",
+                description:
+                  "Avance à ton rythme, pose tes questions à Tavyra et valide tes acquis avec un quiz final.",
+              },
+            ].map((step, i) => (
+              <Reveal key={step.number} delay={i * 100}>
+                <div className="h-full rounded-2xl border border-border-subtle bg-white/[0.02] p-6">
+                  <span className="text-sm font-mono text-accent-violet-light">
+                    {step.number}
+                  </span>
+                  <h3 className="mt-3 text-base font-semibold text-foreground">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
+                    {step.description}
+                  </p>
+                </div>
+              </Reveal>
+            ))}
           </div>
-          <div className="mt-10">
+        </section>
+
+        {/* Exemples de sujets */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="Un sujet, n'importe lequel"
+              title="Business, sciences, histoire, examens..."
+              description="Tavyra adapte la structure de la formation au domaine — voici quelques exemples parmi une infinité de sujets possibles."
+            />
+          </Reveal>
+          <div className="mt-12">
             <Reveal>
-              <FeatureStrip />
+              <TopicExamples />
             </Reveal>
           </div>
         </section>
 
-        {/* Pour qui — dernière section de la page, rien après. */}
-        <section className="mt-24 w-full sm:mt-28">
-          <SectionHeading
-            eyebrow="Pour qui"
-            title="Une solution pensée pour tous"
-            description="Que tu apprennes pour toi ou pour ton business, Tavyra s'adapte à ton objectif."
-          />
-          <div className="mt-10">
+        {/* Avantages */}
+        <section id="avantages" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
+          <div aria-hidden className="section-tint-violet" />
+          <Reveal>
+            <SectionHeading
+              eyebrow="Pourquoi Tavyra"
+              title="Une vraie pédagogie, pas une réponse générée à la va-vite"
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <Benefits />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Pour qui */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="Pour qui"
+              title="Que tu apprennes pour toi ou pour ton business"
+              description="Tavyra s'adapte à ton objectif, pas l'inverse."
+            />
+          </Reveal>
+          <div className="mt-12">
             <Reveal>
               <AudienceBenefits />
             </Reveal>
           </div>
+        </section>
+
+        {/* Comparatif */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading
+              eyebrow="La différence"
+              title="Tavyra n'est pas un chatbot, ni un cours en ligne de plus"
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <ComparisonTable />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Présentation de l'interface */}
+        <section className="relative mt-32 w-full sm:mt-40">
+          <div aria-hidden className="section-tint-blue" />
+          <Reveal>
+            <SectionHeading
+              eyebrow="À l'intérieur de Tavyra"
+              title="Un tableau de bord pensé pour apprendre, pas pour discuter"
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <InterfaceShowcase />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Tarifs */}
+        <section id="tarifs" className="relative mt-32 w-full scroll-mt-20 sm:mt-40">
+          <div aria-hidden className="section-tint-violet" />
+          <Reveal>
+            <SectionHeading
+              eyebrow="Tarifs"
+              title="Des tarifs simples"
+              description="Commence gratuitement, débloque la suite quand tu es prêt à aller plus loin."
+            />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <PricingSection />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <SectionHeading eyebrow="FAQ" title="Questions fréquentes" />
+          </Reveal>
+          <div className="mt-12">
+            <Reveal>
+              <Faq />
+            </Reveal>
+          </div>
+        </section>
+
+        {/* CTA final */}
+        <section className="mt-32 w-full sm:mt-40">
+          <Reveal>
+            <div className="relative overflow-hidden rounded-[32px] border border-border-subtle bg-background-elevated/80 px-6 py-16 text-center sm:px-16">
+              <div
+                aria-hidden
+                className="absolute inset-0 bg-gradient-to-br from-accent-blue/15 via-transparent to-accent-violet/15"
+              />
+              <div className="relative">
+                <h2 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  Prêt à apprendre autrement ?
+                </h2>
+                <p className="mx-auto mt-4 max-w-md text-balance text-foreground-muted">
+                  Ta première formation est gratuite. Décris ton sujet, Tavyra
+                  s&apos;occupe du reste.
+                </p>
+                <MagneticButton
+                  href="/signup"
+                  className="mt-8 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+                >
+                  Créer ma première formation →
+                </MagneticButton>
+              </div>
+            </div>
+          </Reveal>
         </section>
       </main>
 
