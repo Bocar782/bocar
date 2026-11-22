@@ -229,7 +229,7 @@ export default async function Home() {
         </section>
 
         {/* FAQ — Prompt 05.31, bande teintée, sous-ensemble court partagé
-            avec /pricing, dernière section de la page */}
+            avec /pricing */}
         <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
           <div className="mx-auto max-w-6xl px-6">
             <SectionHeading eyebrow="FAQ" title="Questions fréquentes" />
@@ -239,6 +239,31 @@ export default async function Home() {
               </Reveal>
             </div>
           </div>
+        </section>
+
+        {/* CTA final — Prompt 05.32, toute dernière section avant le footer */}
+        <section className="relative mx-auto mt-24 max-w-6xl px-6 sm:mt-28">
+          <Reveal>
+            <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card px-6 py-16 text-center sm:px-16">
+              <div
+                aria-hidden
+                className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] via-accent-violet to-[#8b5cf6]"
+              />
+              <h2 className="text-balance font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                Prêt à apprendre autrement ?
+              </h2>
+              <p className="mx-auto mt-4 max-w-md text-balance text-foreground-muted">
+                Ta première formation est gratuite. Décris ton sujet, Tavyra s&apos;occupe du
+                reste.
+              </p>
+              <MagneticButton
+                href="/signup"
+                className="mt-8 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_-10px_rgba(147,51,234,0.55)] transition-all hover:brightness-110"
+              >
+                Créer ma première formation →
+              </MagneticButton>
+            </div>
+          </Reveal>
         </section>
       </main>
 
