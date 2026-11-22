@@ -32,7 +32,7 @@ const FEATURES = [
 
 export function FeatureStrip() {
   return (
-    <div className="grid grid-cols-1 divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-subtle bg-background-elevated shadow-[0_1px_3px_rgba(16,15,25,0.05)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+    <div className="grid grid-cols-1 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
       {FEATURES.map((feature) => (
         <div key={feature.title} className="flex flex-col gap-3 p-6">
           <feature.Icon width={20} height={20} className="text-accent-violet-light" />

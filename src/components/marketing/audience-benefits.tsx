@@ -16,20 +16,18 @@ const AUDIENCES = [
       "Vérifier ce que tu as vraiment compris avec un quiz généré à partir du cours.",
     ],
     preview: (
-      <div className="theme-dark-accent">
-        <MockFrame label="Formation">
-          <span className="text-[11px] font-mono text-accent-violet-light">Chapitre 2</span>
-          <p className="mt-1 text-sm font-semibold text-foreground">La diversification du portefeuille</p>
-          <div className="mt-2 rounded-lg border border-accent-violet/25 bg-accent-violet/[0.08] p-2.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-violet-light">
-              À retenir
-            </span>
-            <p className="mt-1 text-xs text-foreground-muted">
-              Ne jamais tout miser sur un seul actif ou secteur.
-            </p>
-          </div>
-        </MockFrame>
-      </div>
+      <MockFrame label="Formation">
+        <span className="text-[11px] font-mono text-accent-violet-light">Chapitre 2</span>
+        <p className="mt-1 text-sm font-semibold text-foreground">La diversification du portefeuille</p>
+        <div className="mt-2 rounded-lg border border-accent-violet/25 bg-accent-violet/[0.08] p-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-violet-light">
+            À retenir
+          </span>
+          <p className="mt-1 text-xs text-foreground-muted">
+            Ne jamais tout miser sur un seul actif ou secteur.
+          </p>
+        </div>
+      </MockFrame>
     ),
   },
   {
@@ -41,17 +39,15 @@ const AUDIENCES = [
       "Aller plus loin avec une analyse approfondie de cas réels (plan Pro).",
     ],
     preview: (
-      <div className="theme-dark-accent">
-        <MockFrame label="Générateur">
-          <p className="text-sm text-foreground-muted">Que veux-tu apprendre ?</p>
-          <p className="typing-caret mt-2 text-base text-foreground">Lever des fonds pour ma startup</p>
-          <div className="mt-4 flex justify-end">
-            <span className="rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2 text-xs font-semibold text-white">
-              Générer ma formation
-            </span>
-          </div>
-        </MockFrame>
-      </div>
+      <MockFrame label="Générateur">
+        <p className="text-sm text-foreground-muted">Que veux-tu apprendre ?</p>
+        <p className="typing-caret mt-2 text-base text-foreground">Lever des fonds pour ma startup</p>
+        <div className="mt-4 flex justify-end">
+          <span className="rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2 text-xs font-semibold text-white">
+            Générer ma formation
+          </span>
+        </div>
+      </MockFrame>
     ),
   },
 ];
@@ -62,7 +58,7 @@ export function AudienceBenefits() {
       {AUDIENCES.map((audience) => (
         <div
           key={audience.title}
-          className="flex h-full flex-col gap-6 rounded-xl border border-border-subtle bg-background-elevated p-6 shadow-[0_1px_3px_rgba(16,15,25,0.05)] sm:p-8"
+          className="flex h-full flex-col gap-6 rounded-2xl border border-border-subtle bg-white/[0.02] p-6 sm:p-8"
         >
           <div>
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">

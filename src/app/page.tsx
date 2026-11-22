@@ -51,17 +51,17 @@ function SectionHeading({
 
 export default function Home() {
   return (
-    <div className="theme-landing-light relative flex-1 overflow-x-clip bg-background text-foreground">
+    <div className="relative flex-1 overflow-x-clip">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
       />
-      <BackgroundGlow variant="light" />
-      <SiteHeader variant="light" />
+      <BackgroundGlow />
+      <SiteHeader />
 
       {/* Hero */}
       <main className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 pb-32 pt-16 sm:pt-20">
-        <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-background-elevated px-4 py-1.5 text-xs text-foreground-muted shadow-sm">
+        <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-white/[0.03] px-4 py-1.5 text-xs text-foreground-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-accent-violet" />
           Propulsé par l&apos;IA — pas un chatbot, une vraie formation
         </span>
@@ -92,7 +92,7 @@ export default function Home() {
           </MagneticButton>
           <a
             href="#fonctionnalites"
-            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-7 py-4 text-sm font-medium text-foreground-muted transition-colors hover:border-accent-violet/30 hover:text-foreground"
+            className="inline-flex items-center gap-2 rounded-full border border-border-subtle px-7 py-4 text-sm font-medium text-foreground-muted transition-colors hover:border-white/20 hover:text-foreground"
           >
             Découvrir les fonctionnalités
           </a>
@@ -105,11 +105,8 @@ export default function Home() {
 
         {/* Démonstration visuelle — intégrée directement à la suite du hero,
             sans bloc isolé : prolonge la même respiration visuelle plutôt
-            qu'une section à part. Reste volontairement sombre (accent de
-            contraste "produit réel" sur la page claire, Prompt 05.26) via
-            theme-dark-accent, qui réaffirme localement les tokens sombres
-            d'origine sans dépendre du thème clair englobant. */}
-        <div className="theme-dark-accent mt-14 w-full sm:mt-16">
+            qu'une section à part. */}
+        <div className="mt-14 w-full sm:mt-16">
           <Reveal>
             <WowDemo />
           </Reveal>

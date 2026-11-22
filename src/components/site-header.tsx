@@ -13,8 +13,7 @@ const NAV_LINKS = [
 
 const SECTION_IDS = NAV_LINKS.map((link) => link.id).filter((id): id is string => id !== null);
 
-export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" }) {
-  const isLight = variant === "light";
+export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const activeSection = useActiveSection(SECTION_IDS);
@@ -32,7 +31,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
     <header
       className={`sticky top-0 z-20 w-full transition-colors duration-300 ${
         scrolled
-          ? `border-b border-border-subtle backdrop-blur-xl ${isLight ? "bg-background/85" : "bg-background/80"}`
+          ? "border-b border-border-subtle bg-background/80 backdrop-blur-xl"
           : "border-b border-transparent"
       }`}
     >
@@ -65,11 +64,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
           </Link>
           <Link
             href="/signup"
-            className={
-              isLight
-                ? "rounded-full border border-border-subtle bg-background-elevated px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-accent-violet/30 hover:text-accent-violet"
-                : "rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
-            }
+            className="rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
           >
             Essayer gratuitement
           </Link>
@@ -80,11 +75,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
           onClick={() => setOpen((v) => !v)}
           aria-label="Menu"
           aria-expanded={open}
-          className={
-            isLight
-              ? "flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-background-elevated text-foreground shadow-sm lg:hidden"
-              : "flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-white/5 text-foreground lg:hidden"
-          }
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-white/5 text-foreground lg:hidden"
         >
           <svg aria-hidden width="18" height="18" viewBox="0 0 18 18" fill="none">
             {open ? (
@@ -114,9 +105,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
-                  isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
-                }`}
+                className="rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
               >
                 {link.label}
               </a>
@@ -124,9 +113,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
             <Link
               href="/login"
               onClick={() => setOpen(false)}
-              className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
-                isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
-              }`}
+              className="rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:bg-white/5 hover:text-foreground"
             >
               Connexion
             </Link>
