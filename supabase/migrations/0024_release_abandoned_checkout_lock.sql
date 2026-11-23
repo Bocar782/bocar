@@ -29,6 +29,12 @@
 -- 3. Relit status au moment de l'exécution et refuse si 'active'/'trialing'
 --    — ne touche jamais un abonnement réellement actif, même si l'appelant
 --    s'est trompé.
+-- 3bis. (Prompt 06.25, durcissement suite à une revue de sécurité ciblée)
+--    Au-delà de 'active'/'trialing', liste BLANCHE de statuts sûrs pour
+--    tout le reste, identique à SAFE_SUBSCRIPTION_STATUSES (route.ts) :
+--    seuls 'canceled' et 'incomplete_expired' autorisent la libération —
+--    'incomplete', 'past_due', 'unpaid', 'paused', une valeur NULL ou tout
+--    statut futur inconnu de Stripe bloquent, par défaut.
 -- 4. (Prompt 06.21/06.24, durcissement suite à des revues de sécurité sur
 --    les conditions de concurrence) Âge minimum obligatoire du verrou avant
 --    toute libération, appliqué ICI, indépendamment de tout contrôle côté
@@ -74,15 +80,40 @@ begin
   where user_id = p_user_id;
 
   -- Ne touche jamais un abonnement réellement actif, quoi qu'ait vérifié
-  -- l'appelant côté Stripe.
+  -- l'appelant côté Stripe. Message distinct ('already_pro') pour ce cas
+  -- précis, le plus fréquent et le plus parlant à lire dans les logs.
   if v_status in ('active', 'trialing') then
     return query select false, 'already_pro'::text;
     return;
   end if;
 
-  -- Rien à libérer.
+  -- Rien à libérer. Couvre aussi le cas où AUCUNE ligne n'existe pour cet
+  -- utilisateur (select ... into ne lève pas d'erreur ; v_status et
+  -- v_pending_checkout_at restent simplement NULL) : sûr par construction,
+  -- puisqu'il n'y a alors rien à libérer, quel que soit v_status.
   if v_pending_checkout_at is null then
     return query select false, 'no_pending_checkout'::text;
+    return;
+  end if;
+
+  -- Prompt 06.25 (durcissement, suite à une revue de sécurité ciblée sur
+  -- cette incohérence précise) : LISTE BLANCHE de statuts explicitement
+  -- sûrs, strictement identique à SAFE_SUBSCRIPTION_STATUSES (route.ts).
+  -- Avant ce correctif, seuls 'active'/'trialing' étaient bloqués
+  -- (liste NOIRE) : un statut local 'incomplete' (valeur par défaut posée
+  -- par reserve_checkout_session, 0022, pour tout nouveau compte), ou
+  -- 'past_due'/'unpaid' (paiement en échec avec nouvelle tentative
+  -- automatique Stripe), ou 'paused', ou tout statut futur que Stripe
+  -- pourrait introduire, n'étaient PAS bloqués par cette RPC — alors que
+  -- le code applicatif les traite tous comme non sûrs. Inversé en liste
+  -- BLANCHE : seuls 'canceled' et 'incomplete_expired' sont sûrs ; tout le
+  -- reste bloque, y compris une valeur NULL (défensif : la colonne
+  -- `status` est NOT NULL par contrainte de schéma — 0004_subscriptions.sql
+  -- — donc NULL ne devrait jamais être atteint ici en pratique, mais ce
+  -- code ne suppose jamais que cette contrainte restera inchangée pour
+  -- autant) et tout statut inconnu ou ambigu.
+  if v_status is null or v_status not in ('canceled', 'incomplete_expired') then
+    return query select false, 'subscription_status_not_safe'::text;
     return;
   end if;
 
