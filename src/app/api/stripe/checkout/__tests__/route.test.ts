@@ -33,7 +33,13 @@ const mockReserveRpc = vi.fn((fnName: string, args: unknown) => {
     single: async () => ({ data: reservationError ? null : reservationResult, error: reservationError }),
   };
 });
-const mockUpdate = vi.fn(() => ({ eq: async () => ({ data: null, error: null }) }));
+const mockUpdate = vi.fn(() => ({
+  eq: () => ({
+    select: async () => ({ data: [{ user_id: "user-1" }], error: null }),
+    then: (resolve: (value: { data: null; error: null }) => void) =>
+      resolve({ data: null, error: null }),
+  }),
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
