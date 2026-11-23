@@ -119,3 +119,42 @@ export function IconMoon(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+// Prompt 06.13 : icônes pour la page /dashboard/parametres (identifiant,
+// sécurité, facturation).
+export function IconSettings(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6" />
+    </Base>
+  );
+}
+
+export function IconMail(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="m4 7 8 6 8-6" />
+    </Base>
+  );
+}
+
+export function IconLock(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    </Base>
+  );
+}
+
+export function IconCreditCard(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="2.5" y="5.5" width="19" height="13" rx="2.2" />
+      <path d="M2.5 10h19" />
+      <path d="M6 14.5h4" />
+    </Base>
+  );
+}

@@ -6,10 +6,13 @@ import { Faq } from "@/components/marketing/faq";
 import { SHORT_FAQ_ITEMS } from "@/components/marketing/faq-data";
 import { FeatureBand } from "@/components/marketing/feature-band";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
+import { HowItWorks } from "@/components/marketing/how-it-works";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
 import { PricingCards } from "@/components/marketing/pricing-cards";
 import { Reveal } from "@/components/marketing/reveal";
+import { StickyMobileCta } from "@/components/marketing/sticky-mobile-cta";
 import { Testimonials } from "@/components/marketing/testimonials";
+import { TrustStrip } from "@/components/marketing/trust-strip";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { isOnFreePlan } from "@/lib/courses/plan";
 import { getSiteUrl } from "@/lib/site-url";
@@ -121,14 +124,27 @@ export default async function Home() {
               </a>
             </div>
 
-            <p className="mt-6 text-xs text-foreground-muted">
-              <span className="font-semibold text-foreground">Gratuit, sans carte bancaire</span>{" "}
-              pour ta première formation complète
-            </p>
+            <TrustStrip className="mt-7" />
           </div>
 
           <div className="relative z-10">
             <HeroShowcase />
+          </div>
+        </section>
+
+        {/* Comment ça marche — Prompt 06.13, reprend le déroulé réel
+            (diagnostic → plan → formation) avant la démo, pour que le
+            visiteur sache à quoi s'attendre avant de la voir à l'œuvre. */}
+        <section className="relative mx-auto mt-24 max-w-6xl px-6 sm:mt-28">
+          <SectionHeading
+            eyebrow="Comment ça marche"
+            title="Trois étapes, pas plus"
+            description="Pas de prompt à deviner : un déroulé guidé, du sujet à la formation finie."
+          />
+          <div className="mt-12">
+            <Reveal>
+              <HowItWorks />
+            </Reveal>
           </div>
         </section>
 
@@ -245,6 +261,7 @@ export default async function Home() {
               <PricingCards user={user} onFreePlan={onFreePlan} />
             </Reveal>
           </div>
+          <TrustStrip className="mt-10 justify-center" />
         </section>
 
         {/* FAQ — Prompt 05.31, bande teintée, sous-ensemble court partagé
@@ -295,6 +312,8 @@ export default async function Home() {
           </div>
         </div>
       </footer>
+
+      <StickyMobileCta />
     </div>
   );
 }

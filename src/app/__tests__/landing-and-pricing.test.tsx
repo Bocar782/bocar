@@ -29,7 +29,7 @@ describe("Landing (vrai code, page.tsx) — hero honnête", () => {
     const { default: Home } = await import("@/app/page");
     const html = renderToStaticMarkup(await Home());
     expect(html).not.toMatch(/\+\s*5\s*000\s*utilisateurs/i);
-    expect(html).toContain("Gratuit, sans carte bancaire");
+    expect(html).toContain("Sans carte bancaire pour commencer");
   });
 
   it("ne contient plus aucun lien mort vers Confidentialité/CGU", async () => {

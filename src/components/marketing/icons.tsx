@@ -143,3 +143,35 @@ export function IconGraduationCap(props: SVGProps<SVGSVGElement>) {
     </Base>
   );
 }
+
+// Prompt 06.13 : badges de réassurance (sans carte bancaire, paiement
+// sécurisé, résiliation libre) près du CTA et des tarifs.
+export function IconShieldCheck(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <path d="M12 3.5 5 6v5.5c0 4.2 3 7.2 7 9 4-1.8 7-4.8 7-9V6Z" />
+      <path d="m9 12 2.2 2.2L15.5 10" />
+    </Base>
+  );
+}
+
+export function IconCreditCardOff(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <rect x="2.5" y="5.5" width="19" height="13" rx="2.2" />
+      <path d="M2.5 10h19" />
+      <path d="M6 14.5h4" />
+    </Base>
+  );
+}
+
+export function IconRefreshCircle(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 10.5a4 4 0 0 1 6.7-1.8l1.3 1.3" />
+      <path d="M15.5 13.5a4 4 0 0 1-6.7 1.8l-1.3-1.3" />
+      <path d="M16.3 8.5v2h-2M7.7 15.5v-2h2" />
+    </Base>
+  );
+}

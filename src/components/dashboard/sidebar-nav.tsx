@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconChat } from "@/components/marketing/icons";
-import { IconHome, IconLibrary, IconPlusCircle, IconUser } from "./icons";
+import { IconHome, IconLibrary, IconPlusCircle, IconSettings, IconUser } from "./icons";
 import type { ComponentType, SVGProps } from "react";
 
 type NavItem = {
@@ -23,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Créer une formation", href: "/dashboard/creer", icon: IconPlusCircle },
   { label: "Assistant", href: "/dashboard/assistant", icon: IconChat },
   { label: "Profil", href: "/dashboard/profil", icon: IconUser },
+  { label: "Paramètres", href: "/dashboard/parametres", icon: IconSettings },
 ];
 
 function isActive(pathname: string, href: string) {
