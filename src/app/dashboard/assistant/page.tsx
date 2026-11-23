@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AssistantChatPanel } from "@/components/dashboard/assistant-chat-panel";
+import { CourseCover } from "@/components/dashboard/course-cover";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { IconChat, IconGraduationCap } from "@/components/marketing/icons";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { computeCourseAccess } from "@/lib/courses/access";
 import { isOnFreePlan } from "@/lib/courses/plan";
 import { getCourseById, listCourses } from "@/lib/courses/persist";
+import { computeCourseProgress } from "@/lib/courses/progress";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 
@@ -63,8 +65,9 @@ export default async function AssistantPage(props: PageProps<"/dashboard/assista
           Assistant
         </h1>
         <p className="mt-1 text-sm text-foreground-muted">
-          Choisis une formation pour poser tes questions à Tavyra — les réponses tiennent compte
-          du contenu réel de la formation.
+          {courses.length > 0
+            ? `${courses.length} formation${courses.length > 1 ? "s" : ""} disponible${courses.length > 1 ? "s" : ""} pour poser tes questions à Tavyra — les réponses tiennent compte du contenu réel de la formation choisie.`
+            : "Choisis une formation pour poser tes questions à Tavyra — les réponses tiennent compte du contenu réel de la formation."}
         </p>
 
         {courses.length === 0 ? (
@@ -76,24 +79,27 @@ export default async function AssistantPage(props: PageProps<"/dashboard/assista
             action={<Button href="/dashboard/creer">Créer ma première formation</Button>}
           />
         ) : (
-          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[18rem_1fr]">
+          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[19rem_1fr]">
             <div className="space-y-2">
               {courses.map((course) => {
                 const active = course.id === selectedCourseId;
+                const { percent } = computeCourseProgress(course);
                 return (
                   <Link
                     key={course.id}
                     href={`/dashboard/assistant?course=${course.id}`}
-                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors ${
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors ${
                       active
                         ? "border-accent-violet/40 bg-accent-violet/10"
                         : "border-border-subtle bg-background-card hover:border-overlay/20"
                     }`}
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
-                      <IconGraduationCap width={18} height={18} />
-                    </span>
-                    <span className="min-w-0">
+                    <CourseCover
+                      seed={course.id}
+                      icon={<IconGraduationCap width={16} height={16} />}
+                      className="h-10 w-10 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">
                         {course.title}
                       </span>
@@ -101,6 +107,11 @@ export default async function AssistantPage(props: PageProps<"/dashboard/assista
                         {course.domain}
                       </span>
                     </span>
+                    {percent > 0 && (
+                      <span className="shrink-0 text-xs font-medium text-foreground-muted">
+                        {percent}%
+                      </span>
+                    )}
                   </Link>
                 );
               })}

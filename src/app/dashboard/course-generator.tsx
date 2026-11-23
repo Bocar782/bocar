@@ -102,6 +102,17 @@ function JourneyBreadcrumb({ status }: { status: Status }) {
 const MAX_LENGTH = 500;
 const MAX_ANSWER_LENGTH = 500;
 const SESSION_STORAGE_KEY = "tavyra:course-generation";
+
+// Prompt 06.9 : simples suggestions pour aider à démarrer — jamais
+// soumises automatiquement (l'utilisateur garde la main et peut modifier
+// le texte avant de valider), aucune n'est spécifique à un domaine plus
+// qu'un autre.
+const EXAMPLE_TOPICS = [
+  "Les bases de la bourse pour débutant",
+  "Le SEO pour un petit site",
+  "Négocier son salaire",
+  "La gestion de projet Agile",
+];
 // Après ce nombre d'échecs consécutifs d'un appel "étape suivante"
 // (panne réseau, erreur transitoire côté serveur), on arrête de
 // réessayer automatiquement plutôt que de le faire indéfiniment sans que
@@ -841,6 +852,12 @@ export function CourseGenerator({
     );
   }
 
+  function applyExampleTopic(example: string) {
+    setTopic(example);
+    resizeTextarea();
+    textareaRef.current?.focus();
+  }
+
   return (
     <div className="w-full max-w-2xl">
       {error && <Callout tone="error" className="mb-4">{error}</Callout>}
@@ -874,6 +891,20 @@ export function CourseGenerator({
           </div>
         </div>
       </form>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-foreground-muted">Exemples :</span>
+        {EXAMPLE_TOPICS.map((example) => (
+          <button
+            key={example}
+            type="button"
+            onClick={() => applyExampleTopic(example)}
+            className="rounded-full border border-border-subtle bg-overlay/[0.02] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-accent-violet/40 hover:text-foreground"
+          >
+            {example}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

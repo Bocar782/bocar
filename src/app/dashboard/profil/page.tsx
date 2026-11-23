@@ -1,12 +1,51 @@
 import { redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
+import { IconChartLine, IconGraduationCap } from "@/components/marketing/icons";
 import { PricingCards } from "@/components/marketing/pricing-cards";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { isOnFreePlan } from "@/lib/courses/plan";
+import { getUsageStatuses, isOnFreePlan, type UsageStatus } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
+
+function UsageCard({
+  icon,
+  label,
+  usage,
+}: {
+  icon: ReactNode;
+  label: string;
+  usage: UsageStatus;
+}) {
+  const percentUsed = usage.limit > 0 ? Math.round((usage.used / usage.limit) * 100) : 0;
+  const resetLabel = usage.resetsAt
+    ? new Date(usage.resetsAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })
+    : null;
+  return (
+    <div className="rounded-2xl border border-border-subtle bg-background-card p-5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-xs text-foreground-muted">
+            {usage.used}/{usage.limit} utilisée{usage.used > 1 ? "s" : ""}
+            {resetLabel ? ` · renouvelé le ${resetLabel}` : usage.isPro ? "" : " (à vie)"}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-overlay/[0.06]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet"
+          style={{ width: `${Math.min(100, percentUsed)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -18,7 +57,10 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
-  const onFreePlan = await isOnFreePlan(supabase, user.id).catch(() => true);
+  const [onFreePlan, usageStatuses] = await Promise.all([
+    isOnFreePlan(supabase, user.id).catch(() => true),
+    getUsageStatuses(supabase, user.id).catch(() => null),
+  ]);
   const memberSince = user.created_at
     ? new Date(user.created_at).toLocaleDateString("fr-FR", {
         day: "numeric",
@@ -73,6 +115,26 @@ export default async function ProfilePage() {
             </button>
           </form>
         </Card>
+
+        {usageStatuses && (
+          <div className="mt-10">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+              Utilisation
+            </h2>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <UsageCard
+                icon={<IconGraduationCap width={18} height={18} />}
+                label="Formations"
+                usage={usageStatuses.course}
+              />
+              <UsageCard
+                icon={<IconChartLine width={18} height={18} />}
+                label="Analyses approfondies"
+                usage={usageStatuses.analysis}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="mt-10">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
