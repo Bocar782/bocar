@@ -136,15 +136,31 @@ export async function POST(request: Request) {
   // ne voie la vraie erreur.
   try {
     let customerId = reservation.existing_customer_id;
-    if (!customerId) {
-      customerId = await createAndPersistCustomer(stripe, admin, { id: user.id, email: user.email }, log);
-    }
     log("5_client_stripe_pret", { customerId });
 
+    // Prompt 06.27 (correctif latence, suite à un signalement utilisateur
+    // réel : le bouton "S'abonner" restait bloqué sur "Chargement..." pour
+    // tout nouveau compte, parfois au point de sembler figé). Avant ce
+    // correctif, un nouveau compte (`customerId` encore inconnu) déclenchait
+    // DEUX appels Stripe séquentiels avant toute redirection possible :
+    // `stripe.customers.create()` PUIS `stripe.checkout.sessions.create()`
+    // — chacun soumis au réseau et au timeout du SDK (80s par défaut). En
+    // mode `subscription`, Stripe Checkout crée de toute façon un Customer
+    // automatiquement si aucun `customer` n'est fourni (`customer_email`
+    // préremplit simplement son adresse) : un seul appel suffit désormais
+    // pour un nouveau compte, ce qui réduit d'environ moitié le délai avant
+    // redirection et élimine un point d'échec réseau intermédiaire. Le
+    // nouvel identifiant client est lu sur `session.customer` (déjà
+    // disponible dès la création de la session, pas seulement après
+    // paiement) puis persisté en base, comme avant.
     let session;
     try {
       session = await stripe.checkout.sessions.create(
-        buildSessionParams(customerId, siteUrl, user.id),
+        buildSessionParams(
+          customerId ? { id: customerId } : { email: user.email },
+          siteUrl,
+          user.id,
+        ),
       );
       log("6_session_creee", { sessionId: session.id });
     } catch (error) {
@@ -154,16 +170,30 @@ export async function POST(request: Request) {
       // que de laisser planter tout nouvel essai indéfiniment (l'id invalide
       // resterait en base pour toujours), on détecte précisément ce cas
       // (`resource_missing` sur le paramètre `customer`) et on se
-      // rétablit : on efface la référence invalide, on recrée un vrai
-      // customer, et on retente UNE fois — jamais de boucle infinie.
+      // rétablit : on efface la référence invalide et on retente UNE fois,
+      // en laissant de nouveau Stripe créer un customer frais via
+      // `customer_email` — jamais de boucle infinie.
       if (!isMissingCustomerError(error)) throw error;
 
       log("6_session_echec_customer_orphelin", { customerId });
-      customerId = await createAndPersistCustomer(stripe, admin, { id: user.id, email: user.email }, log);
+      customerId = null;
       session = await stripe.checkout.sessions.create(
-        buildSessionParams(customerId, siteUrl, user.id),
+        buildSessionParams({ email: user.email }, siteUrl, user.id),
       );
-      log("6_session_creee_apres_reparation", { sessionId: session.id, customerId });
+      log("6_session_creee_apres_reparation", { sessionId: session.id });
+    }
+
+    // Persiste le customer Stripe nouvellement créé par Checkout lui-même
+    // (compte neuf, ou réparation après orphelin ci-dessus) — évite qu'un
+    // prochain essai en recrée un autre (orphelin côté Stripe). Best-effort,
+    // comme avant : un échec ici n'est jamais bloquant (le webhook
+    // renseignera ce champ dès qu'il arrivera).
+    if (!customerId) {
+      const newCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+      if (newCustomerId) {
+        customerId = newCustomerId;
+        await persistStripeCustomerId(admin, user.id, newCustomerId, attemptId, log);
+      }
     }
 
     if (!session.url) {
@@ -241,13 +271,15 @@ async function releaseCheckoutLock(
 }
 
 function buildSessionParams(
-  customerId: string,
+  customer: { id: string } | { email: string },
   siteUrl: string,
   userId: string,
 ): Stripe.Checkout.SessionCreateParams {
   return {
     mode: "subscription",
-    customer: customerId,
+    ...("id" in customer
+      ? { customer: customer.id }
+      : { customer_email: customer.email }),
     line_items: [{ price: getStripePriceId(), quantity: 1 }],
     success_url: `${siteUrl}/dashboard?upgraded=1`,
     cancel_url: `${siteUrl}/pricing`,
@@ -257,40 +289,35 @@ function buildSessionParams(
   };
 }
 
-async function createAndPersistCustomer(
-  stripe: Stripe,
+// Persiste l'id du customer Stripe (créé automatiquement par Checkout lui-
+// même, voir 06.27 ci-dessus) : évite d'en recréer un autre (orphelin côté
+// Stripe) si l'utilisateur relance un Checkout avant que le webhook de
+// confirmation n'arrive. Best-effort, comme avant 06.27 : un échec ici n'est
+// jamais bloquant pour la suite (le webhook renseignera de toute façon ce
+// champ dès qu'il arrivera), mais il reste loggé s'il se produit.
+async function persistStripeCustomerId(
   admin: ReturnType<typeof createAdminClient>,
-  user: { id: string; email: string },
+  userId: string,
+  customerId: string,
+  attemptId: string,
   log: (step: string, details?: Record<string, unknown>) => void,
-): Promise<string> {
-  const customerId = (
-    await stripe.customers.create({
-      email: user.email,
-      metadata: { supabase_user_id: user.id },
-    })
-  ).id;
-  log("5_client_stripe_cree", { customerId });
-
-  // Persiste le nouveau customer dès maintenant : évite d'en recréer un
-  // autre (orphelin côté Stripe) si l'utilisateur relance un Checkout
-  // avant que le webhook de confirmation n'arrive. Un échec ici n'est pas
-  // bloquant pour la suite (le webhook renseignera de toute façon ce champ
-  // dès qu'il arrivera), mais il est désormais loggé s'il se produit.
+): Promise<void> {
   const { error } = await admin
     .from("subscriptions")
     .update({ stripe_customer_id: customerId })
-    .eq("user_id", user.id);
+    .eq("user_id", userId);
 
   if (error) {
-    console.error("[stripe/checkout] échec de la persistance du customer Stripe (non bloquant)", {
-      userId: user.id,
+    console.error(`[stripe/checkout:${attemptId}] échec de la persistance du customer Stripe (non bloquant)`, {
+      userId,
       customerId,
       message: error.message,
       code: error.code,
     });
+    return;
   }
 
-  return customerId;
+  log("5b_client_stripe_persiste", { customerId });
 }
 
 function isMissingCustomerError(error: unknown): boolean {

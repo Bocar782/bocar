@@ -214,21 +214,27 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
     });
 
-    it("persiste le nouveau customer Stripe créé, pour éviter un doublon au prochain essai", async () => {
+    it("06.27 : ne crée JAMAIS un customer Stripe séparément pour un nouveau compte — laisse Checkout le créer en un seul appel (via customer_email), puis persiste l'id lu sur la session", async () => {
       reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+      mockStripeCheckoutSessionsCreate.mockResolvedValueOnce({
+        url: "https://checkout.stripe.com/session/abc",
+        customer: "cus_new_123",
+      });
 
       await callRoute("http://localhost:3000");
 
-      expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1);
+      expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
+      const [[sessionArgs]] = mockStripeCheckoutSessionsCreate.mock.calls;
+      expect(sessionArgs.customer).toBeUndefined();
+      expect(sessionArgs.customer_email).toBe("user@test.local");
       expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_new_123" });
     });
   });
 
   describe("correctif 06.17 : se rétablit si le customer Stripe persisté est orphelin", () => {
-    it("recrée un customer et retente une fois si checkout.sessions.create() échoue avec 'No such customer'", async () => {
+    it("retente une fois (via customer_email, sans appel séparé à customers.create, 06.27) si checkout.sessions.create() échoue avec 'No such customer'", async () => {
       reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_orphan_old" };
-      mockStripeCustomersCreate.mockReset();
-      mockStripeCustomersCreate.mockResolvedValue({ id: "cus_fresh_new" });
       mockStripeCheckoutSessionsCreate.mockReset();
       mockStripeCheckoutSessionsCreate
         .mockRejectedValueOnce(
@@ -238,17 +244,18 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
             param: "customer",
           }),
         )
-        .mockResolvedValueOnce({ url: "https://checkout.stripe.com/session/retry" });
+        .mockResolvedValueOnce({ url: "https://checkout.stripe.com/session/retry", customer: "cus_fresh_new" });
 
       const response = await callRoute("http://localhost:3000");
 
       expect(response.status).toBe(303);
       expect(response.headers.get("location")).toBe("https://checkout.stripe.com/session/retry");
-      expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1);
+      expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
       expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_fresh_new" });
       expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(2);
       const [[retryArgs]] = mockStripeCheckoutSessionsCreate.mock.calls.slice(1);
-      expect(retryArgs.customer).toBe("cus_fresh_new");
+      expect(retryArgs.customer).toBeUndefined();
+      expect(retryArgs.customer_email).toBe("user@test.local");
     });
 
     it("ne masque pas une autre erreur Stripe sous prétexte de 'customer' manquant", async () => {
@@ -283,15 +290,15 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockUpdate).toHaveBeenCalledWith({ pending_checkout_at: null });
     });
 
-    it("relâche le verrou et renvoie 502 si stripe.customers.create() échoue", async () => {
+    it("06.27 : relâche le verrou et renvoie 502 si checkout.sessions.create() échoue pour un nouveau compte (plus d'appel customers.create() séparé)", async () => {
       reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
-      mockStripeCustomersCreate.mockRejectedValueOnce(new Error("Invalid API key"));
+      mockStripeCheckoutSessionsCreate.mockRejectedValueOnce(new Error("Invalid API key"));
 
       const response = await callRoute("http://localhost:3000");
 
       expect(response.status).toBe(502);
       expect(mockUpdate).toHaveBeenCalledWith({ pending_checkout_at: null });
-      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+      expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
     });
   });
 
