@@ -551,16 +551,6 @@ export function CourseGenerator({
     }
   }
 
-  // Parcours "configuration rapide" : comportement STRICTEMENT identique à
-  // avant le Prompt 05.18.1 côté intention (pas de diagnostic ni de
-  // validation de plan) — le plan est désormais construit côté serveur
-  // dans "start" plutôt que dans cette même requête que la rédaction.
-  async function handleQuickSubmit() {
-    const trimmed = topic.trim();
-    if (!trimmed || status !== "idle") return;
-    await startGeneration({ topic: trimmed });
-  }
-
   function handleFormSubmit(formEvent: FormEvent<HTMLFormElement>) {
     formEvent.preventDefault();
     startDiagnostic();
@@ -711,14 +701,6 @@ export function CourseGenerator({
               </Button>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => startGeneration({ topic: topic.trim() })}
-            className="mt-6 block text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground"
-          >
-            Passer directement à la configuration rapide (sans diagnostic)
-          </button>
         </Card>
       </div>
     );
@@ -885,16 +867,8 @@ export function CourseGenerator({
               {topic.length}/{MAX_LENGTH}
             </span>
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                disabled={isEmpty}
-                onClick={handleQuickSubmit}
-                className="text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Configuration rapide (sans diagnostic)
-              </button>
               <Button type="submit" disabled={isEmpty}>
-                Créer avec le diagnostic guidé
+                Créer ma formation
               </Button>
             </div>
           </div>

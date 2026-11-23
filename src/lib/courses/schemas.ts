@@ -115,8 +115,9 @@ export type DiagnosticQuestion = z.infer<typeof DiagnosticQuestionSchema>;
 /**
  * Décision du modèle à chaque étape du diagnostic : soit une question de
  * plus, soit `done: true` (assez d'informations recueillies). Le CODE
- * (jamais seulement ce champ) impose en plus un minimum de 3 et un maximum
- * de 5 questions au total — voir `generateDiagnosticQuestion`.
+ * (jamais seulement ce champ) impose en plus un minimum et un maximum de
+ * questions au total — voir MIN_DIAGNOSTIC_QUESTIONS/MAX_DIAGNOSTIC_QUESTIONS
+ * et `generateDiagnosticQuestion` dans generate.ts.
  */
 export const DiagnosticStepSchema = z.object({
   done: z.boolean(),

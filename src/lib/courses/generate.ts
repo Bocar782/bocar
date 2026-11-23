@@ -206,11 +206,13 @@ async function analyzeTopic(
 // --- Diagnostic adaptatif (Prompt 05.18.1) ---
 
 // Bornes imposées en CODE, jamais seulement dans le prompt (même principe
-// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 3ᵉ
+// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 7ᵉ
 // question répondue, mais jamais avant ; elle ne peut jamais en poser plus
-// de 5, même si elle l'annonce.
-export const MIN_DIAGNOSTIC_QUESTIONS = 3;
-export const MAX_DIAGNOSTIC_QUESTIONS = 5;
+// de 12, même si elle l'annonce. Volontairement élevé (jamais un nombre
+// fixe annoncé à l'utilisateur) : le diagnostic doit creuser assez pour que
+// la formation générée corresponde vraiment au niveau réel de la personne.
+export const MIN_DIAGNOSTIC_QUESTIONS = 7;
+export const MAX_DIAGNOSTIC_QUESTIONS = 12;
 
 /**
  * Génère la PROCHAINE question de diagnostic, en tenant compte des réponses
@@ -240,8 +242,8 @@ export async function generateDiagnosticQuestion(
 
   const result = await parseStructured(client, {
     system:
-      "Tu es Tavyra. Avant de construire une formation, tu poses quelques questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données — pour comprendre : le niveau actuel de la personne, ses objectifs concrets, ses connaissances préalables, son contexte d'utilisation, le temps qu'elle veut y consacrer, et ses préférences pédagogiques. Jamais deux questions qui demandent la même chose. Pose une question fermée à choix (3 à 5 choix courts) chaque fois que c'est possible ; une question ouverte seulement si une réponse libre est vraiment nécessaire.",
-    user: `Sujet de la formation demandée : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nPose la question suivante la plus utile pour cerner les besoins réels de la personne sur CE sujet précis (jamais une question générique qui s'appliquerait à n'importe quel sujet). Si tu estimes avoir déjà assez d'informations pour construire un bon plan (entre ${MIN_DIAGNOSTIC_QUESTIONS} et ${MAX_DIAGNOSTIC_QUESTIONS} questions au total), réponds done=true sans question. Ne dépasse jamais ${MAX_DIAGNOSTIC_QUESTIONS} questions au total.`,
+      "Tu es Tavyra. Avant de construire une formation, tu poses de nombreuses questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données — pour cerner précisément où se situe déjà la personne sur CE sujet précis : ce qu'elle a déjà fait concrètement (des actions réelles, pas des ressentis — par ex. pour l'e-commerce : a-t-elle déjà créé un site, déjà lancé des publicités, utilisé tel outil), les notions ou le vocabulaire spécifiques au sujet qu'elle connaît déjà ou non (par ex. sait-elle ce qu'est un CTA), ses objectifs concrets, le contexte dans lequel elle va utiliser ce qu'elle apprend, le temps qu'elle veut y consacrer, et ses préférences pédagogiques. Jamais deux questions qui demandent la même chose, et jamais une question générique interchangeable d'un sujet à l'autre : chaque question doit porter sur une action, un outil ou une notion précise propre à ce sujet. Pose une question fermée à choix (3 à 5 choix courts) chaque fois que c'est possible ; une question ouverte seulement si une réponse libre est vraiment nécessaire.",
+    user: `Sujet de la formation demandée : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nPose la question suivante la plus utile pour cerner précisément où en est la personne sur CE sujet précis — une action concrète déjà faite ou non, un outil déjà utilisé ou non, une notion/un terme déjà connu ou non — jamais une question générique qui s'appliquerait à n'importe quel sujet. Si tu estimes avoir déjà assez d'informations pour construire un bon plan parfaitement calibré sur son niveau réel (entre ${MIN_DIAGNOSTIC_QUESTIONS} et ${MAX_DIAGNOSTIC_QUESTIONS} questions au total), réponds done=true sans question. Ne dépasse jamais ${MAX_DIAGNOSTIC_QUESTIONS} questions au total.`,
     schema: DiagnosticStepSchema,
     maxTokens: 1024,
   });

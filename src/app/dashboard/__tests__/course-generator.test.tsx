@@ -169,74 +169,15 @@ beforeEach(() => {
 });
 
 describe("CourseGenerator — état initial", () => {
-  it("propose le diagnostic guidé ET la configuration rapide, désactivés tant qu'aucun sujet n'est saisi", async () => {
+  it("propose la création de formation, désactivée tant qu'aucun sujet n'est saisi (le diagnostic est désormais obligatoire)", async () => {
     await renderGenerator({ remainingGenerations: 1, locked: false });
-    expect(findButton("Créer avec le diagnostic guidé").disabled).toBe(true);
-    expect(findButton("Configuration rapide (sans diagnostic)").disabled).toBe(true);
+    expect(findButton("Créer ma formation").disabled).toBe(true);
   });
 
   it("affiche le message de quota atteint pour un utilisateur Free, avec un lien vers /pricing", async () => {
     await renderGenerator({ remainingGenerations: 0, locked: true });
     expect(container.textContent).toContain("Limite du plan gratuit atteinte");
     expect(container.querySelector('a[href="/pricing"]')).not.toBeNull();
-  });
-});
-
-describe("CourseGenerator — configuration rapide (sans diagnostic)", () => {
-  it("appelle 'start' avec { topic } seul (sans plan), puis boucle 'step' jusqu'à la fin", async () => {
-    installFetchMock();
-    fetchHandler = async (_url, body) => {
-      if (body.action === "start") {
-        expect(body.plan).toBeUndefined();
-        return jsonResponse({ reservationId: "res-1" });
-      }
-      if (body.action === "step") {
-        return jsonResponse({ done: true, courseId: "course-1", course: FAKE_COURSE, saveWarning: null });
-      }
-      throw new Error("appel inattendu");
-    };
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
-    await setTextareaValue("Un sujet de test");
-    await click(findButton("Configuration rapide (sans diagnostic)"));
-
-    expect(container.textContent).toContain("Formation test générée");
-    expect(mockRefresh).toHaveBeenCalled();
-    expect(fetchCalls.some((c) => c.body.action === "start")).toBe(true);
-    expect(fetchCalls.some((c) => c.body.action === "step")).toBe(true);
-  });
-
-  it("affiche le message d'erreur fatale renvoyé par le serveur", async () => {
-    installFetchMock();
-    fetchHandler = async (_url, body) => {
-      if (body.action === "start") return jsonResponse({ reservationId: "res-1" });
-      return jsonResponse({ done: true, fatalError: "Le sujet proposé ne permet pas de générer une formation." });
-    };
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
-    await setTextareaValue("Un sujet de test");
-    await click(findButton("Configuration rapide (sans diagnostic)"));
-
-    expect(container.textContent).toContain("Le sujet proposé ne permet pas de générer une formation.");
-    expect(container.querySelector("textarea")).not.toBeNull();
-  });
-
-  it("enchaîne plusieurs appels 'step' en affichant la progression avant la fin", async () => {
-    installFetchMock();
-    let stepCount = 0;
-    fetchHandler = async (_url, body) => {
-      if (body.action === "start") return jsonResponse({ reservationId: "res-1" });
-      stepCount += 1;
-      if (stepCount < 3) return jsonResponse({ done: false, stage: "chapitres", label: "Création des chapitres... (1/6)" });
-      return jsonResponse({ done: true, courseId: "course-1", course: FAKE_COURSE, saveWarning: null });
-    };
-
-    await renderGenerator({ remainingGenerations: 1, locked: false });
-    await setTextareaValue("Un sujet de test");
-    await click(findButton("Configuration rapide (sans diagnostic)"));
-
-    expect(stepCount).toBe(3);
-    expect(container.textContent).toContain("Formation test générée");
   });
 });
 
@@ -252,7 +193,7 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
+    await click(findButton("Créer ma formation"));
 
     expect(container.textContent).toContain("Quel est ton niveau ?");
   });
@@ -274,7 +215,7 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
+    await click(findButton("Créer ma formation"));
 
     expect(container.textContent).toContain("Plan proposé");
     await click(findButton("Valider et générer la formation"));
@@ -292,7 +233,7 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
+    await click(findButton("Créer ma formation"));
 
     const moduleTitleInput = Array.from(container.querySelectorAll("input")).find((i) => i.value === "Module 1") as HTMLInputElement;
     expect(moduleTitleInput).not.toBeUndefined();
@@ -318,7 +259,7 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
-    await click(findButton("Créer avec le diagnostic guidé"));
+    await click(findButton("Créer ma formation"));
 
     const button = findButton("Valider et générer la formation");
     await act(async () => {
@@ -332,14 +273,22 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
 });
 
 describe("CourseGenerator — idempotence au démarrage (Prompt 05.20.1)", () => {
-  it("persiste l'idempotencyKey en sessionStorage AVANT le premier appel réseau", async () => {
+  it("persiste l'idempotencyKey en sessionStorage AVANT le premier appel réseau de démarrage", async () => {
     installFetchMock();
-    fetchHandler = async () => new Promise(() => {}); // ne répond jamais pendant ce test.
+    fetchHandler = async (url, body) => {
+      if (url === "/api/courses/plan" && body.action === "question") return jsonResponse({ question: null });
+      if (url === "/api/courses/plan" && body.action === "build") return jsonResponse(FAKE_PLAN);
+      // Le "start" de /api/courses/generate (seul appel qui réserve un
+      // quota) ne répond jamais pendant ce test : on vérifie que la clé
+      // d'idempotence est déjà en sessionStorage avant même cette réponse.
+      return new Promise(() => {});
+    };
 
     await renderGenerator({ remainingGenerations: 1, locked: false });
     await setTextareaValue("Un sujet de test");
+    await click(findButton("Créer ma formation"));
 
-    const button = findButton("Configuration rapide (sans diagnostic)");
+    const button = findButton("Valider et générer la formation");
     await act(async () => {
       button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -447,6 +396,6 @@ describe("CourseGenerator — rechargement pendant une génération", () => {
   it("sans aucune génération en cours en sessionStorage, démarre normalement en 'idle' (non-régression)", async () => {
     await renderGenerator({ remainingGenerations: 1, locked: false });
     expect(mockGetGenerationStatus).not.toHaveBeenCalled();
-    expect(findButton("Créer avec le diagnostic guidé")).not.toBeNull();
+    expect(findButton("Créer ma formation")).not.toBeNull();
   });
 });
