@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { IconChat } from "@/components/marketing/icons";
 import { IconHome, IconLibrary, IconPlusCircle, IconUser } from "./icons";
 import type { ComponentType, SVGProps } from "react";
 
@@ -12,13 +13,15 @@ type NavItem = {
 };
 
 // Prompt 06.1 : nav interne partagée par toutes les pages "app" (tableau de
-// bord, bibliothèque, création, profil) — la lecture de formation/d'analyse
-// (/dashboard/formations/[id], /dashboard/analyses/[id]) reste volontairement
-// hors de ce shell : expérience de lecture immersive, pas de sidebar.
+// bord, bibliothèque, création, assistant, profil) — la lecture de
+// formation/d'analyse (/dashboard/formations/[id], /dashboard/analyses/[id])
+// reste volontairement hors de ce shell : expérience de lecture immersive,
+// pas de sidebar.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Tableau de bord", href: "/dashboard", icon: IconHome },
   { label: "Bibliothèque", href: "/dashboard/formations", icon: IconLibrary },
   { label: "Créer une formation", href: "/dashboard/creer", icon: IconPlusCircle },
+  { label: "Assistant", href: "/dashboard/assistant", icon: IconChat },
   { label: "Profil", href: "/dashboard/profil", icon: IconUser },
 ];
 
