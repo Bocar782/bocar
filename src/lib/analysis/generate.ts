@@ -14,7 +14,7 @@ import {
   type VerifiedCase,
 } from "./schemas";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 const MIN_VERIFIED_CASES = 3;
 
 export class AnalysisGenerationError extends Error {}

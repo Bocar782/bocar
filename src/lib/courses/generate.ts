@@ -27,7 +27,7 @@ import {
   type VerifiedExample,
 } from "./schemas";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 
 export class CourseGenerationError extends Error {}
 
