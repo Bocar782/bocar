@@ -162,4 +162,29 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_new_123" });
     });
   });
+
+  describe("correctif 06.15 : ne laisse jamais le verrou bloqué après un échec Stripe", () => {
+    it("relâche le verrou et renvoie 502 si stripe.checkout.sessions.create() échoue", async () => {
+      reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
+      mockStripeCheckoutSessionsCreate.mockRejectedValueOnce(
+        Object.assign(new Error("No such price"), { type: "StripeInvalidRequestError", code: "resource_missing" }),
+      );
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(502);
+      expect(mockUpdate).toHaveBeenCalledWith({ pending_checkout_at: null });
+    });
+
+    it("relâche le verrou et renvoie 502 si stripe.customers.create() échoue", async () => {
+      reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+      mockStripeCustomersCreate.mockRejectedValueOnce(new Error("Invalid API key"));
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(502);
+      expect(mockUpdate).toHaveBeenCalledWith({ pending_checkout_at: null });
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+  });
 });

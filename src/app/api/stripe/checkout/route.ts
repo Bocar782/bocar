@@ -55,39 +55,83 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 409 });
   }
 
-  let customerId = reservation.existing_customer_id;
-  if (!customerId) {
-    customerId = (
-      await stripe.customers.create({
-        email: user.email,
-        metadata: { supabase_user_id: user.id },
-      })
-    ).id;
-    // Persiste le nouveau customer dès maintenant : évite d'en recréer un
-    // autre (orphelin côté Stripe) si l'utilisateur relance un Checkout
-    // avant que le webhook de confirmation n'arrive. Un échec ici n'est
-    // pas bloquant : le webhook renseignera de toute façon ce champ dès
-    // qu'il arrivera.
-    await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", user.id);
-  }
+  // Prompt 06.15 (correctif) : si l'appel Stripe échoue pour n'importe
+  // quelle raison après la réservation ci-dessus, le verrou posé par
+  // `reserve_checkout_session` doit être relâché explicitement — sinon il
+  // reste actif jusqu'à 30 minutes (lui-même n'est autrement relâché que
+  // par la confirmation d'un webhook, qui n'arrivera jamais puisqu'aucune
+  // session n'a été créée). Sans ce correctif, un échec Stripe ponctuel
+  // (clé mal configurée, Price ID invalide, erreur réseau...) bloquait
+  // silencieusement tout nouvel essai pendant 30 minutes, sans que
+  // personne — ni l'utilisateur, ni les logs Stripe (jamais contactés) —
+  // ne voie la vraie erreur.
+  try {
+    let customerId = reservation.existing_customer_id;
+    if (!customerId) {
+      customerId = (
+        await stripe.customers.create({
+          email: user.email,
+          metadata: { supabase_user_id: user.id },
+        })
+      ).id;
+      // Persiste le nouveau customer dès maintenant : évite d'en recréer un
+      // autre (orphelin côté Stripe) si l'utilisateur relance un Checkout
+      // avant que le webhook de confirmation n'arrive. Un échec ici n'est
+      // pas bloquant : le webhook renseignera de toute façon ce champ dès
+      // qu'il arrivera.
+      await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", user.id);
+    }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: getStripePriceId(), quantity: 1 }],
-    success_url: `${siteUrl}/dashboard?upgraded=1`,
-    cancel_url: `${siteUrl}/pricing`,
-    client_reference_id: user.id,
-    metadata: { supabase_user_id: user.id },
-    subscription_data: { metadata: { supabase_user_id: user.id } },
-  });
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: getStripePriceId(), quantity: 1 }],
+      success_url: `${siteUrl}/dashboard?upgraded=1`,
+      cancel_url: `${siteUrl}/pricing`,
+      client_reference_id: user.id,
+      metadata: { supabase_user_id: user.id },
+      subscription_data: { metadata: { supabase_user_id: user.id } },
+    });
 
-  if (!session.url) {
+    if (!session.url) {
+      await releaseCheckoutLock(admin, user.id);
+      return NextResponse.json(
+        { error: "Impossible de créer la session de paiement." },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.redirect(session.url, { status: 303 });
+  } catch (error) {
+    await releaseCheckoutLock(admin, user.id);
+    const stripeError = error as {
+      name?: string;
+      message?: string;
+      type?: string;
+      code?: string;
+      statusCode?: number;
+      requestId?: string;
+    };
+    console.error("[stripe/checkout] échec de la création de session", {
+      name: stripeError.name,
+      message: stripeError.message,
+      type: stripeError.type,
+      code: stripeError.code,
+      statusCode: stripeError.statusCode,
+      requestId: stripeError.requestId,
+    });
     return NextResponse.json(
-      { error: "Impossible de créer la session de paiement." },
-      { status: 500 },
+      { error: "Impossible de créer la session de paiement. Réessaie dans un instant." },
+      { status: 502 },
     );
   }
+}
 
-  return NextResponse.redirect(session.url, { status: 303 });
+async function releaseCheckoutLock(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<void> {
+  // Best-effort : un échec ici n'empêche pas de répondre à l'utilisateur —
+  // le verrou expirera de toute façon au bout de 30 minutes au pire.
+  await admin.from("subscriptions").update({ pending_checkout_at: null }).eq("user_id", userId);
 }
