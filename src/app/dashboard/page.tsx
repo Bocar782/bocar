@@ -1,20 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BackgroundGlow } from "@/components/background-glow";
-import { BrandMark } from "@/components/brand-mark";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { ActivityBarChart, ProgressRing } from "@/components/dashboard/charts";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { CourseListItem } from "@/components/course-list-item";
-import { DeepAnalysisListItem } from "@/components/deep-analysis-list-item";
 import { IconGraduationCap } from "@/components/marketing/icons";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { listDeepAnalyses } from "@/lib/analysis/persist";
-import { getUsageStatuses } from "@/lib/courses/plan";
+import { getDashboardStats } from "@/lib/dashboard/stats";
+import { isOnFreePlan } from "@/lib/courses/plan";
 import { listCourses } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
-import { GeneratorTabs } from "./generator-tabs";
 
-const DEFAULT_USAGE = { isPro: false, used: 0, limit: 1, remaining: 1, resetsAt: null };
+const RECENT_COURSES_LIMIT = 4;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -27,161 +27,152 @@ export default async function DashboardPage() {
   }
 
   // Si la migration SQL n'a pas encore été appliquée côté Supabase, ne pas
-  // faire planter tout le dashboard : l'utilisateur voit juste des listes
-  // vides et un quota par défaut.
-  const [courses, analyses, usages] = await Promise.all([
+  // faire planter tout le dashboard : l'utilisateur voit juste des stats
+  // vides par défaut.
+  const [courses, locked] = await Promise.all([
     listCourses(supabase, user.id).catch(() => []),
-    listDeepAnalyses(supabase, user.id).catch(() => []),
-    getUsageStatuses(supabase, user.id).catch(() => ({
-      course: DEFAULT_USAGE,
-      analysis: { ...DEFAULT_USAGE, limit: 0, remaining: 0 },
-    })),
+    isOnFreePlan(supabase, user.id).catch(() => true),
   ]);
-  const { course: usage, analysis: analysisUsage } = usages;
 
-  const onFreePlan = !usage.isPro;
+  const stats = await getDashboardStats(supabase, user.id, courses).catch(() => ({
+    totalCourses: courses.length,
+    completedCourses: 0,
+    inProgressCourses: 0,
+    avgProgressPercent: 0,
+    quizzesCompleted: 0,
+    avgQuizScorePercent: null,
+    activeDayStreak: 0,
+    activityByDay: [],
+    recentActivity: [],
+  }));
+
+  const recentCourses = [...courses]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, RECENT_COURSES_LIMIT);
+
+  const firstName = user.email?.split("@")[0] ?? "";
 
   return (
-    <div className="relative flex min-h-screen flex-1 flex-col">
-      <BackgroundGlow />
-
-      <header className="sticky top-0 z-20 border-b border-transparent bg-background/80 backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-3 px-6 py-5 sm:px-10">
-          <Link href="/dashboard" className="flex shrink-0 items-center gap-2">
-            <BrandMark size={32} />
-            <span className="text-lg font-semibold tracking-tight">Tavyra</span>
-          </Link>
-
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <span className="hidden min-w-0 truncate text-sm text-foreground-muted sm:inline">
-              {user.email}
-            </span>
-            <form action={signOut} className="shrink-0">
-              <Button type="submit" variant="secondary" size="sm">
-                Se déconnecter
-              </Button>
-            </form>
+    <DashboardShell userEmail={user.email ?? ""} isPro={!locked} onSignOut={signOut}>
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Bonjour{firstName ? `, ${firstName}` : ""}
+            </h1>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Voici un aperçu de ton apprentissage avec Tavyra.
+            </p>
           </div>
-        </div>
-      </header>
-
-      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24 pt-10 sm:pt-16">
-        <h1 className="text-center text-2xl font-semibold tracking-tight sm:text-3xl">
-          Que veux-tu apprendre aujourd&apos;hui ?
-        </h1>
-        <p className="mt-2 max-w-md text-center text-sm text-foreground-muted">
-          Décris un sujet, Tavyra construit ta formation complète.
-        </p>
-
-        <div className="mt-10 flex w-full flex-1 flex-col items-center">
-          <GeneratorTabs
-            courseRemainingGenerations={usage.remaining}
-            courseLocked={onFreePlan}
-            analysisRemainingGenerations={analysisUsage.remaining}
-            analysisIsPro={analysisUsage.isPro}
-          />
+          <Button href="/dashboard/creer">+ Nouvelle formation</Button>
         </div>
 
-        <section className="mt-8 grid w-full max-w-2xl gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-border-subtle bg-white/[0.02] p-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">
-                {onFreePlan ? "Plan gratuit" : "Plan Pro"}
-              </span>
-              {!onFreePlan && (
-                <span className="rounded-full bg-accent-violet/15 px-2 py-0.5 text-[10px] font-medium text-accent-violet-light">
-                  Pro
-                </span>
-              )}
-            </div>
-            <p className="mt-2 text-sm font-medium text-foreground">
-              {usage.used}/{usage.limit} formation{usage.limit > 1 ? "s" : ""} générée
-              {usage.limit > 1 ? "s" : ""}
-            </p>
-            <p className="mt-0.5 text-xs text-foreground-muted">
-              {usage.isPro && usage.resetsAt
-                ? `Renouvellement le ${new Date(usage.resetsAt).toLocaleDateString("fr-FR")}`
-                : onFreePlan
-                  ? "Quota à vie"
-                  : ""}
-            </p>
-            {onFreePlan ? (
-              <Link
-                href="/pricing"
-                className="mt-3 inline-block text-xs font-medium text-accent-violet-light underline underline-offset-2 hover:text-accent-violet"
-              >
-                Passer au plan Pro
-              </Link>
-            ) : (
-              <form action="/api/stripe/portal" method="POST" className="mt-3">
-                <button
-                  type="submit"
-                  className="text-xs font-medium text-foreground-muted underline underline-offset-2 hover:text-foreground"
-                >
-                  Gérer mon abonnement
-                </button>
-              </form>
-            )}
-          </div>
-
-          {analysisUsage.isPro && (
-            <div className="rounded-2xl border border-border-subtle bg-white/[0.02] p-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted">
-                Analyses approfondies
-              </span>
-              <p className="mt-2 text-sm font-medium text-foreground">
-                {analysisUsage.used}/{analysisUsage.limit} ce mois
-              </p>
-              <p className="mt-0.5 text-xs text-foreground-muted">
-                {analysisUsage.resetsAt
-                  ? `Renouvellement le ${new Date(analysisUsage.resetsAt).toLocaleDateString("fr-FR")}`
-                  : ""}
-              </p>
-            </div>
-          )}
-        </section>
-
-        {courses.length > 0 && (
-          <section className="mt-12 w-full max-w-4xl">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-                Mes formations
-              </h2>
-              <span className="text-xs text-foreground-muted">{courses.length}</span>
-            </div>
-            <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {courses.map((course) => (
-                <CourseListItem key={course.id} course={course} />
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {analyses.length > 0 && (
-          <section className="mt-12 w-full max-w-4xl">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-                Mes analyses approfondies
-              </h2>
-              <span className="text-xs text-foreground-muted">{analyses.length}</span>
-            </div>
-            <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {analyses.map((analysis) => (
-                <DeepAnalysisListItem key={analysis.id} analysis={analysis} />
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {courses.length === 0 && analyses.length === 0 && (
+        {courses.length === 0 ? (
           <EmptyState
-            className="mt-12 w-full max-w-2xl"
+            className="mt-10 w-full"
             icon={<IconGraduationCap width={22} height={22} />}
             title="Ta bibliothèque est vide pour l'instant"
-            description="Lance ta première génération ci-dessus — ta formation apparaîtra ici, prête à reprendre où tu veux."
+            description="Lance ta première génération — ta formation apparaîtra ici, prête à reprendre où tu veux."
+            action={<Button href="/dashboard/creer">Créer ma première formation</Button>}
           />
+        ) : (
+          <>
+            <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Card padding="sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                  Formations
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{stats.totalCourses}</p>
+                <p className="mt-0.5 text-xs text-foreground-muted">
+                  {stats.completedCourses} terminée{stats.completedCourses > 1 ? "s" : ""}
+                </p>
+              </Card>
+              <Card padding="sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                  En cours
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {stats.inProgressCourses}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground-muted">formation(s) active(s)</p>
+              </Card>
+              <Card padding="sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                  Quiz complétés
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {stats.quizzesCompleted}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground-muted">
+                  {stats.avgQuizScorePercent !== null
+                    ? `Score moyen : ${stats.avgQuizScorePercent}%`
+                    : "Aucun score pour l'instant"}
+                </p>
+              </Card>
+              <Card padding="sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+                  Série active
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {stats.activeDayStreak} jour{stats.activeDayStreak > 1 ? "s" : ""}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground-muted">jours consécutifs</p>
+              </Card>
+            </section>
+
+            <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <h2 className="text-sm font-semibold text-foreground">Progression globale</h2>
+                <div className="mt-5">
+                  <ProgressRing
+                    percent={stats.avgProgressPercent}
+                    label="Avancement moyen"
+                    sublabel={`sur ${stats.totalCourses} formation${stats.totalCourses > 1 ? "s" : ""}`}
+                  />
+                </div>
+              </Card>
+              <Card>
+                <h2 className="text-sm font-semibold text-foreground">
+                  Activité des 14 derniers jours
+                </h2>
+                <div className="mt-5">
+                  <ActivityBarChart data={stats.activityByDay} />
+                </div>
+              </Card>
+            </section>
+
+            <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.4fr_1fr]">
+              <div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+                    Formations récentes
+                  </h2>
+                  <Link
+                    href="/dashboard/formations"
+                    className="text-xs font-medium text-accent-violet-light hover:text-accent-violet"
+                  >
+                    Voir tout →
+                  </Link>
+                </div>
+                <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {recentCourses.map((course) => (
+                    <CourseListItem key={course.id} course={course} />
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+                  Activité récente
+                </h2>
+                <Card className="mt-4" padding="sm">
+                  <ActivityFeed events={stats.recentActivity} />
+                </Card>
+              </div>
+            </section>
+          </>
         )}
-      </main>
-    </div>
+      </div>
+    </DashboardShell>
   );
 }
