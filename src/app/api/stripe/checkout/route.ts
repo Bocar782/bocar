@@ -9,19 +9,25 @@ import { getSiteUrl } from "@/lib/site-url";
 import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
-// Prompt 06.22 (durcissement, suite à une revue de sécurité sur la durée
-// maximale réelle de toute la séquence de création Checkout — pas
-// seulement un appel Stripe isolé) : cette route pouvait auparavant
-// tourner pour une durée NON BORNÉE par la plateforme, contrairement à
-// toutes les autres routes de ce projet qui appellent Stripe/Supabase
-// (/api/chat: 60s, /api/courses/plan, /api/courses/generate,
-// /api/analysis/generate: 120s chacune). Sans cette limite, aucun calcul
-// de seuil de récupération de verrou (voir tryRecoverAbandonedLock
-// ci-dessous) ne pouvait être fiable : impossible de borner le pire cas
-// réel. Fixée à 120s, cohérente avec les autres routes Stripe/Supabase du
-// projet — la plateforme tue désormais la fonction au-delà, qu'importe ce
-// que le SDK Stripe est en train de tenter (y compris ses propres retries
-// automatiques, voir MIN_LOCK_AGE_BEFORE_RECOVERY_MS plus bas).
+// Prompt 06.22/06.23 : déclaration cohérente avec les autres routes
+// Stripe/Supabase du projet (/api/chat: 60s, /api/courses/plan,
+// /api/courses/generate, /api/analysis/generate: 120s chacune).
+//
+// CORRECTIF IMPORTANT (06.23, suite à une revue de sécurité) : cette
+// valeur ne doit JAMAIS être lue comme une garantie que la plateforme tue
+// la fonction à 120s. L'audit interne 05.19/05.20 de ce projet
+// (commit 0e4f145, antérieur à cette conversation) a déjà établi
+// explicitement que les valeurs `maxDuration` déclarées dans le code
+// « dépassent largement la limite réelle des fonctions Netlify
+// synchrones (10-60s selon le plan/la configuration) » — et qu'aucun
+// netlify.toml ni configuration explicite n'a pu confirmer cette limite
+// réelle depuis ce dépôt. `maxDuration` reste une simple indication pour
+// les plateformes qui choisissent de l'honorer (voir la documentation
+// Next.js elle-même : « Deployment platforms CAN use maxDuration... »,
+// formulation volontairement non garantie) — PAS la base du calcul de
+// sécurité ci-dessous. Voir MIN_LOCK_AGE_BEFORE_RECOVERY_MS plus bas pour
+// le véritable fondement, vérifiable indépendamment de la configuration
+// Netlify spécifique à ce site.
 export const maxDuration = 120;
 
 // Crée une session Stripe Checkout (abonnement Pro) et redirige l'utilisateur
@@ -294,43 +300,61 @@ function isMissingCustomerError(error: unknown): boolean {
 
 type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
 
-// Prompt 06.22 (durcissement, suite à une revue de sécurité sur la durée
-// maximale RÉELLE de toute la séquence de création Checkout — pas
-// seulement un appel Stripe isolé). Âge minimum obligatoire d'un verrou
-// avant toute tentative de récupération (voir tryRecoverAbandonedLock).
+// Prompt 06.22/06.23 : âge minimum obligatoire d'un verrou avant toute
+// tentative de récupération (voir tryRecoverAbandonedLock). Revu une
+// deuxième fois (06.23) après avoir constaté que le fondement initial
+// (« maxDuration=120 est appliqué par la plateforme ») n'est PAS vérifié
+// — voir le commentaire sur `export const maxDuration` ci-dessus. Ce
+// seuil ne repose donc plus sur une hypothèse de configuration Netlify
+// (plan, limite synchrone réelle : non vérifiable depuis ce dépôt), mais
+// sur un fait structurel de l'infrastructure sous-jacente, indépendant de
+// toute configuration spécifique à ce site.
 //
-// Analyse de la séquence complète, pas d'un seul appel :
-// - Le pire cas de code (customer Stripe persisté orphelin, correctif
-//   06.17) enchaîne JUSQU'À 4 appels Stripe séquentiels dans une seule
-//   requête : customers.create(), checkout.sessions.create() (échoue),
-//   customers.create() à nouveau, checkout.sessions.create() à nouveau —
-//   avec des écritures Supabase intercalées entre chacun.
-// - Le SDK Stripe (createStripeClient, aucun `maxNetworkRetries` défini)
-//   applique sa valeur par défaut : 2 retries automatiques par appel (3
-//   tentatives au total), chacune avec son propre timeout de 80 000 ms
-//   (vérifié dans node_modules/stripe/{RequestSender,stripe.core}.js) —
-//   un simple calcul "80s × 4 appels" sous-estimait donc largement le pire
-//   cas théorique en ignorant ces retries.
-// - Plutôt que d'essayer de borner ce pire cas théorique (qui peut devenir
-//   très large si on l'additionne naïvement — potentiellement plusieurs
-//   centaines de secondes dans un scénario pathologique de réseau
-//   totalement dégradé), cette route déclare désormais explicitement
-//   `export const maxDuration = 120` (ajouté par ce même correctif,
-//   cohérent avec les autres routes Stripe/Supabase du projet) : la
-//   PLATEFORME elle-même tue la fonction à 120s, qu'importe ce que le SDK
-//   est en train de tenter. C'est une garantie bien plus solide qu'un
-//   calcul d'estimation : une requête légitime ne peut PHYSIQUEMENT plus
-//   tourner au-delà de 120s, point final.
-// - Seuil fixé à 3 minutes (180s) = maxDuration (120s) + 60s de marge de
-//   sécurité. Avant ce seuil, une requête légitime peut encore être en
-//   train de s'exécuter ; après, elle a nécessairement déjà terminé
-//   (succès, erreur avec libération via le catch existant 06.15/06.18, ou
-//   terminaison forcée par la plateforme à 120s sans avoir pu exécuter son
-//   propre nettoyage — c'est CE dernier cas, et lui seul, que cette
-//   récupération vise à corriger). Reste très inférieur au délai de 30
-//   minutes (reserve_checkout_session, 0022) : la récupération reste
-//   nettement plus rapide que l'attente aveugle.
-export const MIN_LOCK_AGE_BEFORE_RECOVERY_MS = 3 * 60 * 1000;
+// Fait vérifié n°1 (architecture, pas configuration) : les Netlify
+// Functions s'exécutent sur AWS Lambda (infrastructure documentée
+// publiquement par Netlify). AWS Lambda impose un plafond ABSOLU et NON
+// CONFIGURABLE de 900 secondes (15 minutes) pour toute invocation, quel
+// que soit le fournisseur au-dessus (Netlify, Vercel historique, etc.) ou
+// le plan souscrit — ce plafond ne peut PHYSIQUEMENT pas être dépassé,
+// contrairement à `maxDuration` qui n'est qu'une déclaration que la
+// plateforme peut choisir d'honorer ou non.
+const AWS_LAMBDA_HARD_MAX_DURATION_MS = 15 * 60 * 1000;
+
+// Fait vérifié n°2 (calcul, pas estimation) : pire cas théorique de la
+// séquence Stripe elle-même, pour validation croisée. Le pire cas de code
+// (customer Stripe persisté orphelin, correctif 06.17) enchaîne JUSQU'À 4
+// appels Stripe séquentiels dans une seule requête : customers.create(),
+// checkout.sessions.create() (échoue), customers.create() à nouveau,
+// checkout.sessions.create() à nouveau. Le SDK Stripe (createStripeClient,
+// aucun `maxNetworkRetries` défini) applique sa valeur par défaut : 2
+// retries automatiques par appel (3 tentatives au total), chacune avec son
+// propre timeout de 80 000 ms, backoff entre tentatives négligeable
+// (≤ ~1,5 s cumulés — vérifié dans node_modules/stripe/{RequestSender,
+// stripe.core,platform/PlatformFunctions}.js) :
+//   4 appels × 3 tentatives × 80 000 ms ≈ 960 000 ms (16 min) au pire cas
+//   pathologique (chaque tentative de chaque appel épuise son timeout).
+// Ce nombre (≈ 16 min) est volontairement très proche du plafond Lambda
+// (15 min) : dans le pire des cas, c'est la PLATEFORME qui coupera la
+// fonction avant même que le SDK Stripe n'ait fini d'épuiser ses propres
+// retries — confirmant que 900 000 ms est bien le plafond déterminant,
+// pas une estimation optimiste.
+//
+// Seuil retenu = plafond Lambda (900 000 ms) + 60 000 ms de marge de
+// mesure (horloges, latence réseau de la lecture du verrou elle-même) =
+// 960 000 ms (16 minutes). Avant ce seuil, une requête légitime peut
+// PHYSIQUEMENT encore être en cours d'exécution (aucune configuration
+// Netlify, quelle qu'elle soit, ne peut la faire durer plus longtemps) ;
+// après, elle a nécessairement déjà terminé — succès, erreur avec
+// libération via le catch existant (06.15/06.18), ou terminaison forcée
+// par AWS Lambda lui-même sans avoir pu exécuter son propre nettoyage
+// (c'est CE dernier cas, et lui seul, que cette récupération vise à
+// corriger). Reste inférieur au délai de 30 minutes (reserve_checkout_
+// session, 0022, inchangé, toujours le filet de sécurité de dernier
+// recours) : la récupération reste plus rapide que l'attente aveugle,
+// mais seulement dans la mesure où cela peut être démontré sans
+// hypothèse non vérifiée — jamais au prix d'un risque de double
+// abonnement.
+export const MIN_LOCK_AGE_BEFORE_RECOVERY_MS = AWS_LAMBDA_HARD_MAX_DURATION_MS + 60 * 1000;
 
 // Prompt 06.20 (durcissement, suite à la revue de sécurité du correctif
 // 06.19) : au moindre doute sur l'état réel d'un paiement, le verrou est

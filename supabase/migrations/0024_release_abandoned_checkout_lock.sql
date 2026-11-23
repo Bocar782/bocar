@@ -86,16 +86,17 @@ begin
     return;
   end if;
 
-  -- Prompt 06.21/06.22 : plancher d'âge minimum, indépendant du contrôle
-  -- côté application — voir la justification en tête de fichier. 60
-  -- secondes : volontairement bien plus court que le seuil applicatif de
-  -- 3 minutes (MIN_LOCK_AGE_BEFORE_RECOVERY_MS, route.ts, aligné sur
-  -- maxDuration=120s + marge), car cette fonction ne fait elle-même AUCUN
-  -- appel Stripe et n'a donc pas besoin de la même marge ; c'est un filet
-  -- de sécurité de dernier recours, pas le contrôle principal — en
-  -- pratique le seuil applicatif de 3 minutes est toujours atteint en
-  -- premier.
-  if v_pending_checkout_at > now() - interval '60 seconds' then
+  -- Prompt 06.21/06.23 : plancher d'âge minimum, indépendant du contrôle
+  -- côté application — voir la justification en tête de fichier. Revu en
+  -- 06.23 : le seuil applicatif (MIN_LOCK_AGE_BEFORE_RECOVERY_MS, route.ts)
+  -- repose désormais sur le plafond physique d'AWS Lambda (900s, infra-
+  -- structure de Netlify Functions) plutôt que sur une configuration
+  -- Netlify non vérifiable — 5 minutes ici : volontairement plus court que
+  -- ce seuil applicatif de 16 minutes (reste un filet de dernier recours,
+  -- jamais le contrôle principal, qui est toujours atteint en premier en
+  -- pratique), mais assez proche pour rester significatif si jamais
+  -- l'appel applicatif venait à être contourné.
+  if v_pending_checkout_at > now() - interval '5 minutes' then
     return query select false, 'lock_too_recent'::text;
     return;
   end if;
