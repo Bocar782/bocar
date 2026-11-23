@@ -5,7 +5,6 @@ import { loadStripe } from "@stripe/stripe-js";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getStripePublishableKey } from "@/lib/stripe/public-env";
 
 // Prompt 06.28 : paiement intégré directement sur ce site (ui_mode:
 // "embedded", voir /api/stripe/checkout/route.ts) — remplace la redirection
@@ -13,13 +12,12 @@ import { getStripePublishableKey } from "@/lib/stripe/public-env";
 // irrécupérable après le clic sur "S'abonner" (signalement utilisateur réel,
 // constaté sur plusieurs comptes, réseaux et appareils, alors que le serveur
 // lui-même répondait en 1,5s d'après les logs Netlify — voir route.ts).
-// `loadStripe` une seule fois au niveau module (pas à chaque rendu) : c'est
-// le usage documenté de Stripe.js, qui met lui-même son propre résultat en
-// cache.
-const stripePromise = loadStripe(getStripePublishableKey());
-
-export function CheckoutClient() {
+export function CheckoutClient({ publishableKey }: { publishableKey: string }) {
   const [error, setError] = useState<string | null>(null);
+  // `loadStripe` une seule fois par montage (jamais à chaque rendu) : c'est
+  // le usage documenté de Stripe.js, qui met lui-même son propre résultat en
+  // cache — l'initialiseur de useState ne s'exécute qu'au premier rendu.
+  const [stripePromise] = useState(() => loadStripe(publishableKey));
 
   // Stripe.js appelle cette fonction lui-même, au moment où il monte le
   // formulaire embarqué — jamais directement par ce composant. Elle ne doit

@@ -16,6 +16,19 @@ export function getStripePriceId(): string {
   return value;
 }
 
+// Prompt 06.28 : lue côté serveur (page.tsx, Server Component) puis passée
+// en prop au composant client — jamais lue directement côté navigateur via
+// `NEXT_PUBLIC_`, pour éviter de dépendre d'une variable d'environnement
+// supplémentaire à ajouter en production (la clé publique Stripe existe déjà
+// ici, sous ce nom, sans préfixe NEXT_PUBLIC_).
+export function getStripePublishableKey(): string {
+  const value = process.env.STRIPE_PUBLISHABLE_KEY;
+  if (!value) {
+    throw new Error("Variable d'environnement manquante : STRIPE_PUBLISHABLE_KEY");
+  }
+  return value;
+}
+
 export function getStripeWebhookSecret(): string {
   const value = process.env.STRIPE_WEBHOOK_SECRET;
   if (!value) {
