@@ -280,17 +280,70 @@ function isMissingCustomerError(error: unknown): boolean {
 
 type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
 
-// Prompt 06.19 : récupération sécurisée d'un verrou `pending_checkout_at`
-// abandonné, vérifiée contre l'état RÉEL de Stripe plutôt que d'attendre
+// Prompt 06.20 (durcissement, suite à la revue de sécurité du correctif
+// 06.19) : au moindre doute sur l'état réel d'un paiement, le verrou est
+// CONSERVÉ — jamais l'inverse. Statuts d'abonnement explicitement
+// considérés sûrs (tout le reste bloque, y compris un statut futur inconnu
+// de Stripe non encore pris en compte ici : liste blanche, pas liste
+// noire). `incomplete`/`past_due`/`unpaid` bloquent délibérément : ce sont
+// exactement les statuts d'un paiement encore en traitement ou en échec
+// avec nouvelle tentative automatique par Stripe.
+const SAFE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>(["canceled", "incomplete_expired"]);
+
+// Idem pour les sessions Checkout : seul un paiement confirmé (`paid`) ou
+// explicitement sans paiement requis (`no_payment_required`, ex. essai
+// gratuit) est sûr. Une session `complete` avec `payment_status: "unpaid"`
+// (moyens de paiement asynchrones : virement, certains moyens locaux) n'est
+// PAS sûre — le paiement peut encore être en traitement.
+const SAFE_SESSION_PAYMENT_STATUSES = new Set<Stripe.Checkout.Session.PaymentStatus>([
+  "paid",
+  "no_payment_required",
+]);
+
+const STRIPE_RECOVERY_PAGE_SIZE = 100;
+// Garde-fou anti-boucle infinie / anti-abus : si un customer a plus de
+// 1000 sessions ou abonnements, la pagination s'arrête et le résultat est
+// traité comme INCERTAIN (donc bloquant) plutôt que de risquer de conclure
+// à tort "rien trouvé" en ignorant les pages suivantes.
+const STRIPE_RECOVERY_MAX_PAGES = 10;
+
+// Parcourt TOUTES les pages d'une liste Stripe (jamais seulement la
+// première) avant de conclure quoi que ce soit. `truncated: true` signifie
+// que la pagination a atteint sa limite de sécurité sans avoir fini de
+// parcourir les résultats — dans ce cas l'appelant doit considérer l'état
+// comme inconnu, jamais comme "rien trouvé".
+async function listAllStripePages<T extends { id: string }>(
+  fetchPage: (startingAfter?: string) => Promise<{ data: T[]; has_more: boolean }>,
+): Promise<{ items: T[]; truncated: boolean }> {
+  const items: T[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < STRIPE_RECOVERY_MAX_PAGES; page++) {
+    const result = await fetchPage(startingAfter);
+    items.push(...result.data);
+    if (!result.has_more || result.data.length === 0) {
+      return { items, truncated: false };
+    }
+    startingAfter = result.data[result.data.length - 1]?.id;
+  }
+  return { items, truncated: true };
+}
+
+// Prompt 06.19/06.20 : récupération sécurisée d'un verrou `pending_checkout_
+// at` abandonné, vérifiée contre l'état RÉEL de Stripe plutôt que d'attendre
 // à l'aveugle les 30 minutes d'expiration déjà en place (reserve_checkout_
 // session, 0022 — inchangée, toujours le filet de sécurité de dernier
-// recours). Ne libère JAMAIS rien si :
-// - un abonnement est actif/trialing (vérifié par release_abandoned_
-//   checkout_lock elle-même, en plus de reserve_checkout_session) ;
-// - une session Checkout Stripe est encore réellement ouverte pour ce
-//   customer ;
-// - un abonnement Stripe actif/trialing existe pour ce customer mais n'a
-//   pas encore été synchronisé par le webhook ;
+// recours, qui reste le SEUL recours si la vérification ci-dessous ne peut
+// pas conclure avec certitude). Ne libère JAMAIS rien si :
+// - un abonnement n'est pas dans un statut explicitement sûr (liste
+//   blanche ci-dessus — bloque notamment incomplete/past_due/unpaid, pas
+//   seulement active/trialing) ;
+// - une session Checkout est encore ouverte, OU complétée mais avec un
+//   paiement non réglé (moyens de paiement asynchrones) ;
+// - la pagination Stripe n'a pas pu être parcourue intégralement ;
+// - aucun `stripe_customer_id` n'est connu en base pour ce compte — un
+//   `null` ici ne garantit PAS qu'aucun customer Stripe n'existe
+//   réellement (createAndPersistCustomer peut créer un customer Stripe
+//   réel puis échouer, de façon non bloquante, à persister son id) ;
 // - le moindre appel à Stripe échoue pour n'importe quelle raison
 //   (fail closed : aucune incertitude n'autorise une libération).
 // Retourne le nouveau résultat de réservation si la récupération a réussi
@@ -304,6 +357,14 @@ async function tryRecoverAbandonedLock(
   attemptId: string,
   log: (step: string, details?: Record<string, unknown>) => void,
 ): Promise<ReservationResult | null> {
+  // Prompt 06.20 : jamais de libération automatique sans customer Stripe
+  // connu en base — voir la justification ci-dessus. Seul le délai de 30
+  // minutes (reserve_checkout_session) peut libérer ce cas précis.
+  if (!existingCustomerId) {
+    log("4a_recuperation_verrou_ignoree", { reason: "customer_absent_de_supabase" });
+    return null;
+  }
+
   // Lecture directe (hors RPC) de la valeur ACTUELLE du verrou : nécessaire
   // comme référence pour le verrou optimiste de release_abandoned_checkout_
   // lock — jamais utilisée pour décider quoi que ce soit d'autre que "y a-t-
@@ -323,46 +384,69 @@ async function tryRecoverAbandonedLock(
 
   const pendingCheckoutAt = current.pending_checkout_at;
 
-  // Aucun customer Stripe n'existe encore pour ce compte : aucune session
-  // Checkout ni aucun abonnement ne peut donc exister côté Stripe — pas
-  // besoin de les interroger, la libération est sûre par construction.
-  if (existingCustomerId) {
-    try {
-      const [openSessions, subscriptions] = await Promise.all([
-        stripe.checkout.sessions.list({ customer: existingCustomerId, status: "open", limit: 5 }),
-        stripe.subscriptions.list({ customer: existingCustomerId, status: "all", limit: 10 }),
-      ]);
+  try {
+    const [sessionsResult, subscriptionsResult] = await Promise.all([
+      listAllStripePages<Stripe.Checkout.Session>((startingAfter) =>
+        stripe.checkout.sessions.list({
+          customer: existingCustomerId,
+          limit: STRIPE_RECOVERY_PAGE_SIZE,
+          starting_after: startingAfter,
+        }),
+      ),
+      listAllStripePages<Stripe.Subscription>((startingAfter) =>
+        stripe.subscriptions.list({
+          customer: existingCustomerId,
+          status: "all",
+          limit: STRIPE_RECOVERY_PAGE_SIZE,
+          starting_after: startingAfter,
+        }),
+      ),
+    ]);
 
-      if (openSessions.data.length > 0) {
-        log("4a_recuperation_verrou_refusee", {
-          reason: "session_stripe_ouverte",
-          sessionId: openSessions.data[0]?.id,
-        });
-        return null;
-      }
+    // Pagination non parcourue intégralement : état inconnu, donc bloquant.
+    if (sessionsResult.truncated || subscriptionsResult.truncated) {
+      log("4a_recuperation_verrou_refusee", { reason: "pagination_incomplete_incertitude" });
+      return null;
+    }
 
-      const activeSubscription = subscriptions.data.find(
-        (subscription) => subscription.status === "active" || subscription.status === "trialing",
-      );
-      if (activeSubscription) {
-        log("4a_recuperation_verrou_refusee", {
-          reason: "abonnement_stripe_actif_non_synchronise",
-          subscriptionId: activeSubscription.id,
-        });
-        return null;
-      }
-    } catch (error) {
-      // Fail closed : toute incertitude sur l'état Stripe (réseau, clé API,
-      // timeout...) interdit la libération — jamais l'inverse.
-      const stripeError = error as { message?: string; type?: string; code?: string };
-      console.error(`[stripe/checkout:${attemptId}] échec de la vérification Stripe pour récupération de verrou`, {
-        userId,
-        message: stripeError.message,
-        type: stripeError.type,
-        code: stripeError.code,
+    const blockingSession = sessionsResult.items.find(
+      (session) =>
+        session.status === "open" ||
+        (session.status === "complete" &&
+          !SAFE_SESSION_PAYMENT_STATUSES.has(session.payment_status)),
+    );
+    if (blockingSession) {
+      log("4a_recuperation_verrou_refusee", {
+        reason: "session_stripe_en_cours_ou_impayee",
+        sessionId: blockingSession.id,
+        status: blockingSession.status,
+        paymentStatus: blockingSession.payment_status,
       });
       return null;
     }
+
+    const blockingSubscription = subscriptionsResult.items.find(
+      (subscription) => !SAFE_SUBSCRIPTION_STATUSES.has(subscription.status),
+    );
+    if (blockingSubscription) {
+      log("4a_recuperation_verrou_refusee", {
+        reason: "abonnement_stripe_non_resolu",
+        subscriptionId: blockingSubscription.id,
+        status: blockingSubscription.status,
+      });
+      return null;
+    }
+  } catch (error) {
+    // Fail closed : toute incertitude sur l'état Stripe (réseau, clé API,
+    // timeout...) interdit la libération — jamais l'inverse.
+    const stripeError = error as { message?: string; type?: string; code?: string };
+    console.error(`[stripe/checkout:${attemptId}] échec de la vérification Stripe pour récupération de verrou`, {
+      userId,
+      message: stripeError.message,
+      type: stripeError.type,
+      code: stripeError.code,
+    });
+    return null;
   }
 
   log("4a_recuperation_verrou_verifiee_stripe", { existingCustomerId });
