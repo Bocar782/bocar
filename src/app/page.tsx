@@ -9,6 +9,7 @@ import { HeroShowcase } from "@/components/marketing/hero-showcase";
 import { MagneticButton } from "@/components/marketing/magnetic-button";
 import { PricingCards } from "@/components/marketing/pricing-cards";
 import { Reveal } from "@/components/marketing/reveal";
+import { Testimonials } from "@/components/marketing/testimonials";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { isOnFreePlan } from "@/lib/courses/plan";
 import { getSiteUrl } from "@/lib/site-url";
@@ -210,6 +211,24 @@ export default async function Home() {
             >
               En savoir plus →
             </Link>
+          </div>
+        </section>
+
+        {/* Avis — Prompt 06.11, vrais avis d'utilisateurs (texte + photo
+            fournis directement, jamais inventés — voir Prompt 05.22 qui
+            avait retiré les précédents témoignages fictifs). */}
+        <section className="relative mt-24 w-full bg-background-elevated py-16 sm:mt-28 sm:py-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <SectionHeading
+              eyebrow="Avis"
+              title="Ce qu'ils en disent"
+              description="Des retours réels d'utilisateurs de Tavyra, dans des contextes très différents."
+            />
+            <div className="mt-12">
+              <Reveal>
+                <Testimonials />
+              </Reveal>
+            </div>
           </div>
         </section>
 
