@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { StripeSubmitForm } from "@/components/marketing/stripe-submit-form";
 import {
   EXPERT_PLAN_PRICE_EUR,
   FREE_PLAN_FEATURES,
@@ -83,22 +84,18 @@ export function PricingCards({
           </Button>
         )}
         {user && onFreePlan && (
-          <form action="/api/stripe/checkout" method="POST">
-            <Button type="submit" fullWidth className="mt-8">
-              S&apos;abonner
-            </Button>
-          </form>
+          <StripeSubmitForm action="/api/stripe/checkout" fullWidth className="mt-8">
+            S&apos;abonner
+          </StripeSubmitForm>
         )}
         {user && !onFreePlan && (
           <div className="mt-8 space-y-2">
             <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
               Ton plan actuel
             </div>
-            <form action="/api/stripe/portal" method="POST">
-              <Button type="submit" variant="secondary" fullWidth>
-                Gérer mon abonnement
-              </Button>
-            </form>
+            <StripeSubmitForm action="/api/stripe/portal" variant="secondary" fullWidth>
+              Gérer mon abonnement
+            </StripeSubmitForm>
           </div>
         )}
       </Card>

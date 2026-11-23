@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { IconCreditCard, IconLock, IconMail, IconUser } from "@/components/dashboard/icons";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
+import { StripeSubmitForm } from "@/components/marketing/stripe-submit-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -111,11 +112,9 @@ export default async function SettingsPage() {
                   sécurisé.
                 </p>
               </div>
-              <form action="/api/stripe/portal" method="POST">
-                <Button type="submit" variant="secondary">
-                  Gérer ma carte et mes factures
-                </Button>
-              </form>
+              <StripeSubmitForm action="/api/stripe/portal" variant="secondary">
+                Gérer ma carte et mes factures
+              </StripeSubmitForm>
             </div>
           )}
         </SettingsSection>
