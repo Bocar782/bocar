@@ -42,7 +42,7 @@ describe("next.config.ts — en-têtes de sécurité HTTP (Prompt 05.16.4)", () 
     expect(keys).not.toContain("Strict-Transport-Security");
   });
 
-  it("envoie une CSP stricte en production, sans aucun domaine externe", async () => {
+  it("envoie une CSP stricte en production, sans aucun domaine externe hors l'exception Stripe (06.28)", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const headers = await loadHeaders();
     const byKey = Object.fromEntries(headers.map((h) => [h.key, h.value]));
@@ -52,10 +52,19 @@ describe("next.config.ts — en-têtes de sécurité HTTP (Prompt 05.16.4)", () 
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
-    // Aucun domaine externe (http(s)://...) nulle part dans la CSP : seules
-    // des valeurs CSP spéciales ('self', 'none', 'unsafe-inline', data:) ou
-    // des directives sont attendues.
-    expect(csp).not.toMatch(/https?:\/\/(?!localhost)/);
+    // Prompt 06.28 : seule exception volontaire et minimale à "aucun domaine
+    // externe" — strictement les 3 domaines Stripe nécessaires au paiement
+    // intégré (Stripe.js, ses appels XHR, son iframe de saisie de carte).
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://js.stripe.com");
+    expect(csp).toContain("connect-src 'self' https://api.stripe.com");
+    expect(csp).toContain("frame-src https://js.stripe.com https://hooks.stripe.com");
+    // Retire les 3 occurrences Stripe attendues ci-dessus : aucun AUTRE
+    // domaine externe ne doit rester nulle part dans la CSP.
+    const cspWithoutStripeDomains = csp!
+      .replaceAll("https://js.stripe.com", "")
+      .replaceAll("https://api.stripe.com", "")
+      .replaceAll("https://hooks.stripe.com", "");
+    expect(cspWithoutStripeDomains).not.toMatch(/https?:\/\/(?!localhost)/);
   });
 
   it("envoie HSTS en production, SANS includeSubDomains ni preload (configuration HTTPS Netlify non vérifiée)", async () => {

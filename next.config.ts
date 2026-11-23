@@ -50,11 +50,30 @@ import type { NextConfig } from "next";
 // * `img-src 'self' data:` : le `data:` est nécessaire pour un SVG de bruit
 //   généré en `data:image/svg+xml` (fond animé) — découvert en testant la
 //   page réelle, pas supposé a priori.
-// * Aucun domaine externe n'apparaît nulle part : confirmé par l'audit
-//   05.16.3 qu'aucun appel navigateur direct vers Supabase, Stripe ou
-//   Anthropic n'existe (tout passe par les routes same-origin `/api/*` ou
-//   par une redirection complète de page vers Stripe), et que les polices
-//   (`next/font/google`) sont auto-hébergées au build.
+// * Jusqu'au prompt 06.28 : aucun domaine externe n'apparaissait nulle
+//   part (confirmé par l'audit 05.16.3 : aucun appel navigateur direct vers
+//   Supabase, Stripe ou Anthropic, tout passait par les routes same-origin
+//   `/api/*` ou par une redirection complète de page vers Stripe), et les
+//   polices (`next/font/google`) restent auto-hébergées au build.
+// * Prompt 06.28 (paiement intégré via Stripe.js/Elements, ui_mode
+//   "embedded" — /checkout, remplace la redirection externe vers
+//   checkout.stripe.com) : exception volontaire et minimale à la règle
+//   ci-dessus, strictement nécessaire pour cette seule fonctionnalité et
+//   documentée par Stripe lui-même (Content-Security-Policy requise pour
+//   Stripe.js/Elements) :
+//   - `script-src https://js.stripe.com` : Stripe.js lui-même, chargé
+//     dynamiquement par `loadStripe()` (src/app/checkout/checkout-client.tsx).
+//   - `connect-src https://api.stripe.com` : les appels XHR que Stripe.js
+//     fait directement depuis le navigateur pour gérer le formulaire de
+//     paiement embarqué (jamais de clé secrète exposée : ces appels portent
+//     uniquement le `client_secret` déjà généré côté serveur).
+//   - `frame-src https://js.stripe.com https://hooks.stripe.com` : l'iframe
+//     que Stripe.js monte lui-même pour isoler la saisie des données de
+//     carte (jamais directement accessible au JS de cette page — exigence
+//     de sécurité PCI DSS de Stripe, pas une permission supplémentaire
+//     accordée par ce site).
+//   Aucun AUTRE domaine externe n'est ajouté : la portée reste la plus
+//   étroite possible pour cette seule intégration.
 //
 // CSP et HSTS ne sont envoyées qu'en production (`NODE_ENV === "production"`) :
 // testé que `next dev` (Turbopack) injecte des balises `<style>` inline
@@ -75,12 +94,13 @@ const isProduction = process.env.NODE_ENV === "production";
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://js.stripe.com",
   "style-src 'self'",
   "style-src-attr 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' https://api.stripe.com",
+  "frame-src https://js.stripe.com https://hooks.stripe.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
