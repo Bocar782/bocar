@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createStripeClient } from "@/lib/stripe/client";
@@ -68,30 +69,30 @@ export async function POST(request: Request) {
   try {
     let customerId = reservation.existing_customer_id;
     if (!customerId) {
-      customerId = (
-        await stripe.customers.create({
-          email: user.email,
-          metadata: { supabase_user_id: user.id },
-        })
-      ).id;
-      // Persiste le nouveau customer dès maintenant : évite d'en recréer un
-      // autre (orphelin côté Stripe) si l'utilisateur relance un Checkout
-      // avant que le webhook de confirmation n'arrive. Un échec ici n'est
-      // pas bloquant : le webhook renseignera de toute façon ce champ dès
-      // qu'il arrivera.
-      await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", user.id);
+      customerId = await createAndPersistCustomer(stripe, admin, { id: user.id, email: user.email });
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: getStripePriceId(), quantity: 1 }],
-      success_url: `${siteUrl}/dashboard?upgraded=1`,
-      cancel_url: `${siteUrl}/pricing`,
-      client_reference_id: user.id,
-      metadata: { supabase_user_id: user.id },
-      subscription_data: { metadata: { supabase_user_id: user.id } },
-    });
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create(
+        buildSessionParams(customerId, siteUrl, user.id),
+      );
+    } catch (error) {
+      // Prompt 06.17 (correctif) : un `stripe_customer_id` persisté en base
+      // peut devenir orphelin — ex. transition d'une clé API de test vers
+      // une clé live, un customer supprimé manuellement côté Stripe. Plutôt
+      // que de laisser planter tout nouvel essai indéfiniment (l'id invalide
+      // resterait en base pour toujours), on détecte précisément ce cas
+      // (`resource_missing` sur le paramètre `customer`) et on se
+      // rétablit : on efface la référence invalide, on recrée un vrai
+      // customer, et on retente UNE fois — jamais de boucle infinie.
+      if (!isMissingCustomerError(error)) throw error;
+
+      customerId = await createAndPersistCustomer(stripe, admin, { id: user.id, email: user.email });
+      session = await stripe.checkout.sessions.create(
+        buildSessionParams(customerId, siteUrl, user.id),
+      );
+    }
 
     if (!session.url) {
       await releaseCheckoutLock(admin, user.id);
@@ -134,4 +135,46 @@ async function releaseCheckoutLock(
   // Best-effort : un échec ici n'empêche pas de répondre à l'utilisateur —
   // le verrou expirera de toute façon au bout de 30 minutes au pire.
   await admin.from("subscriptions").update({ pending_checkout_at: null }).eq("user_id", userId);
+}
+
+function buildSessionParams(
+  customerId: string,
+  siteUrl: string,
+  userId: string,
+): Stripe.Checkout.SessionCreateParams {
+  return {
+    mode: "subscription",
+    customer: customerId,
+    line_items: [{ price: getStripePriceId(), quantity: 1 }],
+    success_url: `${siteUrl}/dashboard?upgraded=1`,
+    cancel_url: `${siteUrl}/pricing`,
+    client_reference_id: userId,
+    metadata: { supabase_user_id: userId },
+    subscription_data: { metadata: { supabase_user_id: userId } },
+  };
+}
+
+async function createAndPersistCustomer(
+  stripe: Stripe,
+  admin: ReturnType<typeof createAdminClient>,
+  user: { id: string; email: string },
+): Promise<string> {
+  const customerId = (
+    await stripe.customers.create({
+      email: user.email,
+      metadata: { supabase_user_id: user.id },
+    })
+  ).id;
+  // Persiste le nouveau customer dès maintenant : évite d'en recréer un
+  // autre (orphelin côté Stripe) si l'utilisateur relance un Checkout
+  // avant que le webhook de confirmation n'arrive. Un échec ici n'est pas
+  // bloquant : le webhook renseignera de toute façon ce champ dès qu'il
+  // arrivera.
+  await admin.from("subscriptions").update({ stripe_customer_id: customerId }).eq("user_id", user.id);
+  return customerId;
+}
+
+function isMissingCustomerError(error: unknown): boolean {
+  const stripeError = error as { code?: string; param?: string } | undefined;
+  return stripeError?.code === "resource_missing" && stripeError?.param === "customer";
 }

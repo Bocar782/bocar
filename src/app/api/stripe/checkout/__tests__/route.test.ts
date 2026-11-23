@@ -163,6 +163,52 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     });
   });
 
+  describe("correctif 06.17 : se rétablit si le customer Stripe persisté est orphelin", () => {
+    it("recrée un customer et retente une fois si checkout.sessions.create() échoue avec 'No such customer'", async () => {
+      reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_orphan_old" };
+      mockStripeCustomersCreate.mockReset();
+      mockStripeCustomersCreate.mockResolvedValue({ id: "cus_fresh_new" });
+      mockStripeCheckoutSessionsCreate.mockReset();
+      mockStripeCheckoutSessionsCreate
+        .mockRejectedValueOnce(
+          Object.assign(new Error("No such customer: 'cus_orphan_old'"), {
+            type: "StripeInvalidRequestError",
+            code: "resource_missing",
+            param: "customer",
+          }),
+        )
+        .mockResolvedValueOnce({ url: "https://checkout.stripe.com/session/retry" });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("https://checkout.stripe.com/session/retry");
+      expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1);
+      expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_fresh_new" });
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(2);
+      const [[retryArgs]] = mockStripeCheckoutSessionsCreate.mock.calls.slice(1);
+      expect(retryArgs.customer).toBe("cus_fresh_new");
+    });
+
+    it("ne masque pas une autre erreur Stripe sous prétexte de 'customer' manquant", async () => {
+      reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
+      mockStripeCheckoutSessionsCreate.mockReset();
+      mockStripeCheckoutSessionsCreate.mockRejectedValueOnce(
+        Object.assign(new Error("No such price"), {
+          type: "StripeInvalidRequestError",
+          code: "resource_missing",
+          param: "price",
+        }),
+      );
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(502);
+      expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("correctif 06.15 : ne laisse jamais le verrou bloqué après un échec Stripe", () => {
     it("relâche le verrou et renvoie 502 si stripe.checkout.sessions.create() échoue", async () => {
       reservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
