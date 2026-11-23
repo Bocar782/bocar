@@ -60,7 +60,7 @@ export function ActivityFeed({ events }: { events: ActivityEvent[] }) {
           <li key={`${event.type}-${event.at}-${i}`}>
             <Link
               href={`/dashboard/formations/${event.courseId}`}
-              className="flex items-start gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-white/[0.03]"
+              className="flex items-start gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-overlay/[0.03]"
             >
               <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-violet/15 text-accent-violet-light">
                 {icon}

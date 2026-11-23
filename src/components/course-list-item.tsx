@@ -51,7 +51,7 @@ export function CourseListItem({ course }: { course: CourseListItemData }) {
         </p>
 
         <div className="mt-4 flex items-center gap-3">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-overlay/[0.06]">
             <div
               className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet"
               style={{ width: `${percent}%` }}

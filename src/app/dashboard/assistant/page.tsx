@@ -87,7 +87,7 @@ export default async function AssistantPage(props: PageProps<"/dashboard/assista
                     className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors ${
                       active
                         ? "border-accent-violet/40 bg-accent-violet/10"
-                        : "border-border-subtle bg-background-card hover:border-white/20"
+                        : "border-border-subtle bg-background-card hover:border-overlay/20"
                     }`}
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">

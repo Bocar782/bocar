@@ -27,6 +27,13 @@
   --warning-light: #fcd34d;
   --danger: #ef4444;
   --danger-light: #fca5a5;
+  /* Prompt 06.7 : base des surimpressions neutres ("bg-overlay/[0.0x]",
+     "border-overlay/20"...) utilisées partout dans l'intérieur de l'app pour
+     les fonds/bordures discrets sur un aplat uni — blanc en thème sombre
+     (valeur historique, inchangée), noir en thème clair (voir
+     [data-theme="light"] plus bas). Jamais utilisé seul : toujours avec un
+     modificateur d'opacité Tailwind (/[0.03], /10, /20...). */
+  --overlay-base: #ffffff;
 }
 
 @theme inline {
@@ -47,6 +54,7 @@
   --color-warning-light: var(--warning-light);
   --color-danger: var(--danger);
   --color-danger-light: var(--danger-light);
+  --color-overlay: var(--overlay-base);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-fraunces), var(--font-geist-sans), serif;
@@ -108,6 +116,29 @@ body {
   --accent-violet-tint: rgba(139, 92, 246, 0.12);
   --accent-blue: #4c7cf3;
   --accent-blue-light: #7fa6ff;
+}
+
+/* Prompt 06.7 : second thème pour l'intérieur de l'app (tableau de bord,
+   bibliothèque, création, assistant, profil — jamais la landing, qui garde
+   son propre habillage défini au-dessus). Posé via l'attribut
+   data-theme="light" sur la racine de DashboardShell (voir
+   theme-context.tsx) : fond blanc partout, mêmes sections violettes
+   qu'en thème sombre (--accent-violet/--accent-blue INCHANGÉS à dessein —
+   seuls --accent-violet-light/--accent-blue-light, utilisés comme COULEUR
+   DE TEXTE sur fond clair, sont assombris pour rester lisibles ; en pastel
+   d'origine ils étaient illisibles sur blanc). Le thème sombre actuel
+   reste la valeur par défaut (:root, au-dessus) sans aucun changement. */
+[data-theme="light"] {
+  --background: #ffffff;
+  --background-elevated: #f7f7fb;
+  --background-card: #ffffff;
+  --foreground: #16161f;
+  --foreground-muted: #6b6b7c;
+  --border-subtle: rgba(15, 15, 35, 0.1);
+  --accent-violet-light: #7c3aed;
+  --accent-blue-light: #3558c9;
+  --accent-violet-tint: rgba(124, 58, 237, 0.1);
+  --overlay-base: #000000;
 }
 
 /* Grain papier statique, très discret : remplace l'aurora animée et la

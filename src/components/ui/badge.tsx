@@ -6,7 +6,7 @@ export type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger" | 
 // déjà utilisées pour chaque statut à travers l'app (course-list-item,
 // quiz-history, deep-analysis-list-item...) — jamais une nouvelle couleur.
 const TONE_CLASSES: Record<BadgeTone, string> = {
-  neutral: "bg-white/[0.06] text-foreground-muted",
+  neutral: "bg-overlay/[0.06] text-foreground-muted",
   info: "bg-accent-blue/15 text-accent-blue-light",
   success: "bg-success/15 text-success-light",
   warning: "bg-warning/15 text-warning-light",

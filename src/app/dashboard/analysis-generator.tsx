@@ -390,7 +390,7 @@ export function AnalysisGenerator({
       <form onSubmit={handleSubmit} className="group relative rounded-[28px] p-px">
         <div
           aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-white/10 to-accent-violet/50 opacity-60 transition-opacity duration-500 group-focus-within:opacity-100"
+          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-overlay/10 to-accent-violet/50 opacity-60 transition-opacity duration-500 group-focus-within:opacity-100"
         />
         <div className="relative rounded-[28px] bg-background-elevated/80 p-3 sm:p-4">
           <textarea

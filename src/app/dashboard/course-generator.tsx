@@ -675,7 +675,7 @@ export function CourseGenerator({
                   key={choice}
                   type="button"
                   onClick={() => answerDiagnosticQuestion(choice)}
-                  className="rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3.5 text-left text-sm text-foreground transition-all hover:border-accent-violet/60 hover:bg-white/[0.05] hover:pl-5"
+                  className="rounded-xl border border-border-subtle bg-overlay/[0.02] px-4 py-3.5 text-left text-sm text-foreground transition-all hover:border-accent-violet/60 hover:bg-overlay/[0.05] hover:pl-5"
                 >
                   {choice}
                 </button>
@@ -689,7 +689,7 @@ export function CourseGenerator({
                 maxLength={MAX_ANSWER_LENGTH}
                 rows={2}
                 placeholder="Ta réponse…"
-                className="w-full resize-none rounded-xl border border-border-subtle bg-white/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
+                className="w-full resize-none rounded-xl border border-border-subtle bg-overlay/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
               />
               <Button
                 type="button"
@@ -747,9 +747,9 @@ export function CourseGenerator({
             {programme.modules.map((module, moduleIndex) => (
               <div
                 key={moduleIndex}
-                className="overflow-hidden rounded-2xl border border-border-subtle bg-white/[0.02]"
+                className="overflow-hidden rounded-2xl border border-border-subtle bg-overlay/[0.02]"
               >
-                <div className="flex items-center gap-3 border-b border-border-subtle bg-white/[0.02] px-4 py-3">
+                <div className="flex items-center gap-3 border-b border-border-subtle bg-overlay/[0.02] px-4 py-3">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-[11px] font-semibold text-white">
                     {moduleIndex + 1}
                   </span>
@@ -765,7 +765,7 @@ export function CourseGenerator({
                     <input
                       value={module.title}
                       onChange={(e) => updateModuleField(moduleIndex, "title", e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm font-medium text-foreground transition-colors focus:border-accent-violet/60 focus:bg-white/[0.05] focus:outline-none"
+                      className="mt-1 w-full rounded-lg border border-border-subtle bg-overlay/[0.03] px-3 py-2 text-sm font-medium text-foreground transition-colors focus:border-accent-violet/60 focus:bg-overlay/[0.05] focus:outline-none"
                     />
                   </label>
                   <label className="mt-3 block">
@@ -775,7 +775,7 @@ export function CourseGenerator({
                     <input
                       value={module.objective}
                       onChange={(e) => updateModuleField(moduleIndex, "objective", e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2 text-sm text-foreground transition-colors focus:border-accent-violet/60 focus:bg-white/[0.05] focus:outline-none"
+                      className="mt-1 w-full rounded-lg border border-border-subtle bg-overlay/[0.03] px-3 py-2 text-sm text-foreground transition-colors focus:border-accent-violet/60 focus:bg-overlay/[0.05] focus:outline-none"
                     />
                   </label>
 
@@ -783,7 +783,7 @@ export function CourseGenerator({
                     {module.chapters.map((chapter, chapterIndex) => (
                       <li
                         key={chapterIndex}
-                        className="rounded-lg border border-border-subtle/60 bg-white/[0.02] p-2.5 transition-colors focus-within:border-accent-violet/40"
+                        className="rounded-lg border border-border-subtle/60 bg-overlay/[0.02] p-2.5 transition-colors focus-within:border-accent-violet/40"
                       >
                         <input
                           value={chapter.title}
@@ -815,7 +815,7 @@ export function CourseGenerator({
                 maxLength={500}
                 rows={2}
                 placeholder="Décris l'ajustement que tu veux (ex : plus d'exercices pratiques, un module en plus sur…)"
-                className="w-full resize-none rounded-xl border border-border-subtle bg-white/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
+                className="w-full resize-none rounded-xl border border-border-subtle bg-overlay/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
               />
               <div className="mt-2 flex gap-2">
                 <Button type="button" disabled={!adjustmentRequest.trim()} onClick={requestAdjustment}>
@@ -847,7 +847,7 @@ export function CourseGenerator({
       <form onSubmit={handleFormSubmit} className="group relative rounded-[28px] p-px">
         <div
           aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-white/10 to-accent-violet/50 opacity-60 transition-opacity duration-500 group-focus-within:opacity-100"
+          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-overlay/10 to-accent-violet/50 opacity-60 transition-opacity duration-500 group-focus-within:opacity-100"
         />
         <div className="relative rounded-[28px] bg-background-elevated/80 p-3 sm:p-4">
           <textarea

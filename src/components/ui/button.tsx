@@ -13,7 +13,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
     "bg-gradient-to-r from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] hover:brightness-110",
   secondary:
-    "border border-border-subtle bg-white/5 text-foreground backdrop-blur hover:bg-white/10",
+    "border border-border-subtle bg-overlay/5 text-foreground backdrop-blur hover:bg-overlay/10",
   ghost: "text-foreground-muted hover:text-foreground",
 };
 

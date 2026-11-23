@@ -11,7 +11,7 @@ const PADDING_CLASSES: Record<CardPadding, string> = {
 /**
  * Bloc de contenu partagé (Prompt 05.14) : regroupe les quelques styles de
  * carte déjà répétés tels quels dans toute l'app, rien de nouveau.
- * - default : carte neutre (`rounded-2xl border-subtle bg-white/[0.02]`),
+ * - default : carte neutre (`rounded-2xl border-subtle bg-overlay/[0.02]`),
  *   la plus utilisée (listes, grilles, panneaux).
  * - elevated : grand panneau à bordure dégradée (quiz, résumé, historique) —
  *   même motif à 3 calques partout (bordure dégradée + fond élevé).
@@ -38,7 +38,7 @@ export function Card({
       <div className={`relative rounded-[28px] p-px ${className}`}>
         <div
           aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-white/10 to-accent-violet/40"
+          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-overlay/10 to-accent-violet/40"
         />
         <div className={`relative rounded-[28px] bg-background-elevated/90 ${PADDING_CLASSES[padding]}`}>
           {children}
@@ -70,7 +70,7 @@ export function Card({
   if (variant === "accent-blue") {
     return (
       <div
-        className={`rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-white/[0.03] p-4 ${className}`}
+        className={`rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-overlay/[0.03] p-4 ${className}`}
       >
         {children}
       </div>
@@ -78,7 +78,7 @@ export function Card({
   }
 
   return (
-    <div className={`rounded-2xl border border-border-subtle bg-white/[0.02] ${PADDING_CLASSES[padding]} ${className}`}>
+    <div className={`rounded-2xl border border-border-subtle bg-overlay/[0.02] ${PADDING_CLASSES[padding]} ${className}`}>
       {children}
     </div>
   );

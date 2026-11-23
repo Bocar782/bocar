@@ -19,7 +19,7 @@ export function GeneratorTabs({
 
   return (
     <div className="flex w-full flex-col items-center">
-      <div className="mb-8 inline-flex rounded-full border border-border-subtle bg-white/[0.02] p-1">
+      <div className="mb-8 inline-flex rounded-full border border-border-subtle bg-overlay/[0.02] p-1">
         <button
           type="button"
           onClick={() => setTab("course")}

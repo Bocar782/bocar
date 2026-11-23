@@ -17,7 +17,7 @@ export function ProgressRing({
       <div
         className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full"
         style={{
-          background: `conic-gradient(var(--accent-violet) ${clamped * 3.6}deg, rgba(255,255,255,0.06) 0deg)`,
+          background: `conic-gradient(var(--accent-violet) ${clamped * 3.6}deg, color-mix(in srgb, var(--overlay-base) 6%, transparent) 0deg)`,
         }}
         role="img"
         aria-label={`${label} : ${clamped}%`}
@@ -97,7 +97,7 @@ export function ActivityBarChart({ data }: { data: { date: string; count: number
                 className={`w-full rounded-t-sm transition-all ${
                   d.count > 0
                     ? "bg-gradient-to-t from-accent-blue to-accent-violet"
-                    : "bg-white/[0.06]"
+                    : "bg-overlay/[0.06]"
                 }`}
                 style={{ height: `${heightPercent}%` }}
               />

@@ -30,7 +30,7 @@ export function TopbarSearch({ initialQuery = "" }: { initialQuery?: string }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Rechercher une formation…"
-        className="w-full rounded-full border border-border-subtle bg-white/[0.03] py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent-violet/50 focus:outline-none"
+        className="w-full rounded-full border border-border-subtle bg-overlay/[0.03] py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-foreground-muted focus:border-accent-violet/50 focus:outline-none"
       />
     </form>
   );

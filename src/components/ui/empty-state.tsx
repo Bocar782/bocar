@@ -25,7 +25,7 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-dashed border-border-subtle bg-white/[0.015] px-6 py-10 text-center ${className}`}
+      className={`rounded-2xl border border-dashed border-border-subtle bg-overlay/[0.015] px-6 py-10 text-center ${className}`}
     >
       {icon && (
         <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light">

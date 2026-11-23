@@ -123,7 +123,7 @@ export function AssistantChatPanel({
         <select
           value={chapterIndex}
           onChange={(e) => setChapterIndex(Number(e.target.value))}
-          className="max-w-[60%] rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1.5 text-xs text-foreground focus:border-accent-violet/50 focus:outline-none"
+          className="max-w-[60%] rounded-full border border-border-subtle bg-overlay/[0.03] px-3 py-1.5 text-xs text-foreground focus:border-accent-violet/50 focus:outline-none"
         >
           {chapters.map((chapter) => (
             <option key={chapter.position} value={chapter.position} disabled={chapter.locked}>
@@ -149,7 +149,7 @@ export function AssistantChatPanel({
                   key={suggestion}
                   type="button"
                   onClick={() => sendMessage(suggestion)}
-                  className="rounded-full border border-border-subtle bg-white/[0.03] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-foreground"
+                  className="rounded-full border border-border-subtle bg-overlay/[0.03] px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:border-overlay/20 hover:bg-overlay/[0.06] hover:text-foreground"
                 >
                   {suggestion}
                 </button>
@@ -165,11 +165,11 @@ export function AssistantChatPanel({
                 {message.content}
               </p>
             ) : message.content ? (
-              <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border-subtle bg-white/[0.04] px-3.5 py-2 text-sm text-foreground">
+              <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-border-subtle bg-overlay/[0.04] px-3.5 py-2 text-sm text-foreground">
                 <MarkdownContent content={message.content} />
               </div>
             ) : (
-              <div className="flex gap-1 rounded-2xl rounded-tl-sm border border-border-subtle bg-white/[0.04] px-3.5 py-3">
+              <div className="flex gap-1 rounded-2xl rounded-tl-sm border border-border-subtle bg-overlay/[0.04] px-3.5 py-3">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light" />
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light [animation-delay:150ms]" />
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-violet-light [animation-delay:300ms]" />
@@ -191,7 +191,7 @@ export function AssistantChatPanel({
           onChange={(e) => setInput(e.target.value)}
           placeholder="Pose ta question…"
           maxLength={2000}
-          className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-white/[0.03] px-3.5 py-2.5 text-sm text-foreground placeholder:text-foreground-muted/60 outline-none transition-colors focus:border-accent-violet/60"
+          className="min-w-0 flex-1 rounded-xl border border-border-subtle bg-overlay/[0.03] px-3.5 py-2.5 text-sm text-foreground placeholder:text-foreground-muted/60 outline-none transition-colors focus:border-accent-violet/60"
         />
         <button
           type="submit"

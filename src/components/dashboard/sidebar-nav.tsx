@@ -47,7 +47,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
               active
                 ? "bg-gradient-to-r from-accent-blue/15 to-accent-violet/15 text-foreground"
-                : "text-foreground-muted hover:bg-white/[0.04] hover:text-foreground"
+                : "text-foreground-muted hover:bg-overlay/[0.04] hover:text-foreground"
             }`}
           >
             <span

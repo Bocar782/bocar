@@ -6,6 +6,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { IconClose, IconLogout, IconMenu } from "./icons";
 import { SidebarNav } from "./sidebar-nav";
+import { useAppTheme } from "./theme-context";
 import { TopbarSearch } from "./topbar-search";
 
 // Prompt 06.1 : shell commun à toutes les pages "app" de l'intérieur
@@ -27,8 +28,18 @@ export function DashboardShell({
   const [open, setOpen] = useState(false);
   const initials = userEmail.trim().slice(0, 1).toUpperCase() || "?";
 
+  // Prompt 06.7 : thème clair/sombre de l'intérieur de l'app (jamais la
+  // landing, qui garde son propre habillage) — voir theme-context.tsx.
+  const { theme } = useAppTheme();
+
   return (
-    <div className="relative flex min-h-screen w-full">
+    // bg-background (et pas seulement les cartes individuelles) : la balise
+    // <body> reste hors de la portée de data-theme (elle l'englobe, un
+    // attribut ne remonte jamais vers le haut) et garde le fond du thème
+    // sombre par défaut — sans ce fond explicite ici, les surfaces semi-
+    // transparentes de l'intérieur de l'app (Card par défaut, overlays...)
+    // resteraient visuellement sombres même en thème clair.
+    <div data-theme={theme} className="relative flex min-h-screen w-full bg-background text-foreground">
       {/* Sidebar desktop */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border-subtle bg-background-elevated/60 px-4 py-6 lg:flex">
         <Link href="/dashboard" className="flex items-center gap-2 px-2">
@@ -52,7 +63,7 @@ export function DashboardShell({
               <button
                 type="submit"
                 aria-label="Se déconnecter"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/[0.06] hover:text-foreground"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-overlay/[0.06] hover:text-foreground"
               >
                 <IconLogout width={16} height={16} />
               </button>
@@ -74,7 +85,7 @@ export function DashboardShell({
             type="button"
             onClick={() => setOpen(true)}
             aria-label="Ouvrir le menu"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-white/5 text-foreground"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-overlay/5 text-foreground"
           >
             <IconMenu width={18} height={18} />
           </button>
@@ -97,7 +108,7 @@ export function DashboardShell({
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Fermer le menu"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground-muted hover:bg-white/[0.06] hover:text-foreground"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-foreground-muted hover:bg-overlay/[0.06] hover:text-foreground"
                 >
                   <IconClose width={16} height={16} />
                 </button>
@@ -119,7 +130,7 @@ export function DashboardShell({
                     <button
                       type="submit"
                       aria-label="Se déconnecter"
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-white/[0.06] hover:text-foreground"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-overlay/[0.06] hover:text-foreground"
                     >
                       <IconLogout width={16} height={16} />
                     </button>

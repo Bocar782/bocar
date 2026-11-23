@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { PricingCards } from "@/components/marketing/pricing-cards";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -72,6 +73,18 @@ export default async function ProfilePage() {
             </button>
           </form>
         </Card>
+
+        <div className="mt-10">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+            Thème
+          </h2>
+          <p className="mt-1 text-sm text-foreground-muted">
+            Choisis l&apos;apparence de ton espace Tavyra — le choix est mémorisé sur cet appareil.
+          </p>
+          <div className="mt-4">
+            <ThemeToggle />
+          </div>
+        </div>
 
         <div className="mt-10">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
