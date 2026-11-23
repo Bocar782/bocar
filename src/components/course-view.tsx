@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { GeneratedCourse, GeneratedModule } from "@/lib/courses/schemas";
 import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
 import { setLessonCompletion } from "@/lib/courses/progress-actions";
+import { CourseCover } from "./dashboard/course-cover";
+import { IconGraduationCap } from "./marketing/icons";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { CourseSidebar } from "./course-sidebar";
@@ -297,6 +299,20 @@ export function CourseView({
   const totalChapters = course.chapters.length;
   const completedCount = course.chapters.filter(isChapterCompleted).length;
 
+  // Pour le bouton "Continuer cette formation" (sous l'image de garde) :
+  // la première leçon pas encore marquée terminée, dans l'ordre réel des
+  // chapitres — jamais une position fixe. Si tout est déjà terminé, le
+  // bouton renvoie vers le résumé plutôt que de répéter la première leçon.
+  const nextUnfinishedChapter = course.chapters.find((c) => !isChapterCompleted(c));
+  const continueTarget =
+    totalChapters === 0
+      ? null
+      : nextUnfinishedChapter
+        ? `chapitre-${nextUnfinishedChapter.position}`
+        : "resume-section";
+  const continueLabel =
+    completedCount === 0 ? "Commencer cette formation" : nextUnfinishedChapter ? "Continuer cette formation" : "Revoir le résumé";
+
   // Une formation fraîchement générée (pas encore relue depuis la base)
   // n'a pas encore de `modules` : on retombe sur un module implicite
   // unique, purement pour l'affichage du sommaire (rien n'est persisté).
@@ -424,7 +440,23 @@ export function CourseView({
           <MarkdownContent content={course.introduction} />
         </div>
 
-        <section className="mt-2 rounded-2xl border border-border-subtle bg-white/[0.02] p-6">
+        {continueTarget && (
+          <Button type="button" onClick={() => scrollToId(continueTarget)} className="mt-5">
+            {continueLabel}
+          </Button>
+        )}
+
+        {/* Image de garde de la formation (Prompt 06.8) : même dégradé
+            abstrait déterministe que les vignettes de la bibliothèque
+            (CourseCover, dérivé de l'id réel — jamais une photo stock sans
+            rapport avec le contenu), simplement en grand format ici. */}
+        <CourseCover
+          seed={courseId ?? course.title}
+          icon={<IconGraduationCap width={40} height={40} />}
+          className="mt-6 h-48 w-full rounded-[28px] sm:h-56"
+        />
+
+        <section className="mt-8 rounded-2xl border border-border-subtle bg-white/[0.02] p-6">
           <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
             <span aria-hidden className="text-accent-violet-light">
               ◆
