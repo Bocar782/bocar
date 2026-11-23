@@ -55,11 +55,22 @@ export type DashboardStats = {
   /** `null` si moins d'une tentative notée dans l'une des deux fenêtres de 7
    *  jours — jamais de tendance calculée sur une base vide. */
   quizScoreTrend: QuizScoreTrend | null;
+  /** Temps de LECTURE estimé (jamais "temps passé" — on ne mesure aucune
+   *  session), calculé à partir du nombre réel de mots du contenu des
+   *  chapitres (~200 mots/minute). Purement informatif pour l'utilisateur,
+   *  jamais présenté comme une mesure d'activité. */
+  estimatedReadingMinutesTotal: number;
 };
 
 const ACTIVITY_WINDOW_DAYS = 14;
 const RECENT_ACTIVITY_LIMIT = 8;
 const QUIZ_SCORE_SERIES_LIMIT = 10;
+const AVERAGE_READING_WORDS_PER_MINUTE = 200;
+
+function countWords(text: string | null): number {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
 
 function dayKey(iso: string): string {
   return iso.slice(0, 10);
@@ -97,7 +108,7 @@ export async function getDashboardStats(
     courseIds.length > 0
       ? supabase
           .from("course_chapters")
-          .select("id, title, course_id")
+          .select("id, title, course_id, explanation")
           .in("course_id", courseIds)
       : Promise.resolve({ data: [], error: null }),
     courseIds.length > 0
@@ -122,9 +133,19 @@ export async function getDashboardStats(
     throw new Error(`Échec du chargement des tentatives de quiz : ${attemptsResult.error.message}`);
   }
 
-  const chapters = (chaptersResult.data ?? []) as { id: string; title: string; course_id: string }[];
+  const chapters = (chaptersResult.data ?? []) as {
+    id: string;
+    title: string;
+    course_id: string;
+    explanation: string | null;
+  }[];
   const chapterIds = chapters.map((c) => c.id);
   const chapterById = new Map(chapters.map((c) => [c.id, c]));
+
+  const estimatedReadingMinutesTotal = Math.round(
+    chapters.reduce((sum, c) => sum + countWords(c.explanation), 0) /
+      AVERAGE_READING_WORDS_PER_MINUTE,
+  );
 
   const quizzes = (quizzesResult.data ?? []) as {
     id: string;
@@ -317,5 +338,6 @@ export async function getDashboardStats(
     courseCountSeries,
     quizScoreSeries,
     quizScoreTrend,
+    estimatedReadingMinutesTotal,
   };
 }

@@ -7,7 +7,11 @@ import { listCourses } from "@/lib/courses/persist";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 
-export default async function LibraryPage() {
+export default async function LibraryPage(props: PageProps<"/dashboard/formations">) {
+  const searchParams = await props.searchParams;
+  const initialQueryRaw = searchParams?.q;
+  const initialQuery = Array.isArray(initialQueryRaw) ? initialQueryRaw[0] : initialQueryRaw;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -34,7 +38,7 @@ export default async function LibraryPage() {
         </p>
 
         <div className="mt-8">
-          <LibraryBrowser courses={courses} analyses={analyses} />
+          <LibraryBrowser courses={courses} analyses={analyses} initialQuery={initialQuery ?? ""} />
         </div>
       </div>
     </DashboardShell>

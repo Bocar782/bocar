@@ -6,6 +6,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { IconClose, IconLogout, IconMenu } from "./icons";
 import { SidebarNav } from "./sidebar-nav";
+import { TopbarSearch } from "./topbar-search";
 
 // Prompt 06.1 : shell commun à toutes les pages "app" de l'intérieur
 // (tableau de bord, bibliothèque, création, profil) — sidebar fixe en
@@ -24,6 +25,7 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const initials = userEmail.trim().slice(0, 1).toUpperCase() || "?";
 
   return (
     <div className="relative flex min-h-screen w-full">
@@ -128,7 +130,21 @@ export function DashboardShell({
           </div>
         )}
 
-        <main className="relative z-10 flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8 lg:pb-20 lg:pt-10 xl:px-12">
+        {/* Barre desktop : recherche globale + avatar — n'existe qu'à partir
+            de lg (sur mobile, la recherche vit directement dans la page
+            Bibliothèque, déjà accessible depuis le tiroir). */}
+        <header className="sticky top-0 z-20 hidden items-center justify-between gap-4 border-b border-border-subtle bg-background/80 px-8 py-4 backdrop-blur-xl lg:flex xl:px-12">
+          <TopbarSearch />
+          <Link
+            href="/dashboard/profil"
+            aria-label="Profil"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-sm font-semibold text-white"
+          >
+            {initials}
+          </Link>
+        </header>
+
+        <main className="relative z-10 flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8 lg:pb-12 lg:pt-8 xl:px-12">
           {children}
         </main>
       </div>

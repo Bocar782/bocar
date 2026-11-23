@@ -3,6 +3,8 @@ import {
   STATUS_LABELS,
   type CourseStatus,
 } from "@/lib/courses/progress";
+import { CourseCover } from "./dashboard/course-cover";
+import { IconGraduationCap } from "./marketing/icons";
 import { Badge, type BadgeTone } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -33,6 +35,11 @@ export function CourseListItem({ course }: { course: CourseListItemData }) {
     <li className="h-full">
       <Card padding="sm" className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-2">
+          <CourseCover
+            seed={course.id}
+            icon={<IconGraduationCap width={18} height={18} />}
+            className="h-11 w-11"
+          />
           <Badge tone={STATUS_BADGE_TONE[status]}>{STATUS_LABELS[status]}</Badge>
         </div>
 

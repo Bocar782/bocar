@@ -185,4 +185,42 @@ describe("getDashboardStats (vrai code)", () => {
       deltaPoints: 30,
     });
   });
+
+  it("estime le temps de lecture à partir du nombre réel de mots des chapitres, à 200 mots/minute (Prompt 06.3)", async () => {
+    const courses = [
+      { id: "c1", title: "Formation", createdAt: iso(5), chapterCount: 2, currentChapterIndex: 0 },
+    ];
+    const words400 = Array.from({ length: 400 }, (_, i) => `mot${i}`).join(" ");
+    const words200 = Array.from({ length: 200 }, (_, i) => `mot${i}`).join(" ");
+    const supabase = makeSupabase({
+      course_chapters: [
+        { id: "chap-1", title: "Chap 1", course_id: "c1", explanation: words400 },
+        { id: "chap-2", title: "Chap 2", course_id: "c1", explanation: words200 },
+      ],
+      quizzes: [],
+      quiz_attempts: [],
+      lesson_progress: [],
+    });
+
+    const stats = await getDashboardStats(supabase as never, "user-1", courses);
+
+    // 600 mots / 200 mots par minute = 3 minutes.
+    expect(stats.estimatedReadingMinutesTotal).toBe(3);
+  });
+
+  it("ne plante pas et renvoie 0 minute si les chapitres n'ont pas de texte (Prompt 06.3)", async () => {
+    const courses = [
+      { id: "c1", title: "Formation", createdAt: iso(5), chapterCount: 1, currentChapterIndex: 0 },
+    ];
+    const supabase = makeSupabase({
+      course_chapters: [{ id: "chap-1", title: "Chap 1", course_id: "c1", explanation: null }],
+      quizzes: [],
+      quiz_attempts: [],
+      lesson_progress: [],
+    });
+
+    const stats = await getDashboardStats(supabase as never, "user-1", courses);
+
+    expect(stats.estimatedReadingMinutesTotal).toBe(0);
+  });
 });

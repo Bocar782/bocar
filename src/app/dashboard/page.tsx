@@ -18,6 +18,13 @@ import { signOut } from "./actions";
 
 const RECENT_COURSES_LIMIT = 4;
 
+function formatReadingTime(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest}`;
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient();
   const {
@@ -50,6 +57,7 @@ export default async function DashboardPage() {
     courseCountSeries: [],
     quizScoreSeries: [],
     quizScoreTrend: null,
+    estimatedReadingMinutesTotal: 0,
   }));
 
   const recentCourses = [...courses]
@@ -122,9 +130,9 @@ export default async function DashboardPage() {
               <StatCard
                 icon={<IconChartLine width={20} height={20} />}
                 gradient="from-accent-violet to-accent-violet-light"
-                label="Progression moyenne"
-                value={`${stats.avgProgressPercent}%`}
-                sublabel={`${stats.inProgressCourses} en cours`}
+                label="Contenu disponible"
+                value={formatReadingTime(stats.estimatedReadingMinutesTotal)}
+                sublabel="temps de lecture estimé"
               />
               <StatCard
                 icon={<IconFlame width={20} height={20} />}
@@ -187,6 +195,21 @@ export default async function DashboardPage() {
                 </Card>
               </div>
             </section>
+
+            {locked && (
+              <section className="mt-10 flex flex-col items-center justify-between gap-4 rounded-2xl border border-accent-violet/25 bg-gradient-to-r from-accent-violet/10 to-accent-blue/10 px-6 py-6 text-center sm:flex-row sm:text-left">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Passe au plan Pro</p>
+                  <p className="mt-1 text-sm text-foreground-muted">
+                    Formations illimitées chaque mois, accès complet à chaque formation, et bien
+                    plus.
+                  </p>
+                </div>
+                <Button href="/dashboard/profil" className="shrink-0">
+                  Voir les offres →
+                </Button>
+              </section>
+            )}
           </>
         )}
       </div>

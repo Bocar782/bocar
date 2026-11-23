@@ -34,11 +34,16 @@ type Filter = "all" | "courses" | "analyses";
 export function LibraryBrowser({
   courses,
   analyses,
+  initialQuery = "",
 }: {
   courses: CourseItem[];
   analyses: AnalysisItem[];
+  /** Pré-remplit la recherche, ex. venant de la barre de recherche globale
+   *  du shell (`?q=...`) — simple état initial, l'utilisateur garde le
+   *  contrôle ensuite. */
+  initialQuery?: string;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState<Filter>("all");
 
   const normalizedQuery = query.trim().toLowerCase();

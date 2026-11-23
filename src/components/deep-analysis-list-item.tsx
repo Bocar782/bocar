@@ -1,3 +1,5 @@
+import { CourseCover } from "./dashboard/course-cover";
+import { IconTelescope } from "./marketing/icons";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -13,9 +15,14 @@ export function DeepAnalysisListItem({ analysis }: { analysis: DeepAnalysisListI
   return (
     <li className="h-full">
       <Card padding="sm" className="flex h-full flex-col">
-        <Badge tone="accent" className="self-start">
-          Analyse approfondie
-        </Badge>
+        <div className="flex items-start justify-between gap-2">
+          <CourseCover
+            seed={analysis.id}
+            icon={<IconTelescope width={18} height={18} />}
+            className="h-11 w-11"
+          />
+          <Badge tone="accent">Analyse approfondie</Badge>
+        </div>
 
         <p className="mt-3 line-clamp-2 flex-1 font-medium leading-snug text-foreground">
           {analysis.title}
