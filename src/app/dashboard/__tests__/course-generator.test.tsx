@@ -198,6 +198,41 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
     expect(container.textContent).toContain("Quel est ton niveau ?");
   });
 
+  it("sélectionner un choix n'envoie rien tant que « Question suivante » n'est pas cliqué, puis affiche la réponse dans le fil déjà répondu (Prompt 06.10)", async () => {
+    installFetchMock();
+    let questionCallCount = 0;
+    fetchHandler = async (url, body) => {
+      if (url === "/api/courses/plan" && body.action === "question") {
+        questionCallCount += 1;
+        if (questionCallCount === 1) {
+          return jsonResponse({ question: { id: "q1", question: "Quel est ton niveau ?", type: "single_choice", choices: ["Débutant", "Avancé"] } });
+        }
+        return jsonResponse({ question: { id: "q2", question: "As-tu déjà créé un site ?", type: "single_choice", choices: ["Oui", "Non"] } });
+      }
+      throw new Error(`appel inattendu : ${url} ${JSON.stringify(body)}`);
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: false });
+    await setTextareaValue("Un sujet de test");
+    await click(findButton("Créer ma formation"));
+    expect(container.textContent).toContain("Quel est ton niveau ?");
+
+    const nextButton = findButton("Question suivante →");
+    expect(nextButton.disabled).toBe(true);
+
+    await click(findButton("Débutant"));
+    expect(questionCallCount).toBe(1); // sélectionner seul ne déclenche aucun appel réseau.
+    expect(findButton("Question suivante →").disabled).toBe(false);
+
+    await click(findButton("Question suivante →"));
+    expect(questionCallCount).toBe(2);
+    expect(container.textContent).toContain("As-tu déjà créé un site ?");
+    // La réponse à la question précédente apparaît désormais dans le fil
+    // des questions déjà répondues, au-dessus de la question active.
+    expect(container.textContent).toContain("Quel est ton niveau ?");
+    expect(container.textContent).toContain("Débutant");
+  });
+
   it("construit le plan puis valide et génère via start { topic, plan }", async () => {
     installFetchMock();
     fetchHandler = async (url, body) => {

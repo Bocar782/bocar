@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
 import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { GenerationProgress } from "@/components/generation-progress";
@@ -652,45 +653,103 @@ export function CourseGenerator({
   }
 
   if (status === "diagnostic" && currentQuestion) {
+    const isChoice = currentQuestion.type === "single_choice" && !!currentQuestion.choices;
+    const canAdvance = diagnosticChoice.trim().length > 0;
+
     return (
       <div className="w-full max-w-2xl">
         <JourneyBreadcrumb status={status} />
         {error && <Callout tone="error" className="mb-4">{error}</Callout>}
-        <Card variant="elevated">
-          <div className="flex items-center gap-2">
-            {/* Puces de progression du diagnostic : pas de total fixe affiché
-                (adaptatif, le nombre de questions n'est pas connu à l'avance)
-                — seulement les questions déjà répondues, honnêtement. */}
-            {Array.from({ length: diagnosticAnswers.length + 1 }).map((_, i) => (
-              <span
-                key={i}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === diagnosticAnswers.length
-                    ? "w-6 bg-gradient-to-r from-accent-blue to-accent-violet"
-                    : "w-1.5 bg-accent-violet/40"
-                }`}
-              />
+
+        {/* Fil des réponses déjà données : un vrai suivi visible, jamais un
+            total fixe annoncé à l'avance (le diagnostic est adaptatif — voir
+            MIN/MAX_DIAGNOSTIC_QUESTIONS dans generate.ts) — seulement ce qui
+            a réellement été répondu jusqu'ici. */}
+        {diagnosticAnswers.length > 0 && (
+          <ol className="mb-4 space-y-1.5">
+            {diagnosticAnswers.map((a) => (
+              <li
+                key={a.questionId}
+                className="flex items-start gap-2.5 rounded-xl border border-border-subtle bg-overlay/[0.02] px-3.5 py-2.5"
+              >
+                <span
+                  aria-hidden
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white"
+                >
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <path
+                      d="M2 5.5l2.3 2.3L9 3"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-xs text-foreground-muted">{a.question}</span>
+                  <span className="block truncate text-sm font-medium text-foreground">{a.answer}</span>
+                </span>
+              </li>
             ))}
+          </ol>
+        )}
+
+        <Card variant="elevated">
+          <div className="flex items-center gap-3">
+            <BrandMark size={30} />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
+                Diagnostic Tavyra
+              </p>
+              <p className="text-xs text-foreground-muted">
+                Question {diagnosticAnswers.length + 1} — pour caler cette formation sur ton niveau réel
+              </p>
+            </div>
           </div>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-foreground-muted">
-            Question {diagnosticAnswers.length + 1}
-          </p>
-          <h3 className="mt-2 text-xl font-semibold leading-snug text-foreground">
+
+          <h3 className="mt-4 text-xl font-semibold leading-snug text-foreground">
             {currentQuestion.question}
           </h3>
 
-          {currentQuestion.type === "single_choice" && currentQuestion.choices ? (
+          {isChoice ? (
             <div className="mt-5 flex flex-col gap-2">
-              {currentQuestion.choices.map((choice) => (
-                <button
-                  key={choice}
-                  type="button"
-                  onClick={() => answerDiagnosticQuestion(choice)}
-                  className="rounded-xl border border-border-subtle bg-overlay/[0.02] px-4 py-3.5 text-left text-sm text-foreground transition-all hover:border-accent-violet/60 hover:bg-overlay/[0.05] hover:pl-5"
-                >
-                  {choice}
-                </button>
-              ))}
+              {currentQuestion.choices!.map((choice) => {
+                const active = diagnosticChoice === choice;
+                return (
+                  <button
+                    key={choice}
+                    type="button"
+                    onClick={() => setDiagnosticChoice(choice)}
+                    aria-pressed={active}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left text-sm transition-all active:scale-[0.99] ${
+                      active
+                        ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
+                        : "border-border-subtle bg-overlay/[0.02] text-foreground hover:bg-overlay/[0.05]"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                        active ? "border-accent-violet bg-accent-violet" : "border-border-subtle"
+                      }`}
+                    >
+                      {active && (
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          <path
+                            d="M1.5 5l2.5 2.5 4.5-5"
+                            stroke="white"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    {choice}
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="mt-5">
@@ -702,16 +761,18 @@ export function CourseGenerator({
                 placeholder="Ta réponse…"
                 className="w-full resize-none rounded-xl border border-border-subtle bg-overlay/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
               />
-              <Button
-                type="button"
-                className="mt-3"
-                disabled={!diagnosticChoice.trim()}
-                onClick={() => answerDiagnosticQuestion(diagnosticChoice)}
-              >
-                Répondre
-              </Button>
             </div>
           )}
+
+          <div className="mt-6 flex justify-end border-t border-border-subtle pt-4">
+            <Button
+              type="button"
+              disabled={!canAdvance}
+              onClick={() => answerDiagnosticQuestion(diagnosticChoice)}
+            >
+              Question suivante →
+            </Button>
+          </div>
         </Card>
       </div>
     );
