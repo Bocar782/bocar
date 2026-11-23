@@ -24,10 +24,11 @@ export const dynamic = "force-dynamic";
 // réelle depuis ce dépôt. `maxDuration` reste une simple indication pour
 // les plateformes qui choisissent de l'honorer (voir la documentation
 // Next.js elle-même : « Deployment platforms CAN use maxDuration... »,
-// formulation volontairement non garantie) — PAS la base du calcul de
-// sécurité ci-dessous. Voir MIN_LOCK_AGE_BEFORE_RECOVERY_MS plus bas pour
-// le véritable fondement, vérifiable indépendamment de la configuration
-// Netlify spécifique à ce site.
+// formulation volontairement non garantie) — simplement cohérente avec
+// les autres routes de ce projet, jamais utilisée comme base d'un calcul
+// de sécurité (voir 06.30 plus bas : la protection anti-double-paiement
+// repose uniquement sur la vérification en direct auprès de Stripe, plus
+// aucun seuil basé sur le temps écoulé).
 export const maxDuration = 120;
 
 // Crée une session Stripe Checkout (abonnement Pro) en mode "embedded"
@@ -383,96 +384,26 @@ function isMissingCustomerError(error: unknown): boolean {
 
 type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
 
-// Prompt 06.22/06.23 : âge minimum obligatoire d'un verrou avant toute
-// tentative de récupération (voir tryRecoverAbandonedLock). Revu une
-// deuxième fois (06.23) après avoir constaté que le fondement initial
-// (« maxDuration=120 est appliqué par la plateforme ») n'est PAS vérifié
-// — voir le commentaire sur `export const maxDuration` ci-dessus. Ce
-// seuil ne repose donc plus sur une hypothèse de configuration Netlify
-// (plan, limite synchrone réelle : non vérifiable depuis ce dépôt), mais
-// sur un fait structurel de l'infrastructure sous-jacente, indépendant de
-// toute configuration spécifique à ce site.
-//
-// Fait vérifié n°1 (architecture, pas configuration) — à distinguer
-// clairement en deux temps, suite à une revue de sécurité explicite sur
-// ce point précis (06.24) :
-//
-// (a) PLAFOND THÉORIQUE AWS (vrai sans condition) : AWS Lambda impose un
-//     maximum ABSOLU et NON CONFIGURABLE de 900 secondes (15 minutes) pour
-//     toute invocation, quel que soit le fournisseur au-dessus ou le plan
-//     souscrit — ce nombre est une propriété d'AWS Lambda lui-même,
-//     documentée publiquement, vraie partout où Lambda tourne.
-//
-// (b) DURÉE EFFECTIVE DE CETTE FONCTION NETLIFY (condition vérifiable
-//     dans ce dépôt, PAS garantie au-delà) : ce plafond (a) ne s'applique
-//     à cette route QUE si son exécution est bien portée par une Netlify
-//     Function classique adossée à AWS Lambda — PAS par une Edge Function
-//     (modèle d'exécution différent : isolats V8/Deno en périphérie,
-//     limites de temps CPU bien plus courtes et non comparables, aucun
-//     rapport avec le plafond Lambda). Ce que ce dépôt permet réellement
-//     de vérifier : aucune route de ce projet (`grep -rn "export const
-//     runtime"` sur tout `src/`) ne déclare `runtime = "edge"`, donc par
-//     défaut Next.js cible le runtime Node.js — lequel, selon les
-//     conventions documentées de l'adaptateur Next.js de Netlify, est
-//     déployé comme Netlify Function classique (Lambda), jamais comme
-//     Edge Function. C'est un indice de code fort et vérifiable, PAS une
-//     confirmation obtenue depuis le tableau de bord Netlify de ce site
-//     (hors de portée de ce sandbox) : la configuration RÉELLE du build
-//     Netlify (version du runtime Next.js utilisé, routage éventuel via
-//     API Gateway dont le timeout d'intégration côté client est de 29s —
-//     ce qui n'arrête PAS l'exécution Lambda elle-même en arrière-plan,
-//     fait AWS documenté séparément) reste non vérifiable depuis ce dépôt.
-//     Le même audit interne 05.19/05.20 qui a établi que `maxDuration`
-//     n'est pas honoré ici porte sur la limite CONFIGURÉE (10-60s selon
-//     lui) — pas sur le plafond ABSOLU (a), qui s'applique quelle que
-//     soit cette configuration, tant que (b) tient.
-//
-// Conséquence assumée : ce code ne prétend PAS que Netlify exécute cette
-// fonction jusqu'à 900s en pratique (presque certainement faux, la
-// configuration réelle est probablement bien plus courte) — il affirme
-// seulement qu'AUCUNE exécution Lambda-backée, quelle que soit sa
-// configuration, ne peut PHYSIQUEMENT dépasser 900s. C'est un majorant
-// mathématique, pas une estimation de durée typique, et il repose sur
-// l'hypothèse (b) qui n'a pas pu être certifiée au-delà des indices de
-// code ci-dessus.
-const AWS_LAMBDA_HARD_MAX_DURATION_MS = 15 * 60 * 1000;
-
-// Fait vérifié n°2 (calcul, pas estimation) : pire cas théorique de la
-// séquence Stripe elle-même, pour validation croisée. Le pire cas de code
-// (customer Stripe persisté orphelin, correctif 06.17) enchaîne JUSQU'À 4
-// appels Stripe séquentiels dans une seule requête : customers.create(),
-// checkout.sessions.create() (échoue), customers.create() à nouveau,
-// checkout.sessions.create() à nouveau. Le SDK Stripe (createStripeClient,
-// aucun `maxNetworkRetries` défini) applique sa valeur par défaut : 2
-// retries automatiques par appel (3 tentatives au total), chacune avec son
-// propre timeout de 80 000 ms, backoff entre tentatives négligeable
-// (≤ ~1,5 s cumulés — vérifié dans node_modules/stripe/{RequestSender,
-// stripe.core,platform/PlatformFunctions}.js) :
-//   4 appels × 3 tentatives × 80 000 ms ≈ 960 000 ms (16 min) au pire cas
-//   pathologique (chaque tentative de chaque appel épuise son timeout).
-// Ce nombre (≈ 16 min) est volontairement très proche du plafond Lambda
-// (15 min) : dans le pire des cas, c'est la PLATEFORME qui coupera la
-// fonction avant même que le SDK Stripe n'ait fini d'épuiser ses propres
-// retries — confirmant que 900 000 ms est bien le plafond déterminant,
-// pas une estimation optimiste.
-//
-// Seuil retenu = plafond Lambda (900 000 ms) + 60 000 ms de marge de
-// mesure (horloges, latence réseau de la lecture du verrou elle-même) =
-// 960 000 ms (16 minutes). Sous réserve que (b) ci-dessus tienne (ce que
-// ce dépôt ne peut certifier au-delà de l'absence de `runtime = "edge"`),
-// avant ce seuil une requête légitime peut PHYSIQUEMENT encore être en
-// cours d'exécution, quelle que soit la configuration Netlify ; après,
-// elle a nécessairement déjà terminé — succès, erreur avec
-// libération via le catch existant (06.15/06.18), ou terminaison forcée
-// par AWS Lambda lui-même sans avoir pu exécuter son propre nettoyage
-// (c'est CE dernier cas, et lui seul, que cette récupération vise à
-// corriger). Reste inférieur au délai de 30 minutes (reserve_checkout_
-// session, 0022, inchangé, toujours le filet de sécurité de dernier
-// recours) : la récupération reste plus rapide que l'attente aveugle,
-// mais seulement dans la mesure où cela peut être démontré sans
-// hypothèse non vérifiée — jamais au prix d'un risque de double
-// abonnement.
-export const MIN_LOCK_AGE_BEFORE_RECOVERY_MS = AWS_LAMBDA_HARD_MAX_DURATION_MS + 60 * 1000;
+// Prompt 06.30 (suite à une demande explicite et répétée de l'utilisateur :
+// aucune limite de temps, jamais, pour revenir sur /checkout — « si un
+// utilisateur veut faire 100 allers-retours il a le droit »). SUPPRIME le
+// seuil d'âge minimum qui existait ici jusqu'à 06.23/06.24
+// (MIN_LOCK_AGE_BEFORE_RECOVERY_MS, 16 minutes) avant toute tentative de
+// récupération d'un verrou abandonné. Risque accepté EXPLICITEMENT par
+// l'utilisateur (propriétaire du produit), après explication : une requête
+// concurrente qui vient tout juste de poser le verrou et qui est encore en
+// train d'appeler Stripe (donc sa session n'existe pas ENCORE côté Stripe)
+// pourrait en théorie être confondue avec un verrou abandonné par la
+// vérification ci-dessous, dans une fenêtre de quelques secondes (durée
+// réelle d'un appel réseau à Stripe, pas 16 minutes — ce chiffre était un
+// majorant pathologique, pas une estimation). La protection réelle contre
+// un double paiement ne repose JAMAIS sur ce délai : elle repose sur la
+// vérification en direct auprès de Stripe (sessions ouvertes, abonnements
+// non sûrs — voir SAFE_SUBSCRIPTION_STATUSES/SAFE_SESSION_PAYMENT_STATUSES
+// ci-dessous) et sur le verrou avisoire PostgreSQL de la RPC elle-même
+// (0022/0024/0026) — jamais sur le temps écoulé. Voir aussi la migration
+// 0026_remove_checkout_lock_age_floor.sql, qui retire le plancher
+// symétrique côté SQL (release_abandoned_checkout_lock).
 
 // Prompt 06.20 (durcissement, suite à la revue de sécurité du correctif
 // 06.19) : au moindre doute sur l'état réel d'un paiement, le verrou est
@@ -624,28 +555,11 @@ async function tryRecoverAbandonedLock(
 
   const pendingCheckoutAt = current.pending_checkout_at;
 
-  // Prompt 06.21/06.22 (durcissement, suite aux revues de sécurité sur les
-  // conditions de concurrence puis sur la durée réelle de toute la
-  // séquence) : un verrou tout juste posé ne doit JAMAIS être considéré
-  // comme "abandonné", même si la recherche Stripe ci-dessous ne trouve
-  // rien — la requête qui l'a posé peut tout simplement être encore en
-  // train de communiquer avec Stripe (potentiellement plusieurs appels
-  // séquentiels, voir la justification complète du seuil au niveau module,
-  // MIN_LOCK_AGE_BEFORE_RECOVERY_MS). Chercher "y a-t-il une session ?" à
-  // cet instant précis donnerait "non" pour une bonne raison (elle
-  // n'existe pas ENCORE) qu'on ne peut pas distinguer d'un verrou
-  // réellement abandonné. Seul le TEMPS — borné de façon fiable par
-  // `maxDuration`, pas par une estimation du SDK — permet de lever cette
-  // ambiguïté.
-  const lockAgeMs = Date.now() - new Date(pendingCheckoutAt).getTime();
-  if (!Number.isFinite(lockAgeMs) || lockAgeMs < MIN_LOCK_AGE_BEFORE_RECOVERY_MS) {
-    log("4a_recuperation_verrou_ignoree", {
-      reason: "verrou_trop_recent_possiblement_en_cours",
-      lockAgeMs: Number.isFinite(lockAgeMs) ? lockAgeMs : null,
-    });
-    return null;
-  }
-
+  // Prompt 06.30 : aucun contrôle d'âge ici (voir le commentaire sur la
+  // suppression de MIN_LOCK_AGE_BEFORE_RECOVERY_MS plus haut) — la
+  // vérification en direct auprès de Stripe ci-dessous décide seule, à
+  // chaque appel, qu'il soit fait une seconde ou une heure après la pose
+  // du verrou.
   try {
     const [sessionsResult, subscriptionsResult] = await Promise.all([
       listAllStripePages<Stripe.Checkout.Session>((startingAfter) =>
