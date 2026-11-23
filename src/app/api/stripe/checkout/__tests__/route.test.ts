@@ -406,16 +406,18 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(routeModule.MIN_LOCK_AGE_BEFORE_RECOVERY_MS).toBeLessThan(30 * 60 * 1000);
     });
 
-    it("06.21 : release_abandoned_checkout_lock (RPC) refuse elle-même toute libération si le verrou a moins de 5 minutes — défense en profondeur indépendante de route.ts", async () => {
+    it("06.21/06.24 : release_abandoned_checkout_lock (RPC) refuse elle-même toute libération si le verrou a moins de 16 minutes (960s) — défense en profondeur appliquant la MÊME invariante que route.ts, indépendamment, pas une version affaiblie", async () => {
       // Ce test documente le comportement attendu de la RPC SQL
       // elle-même (vérifié séparément en conditions réelles sur un
-      // Postgres local, voir la revue de sécurité 06.21/06.23) : même si
-      // route.ts appelait un jour cette RPC sans son propre contrôle
-      // d'âge de 16 minutes, la RPC refuserait quand même tout verrou de
-      // moins de 5 minutes. Ici on vérifie que route.ts respecte bien le
-      // refus `lock_too_recent` renvoyé par la RPC exactement comme
-      // n'importe quel autre refus (`lock_changed_since_verification`) :
-      // aucune nouvelle tentative, verrou conservé.
+      // Postgres local, voir la revue de sécurité 06.21/06.24) : le
+      // plancher SQL (960s) a été harmonisé pour être numériquement
+      // identique au seuil applicatif (MIN_LOCK_AGE_BEFORE_RECOVERY_MS,
+      // route.ts) — jamais un plancher plus faible qui laisserait passer
+      // un appel direct (éditeur SQL Supabase, futur code) entre les deux
+      // seuils. Ici on vérifie que route.ts respecte bien le refus
+      // `lock_too_recent` renvoyé par la RPC exactement comme n'importe
+      // quel autre refus (`lock_changed_since_verification`) : aucune
+      // nouvelle tentative, verrou conservé.
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = new Date(Date.now() - (16 * 60 * 1000 + 1_000)).toISOString();
       releaseResult = { released: false, reason: "lock_too_recent" };

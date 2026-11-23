@@ -310,14 +310,48 @@ type ReservationResult = { ok: boolean; reason: string; existing_customer_id: st
 // sur un fait structurel de l'infrastructure sous-jacente, indépendant de
 // toute configuration spécifique à ce site.
 //
-// Fait vérifié n°1 (architecture, pas configuration) : les Netlify
-// Functions s'exécutent sur AWS Lambda (infrastructure documentée
-// publiquement par Netlify). AWS Lambda impose un plafond ABSOLU et NON
-// CONFIGURABLE de 900 secondes (15 minutes) pour toute invocation, quel
-// que soit le fournisseur au-dessus (Netlify, Vercel historique, etc.) ou
-// le plan souscrit — ce plafond ne peut PHYSIQUEMENT pas être dépassé,
-// contrairement à `maxDuration` qui n'est qu'une déclaration que la
-// plateforme peut choisir d'honorer ou non.
+// Fait vérifié n°1 (architecture, pas configuration) — à distinguer
+// clairement en deux temps, suite à une revue de sécurité explicite sur
+// ce point précis (06.24) :
+//
+// (a) PLAFOND THÉORIQUE AWS (vrai sans condition) : AWS Lambda impose un
+//     maximum ABSOLU et NON CONFIGURABLE de 900 secondes (15 minutes) pour
+//     toute invocation, quel que soit le fournisseur au-dessus ou le plan
+//     souscrit — ce nombre est une propriété d'AWS Lambda lui-même,
+//     documentée publiquement, vraie partout où Lambda tourne.
+//
+// (b) DURÉE EFFECTIVE DE CETTE FONCTION NETLIFY (condition vérifiable
+//     dans ce dépôt, PAS garantie au-delà) : ce plafond (a) ne s'applique
+//     à cette route QUE si son exécution est bien portée par une Netlify
+//     Function classique adossée à AWS Lambda — PAS par une Edge Function
+//     (modèle d'exécution différent : isolats V8/Deno en périphérie,
+//     limites de temps CPU bien plus courtes et non comparables, aucun
+//     rapport avec le plafond Lambda). Ce que ce dépôt permet réellement
+//     de vérifier : aucune route de ce projet (`grep -rn "export const
+//     runtime"` sur tout `src/`) ne déclare `runtime = "edge"`, donc par
+//     défaut Next.js cible le runtime Node.js — lequel, selon les
+//     conventions documentées de l'adaptateur Next.js de Netlify, est
+//     déployé comme Netlify Function classique (Lambda), jamais comme
+//     Edge Function. C'est un indice de code fort et vérifiable, PAS une
+//     confirmation obtenue depuis le tableau de bord Netlify de ce site
+//     (hors de portée de ce sandbox) : la configuration RÉELLE du build
+//     Netlify (version du runtime Next.js utilisé, routage éventuel via
+//     API Gateway dont le timeout d'intégration côté client est de 29s —
+//     ce qui n'arrête PAS l'exécution Lambda elle-même en arrière-plan,
+//     fait AWS documenté séparément) reste non vérifiable depuis ce dépôt.
+//     Le même audit interne 05.19/05.20 qui a établi que `maxDuration`
+//     n'est pas honoré ici porte sur la limite CONFIGURÉE (10-60s selon
+//     lui) — pas sur le plafond ABSOLU (a), qui s'applique quelle que
+//     soit cette configuration, tant que (b) tient.
+//
+// Conséquence assumée : ce code ne prétend PAS que Netlify exécute cette
+// fonction jusqu'à 900s en pratique (presque certainement faux, la
+// configuration réelle est probablement bien plus courte) — il affirme
+// seulement qu'AUCUNE exécution Lambda-backée, quelle que soit sa
+// configuration, ne peut PHYSIQUEMENT dépasser 900s. C'est un majorant
+// mathématique, pas une estimation de durée typique, et il repose sur
+// l'hypothèse (b) qui n'a pas pu être certifiée au-delà des indices de
+// code ci-dessus.
 const AWS_LAMBDA_HARD_MAX_DURATION_MS = 15 * 60 * 1000;
 
 // Fait vérifié n°2 (calcul, pas estimation) : pire cas théorique de la
@@ -341,10 +375,11 @@ const AWS_LAMBDA_HARD_MAX_DURATION_MS = 15 * 60 * 1000;
 //
 // Seuil retenu = plafond Lambda (900 000 ms) + 60 000 ms de marge de
 // mesure (horloges, latence réseau de la lecture du verrou elle-même) =
-// 960 000 ms (16 minutes). Avant ce seuil, une requête légitime peut
-// PHYSIQUEMENT encore être en cours d'exécution (aucune configuration
-// Netlify, quelle qu'elle soit, ne peut la faire durer plus longtemps) ;
-// après, elle a nécessairement déjà terminé — succès, erreur avec
+// 960 000 ms (16 minutes). Sous réserve que (b) ci-dessus tienne (ce que
+// ce dépôt ne peut certifier au-delà de l'absence de `runtime = "edge"`),
+// avant ce seuil une requête légitime peut PHYSIQUEMENT encore être en
+// cours d'exécution, quelle que soit la configuration Netlify ; après,
+// elle a nécessairement déjà terminé — succès, erreur avec
 // libération via le catch existant (06.15/06.18), ou terminaison forcée
 // par AWS Lambda lui-même sans avoir pu exécuter son propre nettoyage
 // (c'est CE dernier cas, et lui seul, que cette récupération vise à

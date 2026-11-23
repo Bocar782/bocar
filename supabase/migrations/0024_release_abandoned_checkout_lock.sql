@@ -29,8 +29,8 @@
 -- 3. Relit status au moment de l'exécution et refuse si 'active'/'trialing'
 --    — ne touche jamais un abonnement réellement actif, même si l'appelant
 --    s'est trompé.
--- 4. (Prompt 06.21, durcissement suite à une revue de sécurité sur les
---    conditions de concurrence) Âge minimum obligatoire du verrou avant
+-- 4. (Prompt 06.21/06.24, durcissement suite à des revues de sécurité sur
+--    les conditions de concurrence) Âge minimum obligatoire du verrou avant
 --    toute libération, appliqué ICI, indépendamment de tout contrôle côté
 --    application : un verrou tout juste posé peut appartenir à une requête
 --    encore en train de communiquer avec Stripe (elle n'a simplement pas
@@ -86,17 +86,27 @@ begin
     return;
   end if;
 
-  -- Prompt 06.21/06.23 : plancher d'âge minimum, indépendant du contrôle
-  -- côté application — voir la justification en tête de fichier. Revu en
-  -- 06.23 : le seuil applicatif (MIN_LOCK_AGE_BEFORE_RECOVERY_MS, route.ts)
-  -- repose désormais sur le plafond physique d'AWS Lambda (900s, infra-
-  -- structure de Netlify Functions) plutôt que sur une configuration
-  -- Netlify non vérifiable — 5 minutes ici : volontairement plus court que
-  -- ce seuil applicatif de 16 minutes (reste un filet de dernier recours,
-  -- jamais le contrôle principal, qui est toujours atteint en premier en
-  -- pratique), mais assez proche pour rester significatif si jamais
-  -- l'appel applicatif venait à être contourné.
-  if v_pending_checkout_at > now() - interval '5 minutes' then
+  -- Prompt 06.21/06.24 : plancher d'âge minimum, indépendant du contrôle
+  -- côté application. Revu en 06.24 suite à une revue de sécurité posant
+  -- précisément cette question : « tous les chemins d'appel de cette
+  -- fonction respectent-ils le seuil applicatif ? ». Vérification faite
+  -- dans le code TypeScript (grep sur tout `src/`) : le SEUL appelant de
+  -- release_abandoned_checkout_lock est tryRecoverAbandonedLock()
+  -- (route.ts), qui applique déjà MIN_LOCK_AGE_BEFORE_RECOVERY_MS (16
+  -- minutes, ancré sur le plafond physique AWS Lambda de 900s — voir la
+  -- justification complète dans route.ts) avant tout appel à cette RPC.
+  -- Mais un plancher SQL plus COURT que ce seuil applicatif (comme les
+  -- 5 minutes retenues jusqu'ici) ne protège PAS réellement contre un
+  -- appel direct de cette fonction en dehors de ce chemin applicatif —
+  -- par exemple depuis l'éditeur SQL de Supabase par un opérateur, ou
+  -- depuis un futur code qui ne connaîtrait pas ce raisonnement — pour
+  -- un verrou âgé de, disons, 7 minutes : ni sûr selon l'analyse ci-
+  -- dessus, ni bloqué par un plancher de 5 minutes. Une défense en
+  -- profondeur doit appliquer INDÉPENDAMMENT la MÊME invariante de
+  -- sécurité, jamais une version affaiblie — ce plancher est donc
+  -- désormais numériquement identique au seuil applicatif (960 secondes),
+  -- pas seulement « plus court par prudence ».
+  if v_pending_checkout_at > now() - interval '960 seconds' then
     return query select false, 'lock_too_recent'::text;
     return;
   end if;
