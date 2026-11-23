@@ -11,6 +11,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStripeCustomersCreate = vi.fn();
 const mockStripeCheckoutSessionsCreate = vi.fn();
+// Prompt 06.29 : deux mocks distincts pour deux usages réellement distincts
+// de `stripe.checkout.sessions.list` dans route.ts — `tryResumeOpenSession`
+// (status: "open", limit: 1, appelé à CHAQUE "checkout_in_progress", avant
+// tout contrôle d'âge) et la pagination de `tryRecoverAbandonedLock`
+// (jamais de `status`, appelée seulement après le contrôle d'âge). Un seul
+// mock partagé ferait consommer par le premier les valeurs
+// `mockResolvedValueOnce` prévues pour la seconde dans les tests déjà
+// existants — le routage ci-dessous (sur la présence de `status`) reproduit
+// exactement la distinction réelle du code.
+const mockStripeResumeSessionsList = vi.fn();
 const mockStripeCheckoutSessionsList = vi.fn();
 const mockStripeSubscriptionsList = vi.fn();
 vi.mock("@/lib/stripe/client", () => ({
@@ -19,7 +29,12 @@ vi.mock("@/lib/stripe/client", () => ({
     checkout: {
       sessions: {
         create: (...args: unknown[]) => mockStripeCheckoutSessionsCreate(...args),
-        list: (...args: unknown[]) => mockStripeCheckoutSessionsList(...args),
+        list: (...args: unknown[]) => {
+          const params = args[0] as { status?: string } | undefined;
+          return params?.status === "open"
+            ? mockStripeResumeSessionsList(...args)
+            : mockStripeCheckoutSessionsList(...args);
+        },
       },
     },
     subscriptions: { list: (...args: unknown[]) => mockStripeSubscriptionsList(...args) },
@@ -131,6 +146,12 @@ beforeEach(() => {
   mockStripeCheckoutSessionsCreate.mockResolvedValue({ id: "cs_test_abc", client_secret: "cs_test_abc_secret" });
   mockStripeCheckoutSessionsList.mockReset();
   mockStripeCheckoutSessionsList.mockResolvedValue({ data: [], has_more: false });
+  // Par défaut : aucune session "open" trouvée — préserve le comportement
+  // de tous les tests déjà existants, qui ne configurent pas ce scénario
+  // (ils continuent de retomber sur tryRecoverAbandonedLock / 409 comme
+  // avant 06.29).
+  mockStripeResumeSessionsList.mockReset();
+  mockStripeResumeSessionsList.mockResolvedValue({ data: [], has_more: false });
   mockStripeSubscriptionsList.mockReset();
   mockStripeSubscriptionsList.mockResolvedValue({ data: [], has_more: false });
 });
@@ -446,6 +467,89 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(response.status).toBe(409);
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("correctif 06.29 : réaffiche une session Stripe 'open' déjà existante (paiement intégré) au lieu de refuser — ne crée/libère jamais rien", () => {
+    it("renvoie directement le client_secret de la session déjà ouverte, sans jamais appeler reserve_checkout_session une seconde fois ni créer de nouvelle session", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      mockStripeResumeSessionsList.mockResolvedValueOnce({
+        data: [{ id: "cs_open_existing", client_secret: "cs_open_existing_secret" }],
+        has_more: false,
+      });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual({ clientSecret: "cs_open_existing_secret" });
+      expect(mockStripeResumeSessionsList).toHaveBeenCalledWith({
+        customer: "cus_existing_456",
+        status: "open",
+        limit: 1,
+      });
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+      expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("fonctionne MÊME pour un verrou tout juste posé (aucun contrôle d'âge requis — on réaffiche, on ne libère rien)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date().toISOString();
+      mockStripeResumeSessionsList.mockResolvedValueOnce({
+        data: [{ id: "cs_open_fresh", client_secret: "cs_open_fresh_secret" }],
+        has_more: false,
+      });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual({ clientSecret: "cs_open_fresh_secret" });
+      // N'a jamais eu besoin de lire pending_checkout_at ni d'appeler la RPC
+      // de libération : aucun verrou n'est touché, seule une lecture Stripe.
+      expect(mockSelect).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("ne tente aucune réutilisation si existing_customer_id est null (compte neuf, rien à retrouver côté Stripe)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeResumeSessionsList).not.toHaveBeenCalled();
+    });
+
+    it("retombe sur le comportement précédent (409, ou récupération après 16 min) si aucune session 'open' n'est trouvée", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      mockStripeResumeSessionsList.mockResolvedValueOnce({ data: [], has_more: false });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeResumeSessionsList).toHaveBeenCalledTimes(1);
+    });
+
+    it("comportement fail-safe : si la recherche de session ouverte échoue (réseau, clé API...), retombe sur le comportement précédent sans jamais planter", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      mockStripeResumeSessionsList.mockRejectedValueOnce(new Error("Stripe API indisponible"));
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+    });
+
+    it("ignore une session 'open' sans client_secret (ne devrait jamais arriver en pratique, mais ne doit jamais planter) et retombe sur le comportement précédent", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      mockStripeResumeSessionsList.mockResolvedValueOnce({
+        data: [{ id: "cs_sans_secret", client_secret: null }],
+        has_more: false,
+      });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
     });
   });
 

@@ -105,6 +105,30 @@ export async function POST(request: Request) {
     // touché) ni si la vérification Stripe est impossible ou incertaine
     // (fail closed : aucune libération dans ce cas).
     if (reservation.reason === "checkout_in_progress") {
+      // Prompt 06.29 (suite à un signalement utilisateur réel : revenir sur
+      // /checkout — hésitation, rafraîchissement, fermeture accidentelle de
+      // l'onglet — pendant que la session précédente est toujours active
+      // affichait une erreur 409, alors que le paiement intégré (06.28)
+      // permet désormais de simplement réafficher le MÊME formulaire déjà
+      // créé. Contrairement à `tryRecoverAbandonedLock` ci-dessous (qui
+      // LIBÈRE le verrou pour en créer un nouveau, réservé aux verrous
+      // réellement abandonnés, âgés d'au moins 16 minutes), cette
+      // récupération ne crée ni ne libère RIEN : elle retrouve la session
+      // Stripe `open` déjà existante pour ce client et renvoie son
+      // `client_secret` tel quel. Aucun nouvel abonnement ni nouvelle
+      // session n'est créé(e) — la protection anti-double-paiement reste
+      // entière, puisqu'il s'agit strictement de la même session.
+      const resumedSession = await tryResumeOpenSession(
+        stripe,
+        reservation.existing_customer_id,
+        attemptId,
+        log,
+      );
+      if (resumedSession?.client_secret) {
+        log("4b_session_existante_reutilisee", { sessionId: resumedSession.id });
+        return NextResponse.json({ clientSecret: resumedSession.client_secret });
+      }
+
       const recovered = await tryRecoverAbandonedLock(
         stripe,
         admin,
@@ -496,6 +520,52 @@ async function listAllStripePages<T extends { id: string }>(
     startingAfter = result.data[result.data.length - 1]?.id;
   }
   return { items, truncated: true };
+}
+
+// Prompt 06.29 : retrouve une session Stripe Checkout déjà créée et encore
+// `open` pour ce client, afin de la réafficher telle quelle (paiement
+// intégré, 06.28) au lieu de refuser une nouvelle tentative pendant qu'elle
+// est en cours. Ne crée, ne modifie ni ne libère RIEN : une pure lecture.
+// `existingCustomerId` null (compte neuf jamais parti jusqu'à Stripe) ou
+// tout échec de l'appel Stripe (fail-safe, jamais bloquant : la route
+// retombe simplement sur le comportement précédent, `tryRecoverAbandonedLock`
+// puis 409) renvoient `null`. `limit: 1` suffit : Stripe trie par création
+// décroissante, donc le premier résultat est la session la plus récente —
+// celle que `reserve_checkout_session` vient justement de signaler comme
+// verrou en cours.
+async function tryResumeOpenSession(
+  stripe: Stripe,
+  existingCustomerId: string | null,
+  attemptId: string,
+  log: (step: string, details?: Record<string, unknown>) => void,
+): Promise<Stripe.Checkout.Session | null> {
+  if (!existingCustomerId) {
+    return null;
+  }
+
+  try {
+    const openSessions = await stripe.checkout.sessions.list({
+      customer: existingCustomerId,
+      status: "open",
+      limit: 1,
+    });
+
+    const session = openSessions.data[0];
+    if (!session) {
+      return null;
+    }
+
+    log("4a_session_ouverte_trouvee", { sessionId: session.id });
+    return session;
+  } catch (error) {
+    const stripeError = error as { message?: string; type?: string; code?: string };
+    console.error(`[stripe/checkout:${attemptId}] échec de la recherche d'une session ouverte existante`, {
+      message: stripeError.message,
+      type: stripeError.type,
+      code: stripeError.code,
+    });
+    return null;
+  }
 }
 
 // Prompt 06.19/06.20 : récupération sécurisée d'un verrou `pending_checkout_
