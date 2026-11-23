@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 // Prompt 06.28 : paiement intégré directement sur ce site (ui_mode:
@@ -38,19 +37,19 @@ export function CheckoutClient({ publishableKey }: { publishableKey: string }) {
     return data.clientSecret;
   }, []);
 
-  // Prompt 06.28 : le cadre (fond, en-tête, largeur, titre) vient de
-  // page.tsx — ce composant ne rend plus que son propre contenu (le
-  // formulaire Stripe, qui gère lui-même sa largeur responsive à 100%, ou
-  // l'état d'erreur), pour rester simple à encarter dans ce cadre commun à
-  // toutes les tailles d'écran.
+  // Prompt 06.28 : le cadre (fond, en-tête, largeur, titre, carte
+  // englobante) vient de page.tsx — ce composant ne rend plus que son
+  // propre contenu (le formulaire Stripe, qui gère lui-même sa largeur
+  // responsive à 100%, ou l'état d'erreur), pour rester simple à encarter
+  // dans ce cadre commun à toutes les tailles d'écran.
   if (error) {
     return (
-      <Card padding="md" className="w-full text-center">
+      <div className="py-10 text-center">
         <p className="text-sm text-foreground">{error}</p>
         <Button href="/pricing" variant="secondary" fullWidth className="mt-6">
           Retour aux tarifs
         </Button>
-      </Card>
+      </div>
     );
   }
 
