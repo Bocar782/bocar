@@ -55,9 +55,10 @@ export async function POST(request: Request) {
   // une seule obtient `ok: true`, l'autre se voit immédiatement refusée
   // (`checkout_in_progress`) avant même de contacter Stripe. Un
   // utilisateur déjà Pro (`already_pro`) est refusé de la même façon.
-  const { data: reservation, error: reservationError } = await admin
+  const { data: reservationData, error: reservationError } = await admin
     .rpc("reserve_checkout_session", { p_user_id: user.id })
     .single<{ ok: boolean; reason: string; existing_customer_id: string | null }>();
+  let reservation = reservationData;
 
   if (reservationError || !reservation) {
     log("4_reservation_echec_technique", { error: reservationError?.message });
@@ -72,11 +73,34 @@ export async function POST(request: Request) {
       reason: reservation.reason,
       existingCustomerId: reservation.existing_customer_id,
     });
-    const message =
-      reservation.reason === "already_pro"
-        ? "Tu as déjà un abonnement Pro actif."
-        : "Une session de paiement est déjà en cours pour ce compte. Réessaie dans quelques instants.";
-    return NextResponse.json({ error: message }, { status: 409 });
+
+    // Prompt 06.19 (correctif) : plutôt que de faire attendre 30 minutes à
+    // l'aveugle (seule protection jusqu'ici), on vérifie directement auprès
+    // de Stripe si le verrou correspond réellement à un paiement en cours.
+    // Ne s'applique jamais à `already_pro` (abonnement actif — jamais
+    // touché) ni si la vérification Stripe est impossible ou incertaine
+    // (fail closed : aucune libération dans ce cas).
+    if (reservation.reason === "checkout_in_progress") {
+      const recovered = await tryRecoverAbandonedLock(
+        stripe,
+        admin,
+        user.id,
+        reservation.existing_customer_id,
+        attemptId,
+        log,
+      );
+      if (recovered) {
+        reservation = recovered;
+      }
+    }
+
+    if (!reservation.ok) {
+      const message =
+        reservation.reason === "already_pro"
+          ? "Tu as déjà un abonnement Pro actif."
+          : "Une session de paiement est déjà en cours pour ce compte. Réessaie dans quelques instants.";
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
   }
   log("4_reservation_validee", { existingCustomerId: reservation.existing_customer_id });
 
@@ -252,4 +276,122 @@ async function createAndPersistCustomer(
 function isMissingCustomerError(error: unknown): boolean {
   const stripeError = error as { code?: string; param?: string } | undefined;
   return stripeError?.code === "resource_missing" && stripeError?.param === "customer";
+}
+
+type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
+
+// Prompt 06.19 : récupération sécurisée d'un verrou `pending_checkout_at`
+// abandonné, vérifiée contre l'état RÉEL de Stripe plutôt que d'attendre
+// à l'aveugle les 30 minutes d'expiration déjà en place (reserve_checkout_
+// session, 0022 — inchangée, toujours le filet de sécurité de dernier
+// recours). Ne libère JAMAIS rien si :
+// - un abonnement est actif/trialing (vérifié par release_abandoned_
+//   checkout_lock elle-même, en plus de reserve_checkout_session) ;
+// - une session Checkout Stripe est encore réellement ouverte pour ce
+//   customer ;
+// - un abonnement Stripe actif/trialing existe pour ce customer mais n'a
+//   pas encore été synchronisé par le webhook ;
+// - le moindre appel à Stripe échoue pour n'importe quelle raison
+//   (fail closed : aucune incertitude n'autorise une libération).
+// Retourne le nouveau résultat de réservation si la récupération a réussi
+// et que la tentative a pu être retentée, sinon `null` (la réponse
+// d'origine — refus — reste inchangée).
+async function tryRecoverAbandonedLock(
+  stripe: Stripe,
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  existingCustomerId: string | null,
+  attemptId: string,
+  log: (step: string, details?: Record<string, unknown>) => void,
+): Promise<ReservationResult | null> {
+  // Lecture directe (hors RPC) de la valeur ACTUELLE du verrou : nécessaire
+  // comme référence pour le verrou optimiste de release_abandoned_checkout_
+  // lock — jamais utilisée pour décider quoi que ce soit d'autre que "y a-t-
+  // il encore un verrou à vérifier".
+  const { data: current, error: readError } = await admin
+    .from("subscriptions")
+    .select("pending_checkout_at")
+    .eq("user_id", userId)
+    .maybeSingle<{ pending_checkout_at: string | null }>();
+
+  if (readError || !current?.pending_checkout_at) {
+    log("4a_recuperation_verrou_ignoree", {
+      reason: readError ? "lecture_echouee" : "deja_libere",
+    });
+    return null;
+  }
+
+  const pendingCheckoutAt = current.pending_checkout_at;
+
+  // Aucun customer Stripe n'existe encore pour ce compte : aucune session
+  // Checkout ni aucun abonnement ne peut donc exister côté Stripe — pas
+  // besoin de les interroger, la libération est sûre par construction.
+  if (existingCustomerId) {
+    try {
+      const [openSessions, subscriptions] = await Promise.all([
+        stripe.checkout.sessions.list({ customer: existingCustomerId, status: "open", limit: 5 }),
+        stripe.subscriptions.list({ customer: existingCustomerId, status: "all", limit: 10 }),
+      ]);
+
+      if (openSessions.data.length > 0) {
+        log("4a_recuperation_verrou_refusee", {
+          reason: "session_stripe_ouverte",
+          sessionId: openSessions.data[0]?.id,
+        });
+        return null;
+      }
+
+      const activeSubscription = subscriptions.data.find(
+        (subscription) => subscription.status === "active" || subscription.status === "trialing",
+      );
+      if (activeSubscription) {
+        log("4a_recuperation_verrou_refusee", {
+          reason: "abonnement_stripe_actif_non_synchronise",
+          subscriptionId: activeSubscription.id,
+        });
+        return null;
+      }
+    } catch (error) {
+      // Fail closed : toute incertitude sur l'état Stripe (réseau, clé API,
+      // timeout...) interdit la libération — jamais l'inverse.
+      const stripeError = error as { message?: string; type?: string; code?: string };
+      console.error(`[stripe/checkout:${attemptId}] échec de la vérification Stripe pour récupération de verrou`, {
+        userId,
+        message: stripeError.message,
+        type: stripeError.type,
+        code: stripeError.code,
+      });
+      return null;
+    }
+  }
+
+  log("4a_recuperation_verrou_verifiee_stripe", { existingCustomerId });
+
+  const { data: release, error: releaseError } = await admin
+    .rpc("release_abandoned_checkout_lock", {
+      p_user_id: userId,
+      p_expected_pending_checkout_at: pendingCheckoutAt,
+    })
+    .single<{ released: boolean; reason: string }>();
+
+  if (releaseError || !release?.released) {
+    log("4a_recuperation_verrou_echec", {
+      reason: releaseError?.message ?? release?.reason,
+    });
+    return null;
+  }
+
+  log("4a_recuperation_verrou_reussie");
+
+  const { data: retry, error: retryError } = await admin
+    .rpc("reserve_checkout_session", { p_user_id: userId })
+    .single<ReservationResult>();
+
+  if (retryError || !retry) {
+    log("4b_reessai_reservation_echec_technique", { error: retryError?.message });
+    return null;
+  }
+
+  log("4b_reessai_reservation", { ok: retry.ok, reason: retry.reason });
+  return retry;
 }

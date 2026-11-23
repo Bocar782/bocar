@@ -11,10 +11,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStripeCustomersCreate = vi.fn();
 const mockStripeCheckoutSessionsCreate = vi.fn();
+const mockStripeCheckoutSessionsList = vi.fn();
+const mockStripeSubscriptionsList = vi.fn();
 vi.mock("@/lib/stripe/client", () => ({
   createStripeClient: () => ({
     customers: { create: (...args: unknown[]) => mockStripeCustomersCreate(...args) },
-    checkout: { sessions: { create: (...args: unknown[]) => mockStripeCheckoutSessionsCreate(...args) } },
+    checkout: {
+      sessions: {
+        create: (...args: unknown[]) => mockStripeCheckoutSessionsCreate(...args),
+        list: (...args: unknown[]) => mockStripeCheckoutSessionsList(...args),
+      },
+    },
+    subscriptions: { list: (...args: unknown[]) => mockStripeSubscriptionsList(...args) },
   }),
 }));
 
@@ -23,16 +31,31 @@ vi.mock("@/lib/stripe/env", () => ({
 }));
 
 type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
+type ReleaseResult = { released: boolean; reason: string };
 
 let reservationResult: ReservationResult = { ok: true, reason: "ok", existing_customer_id: null };
 let reservationError: Error | null = null;
+// Prompt 06.19 : résultat de la RETENTATIVE de réservation après une
+// libération de verrou abandonné réussie — par défaut identique au premier
+// résultat (comportement inchangé pour tous les tests qui ne configurent
+// pas explicitement de scénario de récupération).
+let retryReservationResult: ReservationResult | null = null;
+
+// Valeur renvoyée par la lecture directe de `pending_checkout_at` (hors
+// RPC) que fait `tryRecoverAbandonedLock` avant toute vérification Stripe.
+// `null` par défaut : aucun verrou à vérifier, donc aucune tentative de
+// récupération ne se déclenche — préserve le comportement des tests
+// existants qui ne configurent pas ce scénario.
+let currentPendingCheckoutAt: string | null = null;
+let pendingCheckoutAtReadError: Error | null = null;
+
+let releaseResult: ReleaseResult = { released: false, reason: "no_pending_checkout" };
+let releaseError: Error | null = null;
+
 const rpcCalls: { fnName: string; args: unknown }[] = [];
-const mockReserveRpc = vi.fn((fnName: string, args: unknown) => {
-  rpcCalls.push({ fnName, args });
-  return {
-    single: async () => ({ data: reservationError ? null : reservationResult, error: reservationError }),
-  };
-});
+const mockReserveRpc = vi.fn();
+const mockReleaseRpc = vi.fn();
+
 const mockUpdate = vi.fn(() => ({
   eq: () => ({
     select: async () => ({ data: [{ user_id: "user-1" }], error: null }),
@@ -40,11 +63,32 @@ const mockUpdate = vi.fn(() => ({
       resolve({ data: null, error: null }),
   }),
 }));
+const mockSelect = vi.fn(() => ({
+  eq: () => ({
+    maybeSingle: async () => ({
+      data: pendingCheckoutAtReadError ? null : { pending_checkout_at: currentPendingCheckoutAt },
+      error: pendingCheckoutAtReadError,
+    }),
+  }),
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    rpc: (fnName: string, args: unknown) => mockReserveRpc(fnName, args),
-    from: () => ({ update: mockUpdate }),
+    rpc: (fnName: string, args: unknown) => {
+      rpcCalls.push({ fnName, args });
+      if (fnName === "release_abandoned_checkout_lock") {
+        mockReleaseRpc(fnName, args);
+        return { single: async () => ({ data: releaseError ? null : releaseResult, error: releaseError }) };
+      }
+      mockReserveRpc(fnName, args);
+      const result = retryReservationResult && mockReserveRpc.mock.calls.length > 1
+        ? retryReservationResult
+        : reservationResult;
+      return {
+        single: async () => ({ data: reservationError ? null : result, error: reservationError }),
+      };
+    },
+    from: () => ({ update: mockUpdate, select: mockSelect }),
   }),
 }));
 
@@ -71,13 +115,24 @@ beforeEach(() => {
   currentUser = { id: "user-1", email: "user@test.local" };
   reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
   reservationError = null;
+  retryReservationResult = null;
+  currentPendingCheckoutAt = null;
+  pendingCheckoutAtReadError = null;
+  releaseResult = { released: false, reason: "no_pending_checkout" };
+  releaseError = null;
   mockReserveRpc.mockClear();
+  mockReleaseRpc.mockClear();
+  mockSelect.mockClear();
   rpcCalls.length = 0;
   mockUpdate.mockClear();
   mockStripeCustomersCreate.mockReset();
   mockStripeCustomersCreate.mockResolvedValue({ id: "cus_new_123" });
   mockStripeCheckoutSessionsCreate.mockReset();
   mockStripeCheckoutSessionsCreate.mockResolvedValue({ url: "https://checkout.stripe.com/session/abc" });
+  mockStripeCheckoutSessionsList.mockReset();
+  mockStripeCheckoutSessionsList.mockResolvedValue({ data: [] });
+  mockStripeSubscriptionsList.mockReset();
+  mockStripeSubscriptionsList.mockResolvedValue({ data: [] });
 });
 
 describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origine)", () => {
@@ -236,6 +291,134 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       expect(response.status).toBe(502);
       expect(mockUpdate).toHaveBeenCalledWith({ pending_checkout_at: null });
+      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("correctif 06.19 : récupération sécurisée d'un verrou abandonné, vérifiée contre Stripe", () => {
+    it("ne tente aucune récupération si la réservation est refusée pour 'already_pro' (abonnement actif jamais touché)", async () => {
+      reservationResult = { ok: false, reason: "already_pro", existing_customer_id: "cus_existing_456" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockSelect).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+    });
+
+    it("libère directement un verrou sans customer Stripe (aucune session possible) et retente avec succès", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      releaseResult = { released: true, reason: "released" };
+      retryReservationResult = { ok: true, reason: "ok", existing_customer_id: null };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(303);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockStripeSubscriptionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).toHaveBeenCalledWith("release_abandoned_checkout_lock", {
+        p_user_id: "user-1",
+        p_expected_pending_checkout_at: "2026-01-01T00:00:00.000Z",
+      });
+      expect(mockReserveRpc).toHaveBeenCalledTimes(2);
+    });
+
+    it("vérifie Stripe, ne trouve rien en cours, libère le verrou et retente avec succès", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      mockStripeCheckoutSessionsList.mockResolvedValue({ data: [] });
+      mockStripeSubscriptionsList.mockResolvedValue({ data: [{ id: "sub_old", status: "canceled" }] });
+      releaseResult = { released: true, reason: "released" };
+      retryReservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(303);
+      expect(mockStripeCheckoutSessionsList).toHaveBeenCalledWith({
+        customer: "cus_existing_456",
+        status: "open",
+        limit: 5,
+      });
+      expect(mockStripeSubscriptionsList).toHaveBeenCalledWith({
+        customer: "cus_existing_456",
+        status: "all",
+        limit: 10,
+      });
+      expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
+      expect(mockReserveRpc).toHaveBeenCalledTimes(2);
+    });
+
+    it("ne libère JAMAIS si Stripe signale une session Checkout encore ouverte", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      mockStripeCheckoutSessionsList.mockResolvedValue({ data: [{ id: "cs_open_1", status: "open" }] });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("ne libère JAMAIS si Stripe signale un abonnement actif non encore synchronisé par le webhook", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      mockStripeSubscriptionsList.mockResolvedValue({ data: [{ id: "sub_live", status: "active" }] });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("comportement fail closed : si la vérification Stripe échoue (réseau, clé API...), ne libère rien", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      mockStripeCheckoutSessionsList.mockRejectedValueOnce(new Error("Stripe API indisponible"));
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("ne retente pas la réservation si la lecture du verrou échoue techniquement", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      pendingCheckoutAtReadError = new Error("connexion Supabase perdue");
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("n'accède jamais la réservation si release_abandoned_checkout_lock refuse (verrou changé entre-temps)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      releaseResult = { released: false, reason: "lock_changed_since_verification" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
+      expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("reflète le résultat de la RETENTATIVE si elle échoue à nouveau après une libération réussie (ex. devenu already_pro entre-temps)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      releaseResult = { released: true, reason: "released" };
+      retryReservationResult = { ok: false, reason: "already_pro", existing_customer_id: "cus_existing_456" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      const body = await response.json();
+      expect(body.error).toBe("Tu as déjà un abonnement Pro actif.");
       expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
     });
   });
