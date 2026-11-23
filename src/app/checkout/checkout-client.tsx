@@ -38,24 +38,25 @@ export function CheckoutClient({ publishableKey }: { publishableKey: string }) {
     return data.clientSecret;
   }, []);
 
+  // Prompt 06.28 : le cadre (fond, en-tête, largeur, titre) vient de
+  // page.tsx — ce composant ne rend plus que son propre contenu (le
+  // formulaire Stripe, qui gère lui-même sa largeur responsive à 100%, ou
+  // l'état d'erreur), pour rester simple à encarter dans ce cadre commun à
+  // toutes les tailles d'écran.
   if (error) {
     return (
-      <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4 py-16">
-        <Card padding="md" className="w-full text-center">
-          <p className="text-sm text-foreground">{error}</p>
-          <Button href="/pricing" variant="secondary" fullWidth className="mt-6">
-            Retour aux tarifs
-          </Button>
-        </Card>
-      </div>
+      <Card padding="md" className="w-full text-center">
+        <p className="text-sm text-foreground">{error}</p>
+        <Button href="/pricing" variant="secondary" fullWidth className="mt-6">
+          Retour aux tarifs
+        </Button>
+      </Card>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <EmbeddedCheckoutProvider stripe={stripePromise} options={{ fetchClientSecret }}>
-        <EmbeddedCheckout />
-      </EmbeddedCheckoutProvider>
-    </div>
+    <EmbeddedCheckoutProvider stripe={stripePromise} options={{ fetchClientSecret }}>
+      <EmbeddedCheckout />
+    </EmbeddedCheckoutProvider>
   );
 }
