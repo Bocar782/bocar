@@ -128,7 +128,7 @@ beforeEach(() => {
   mockStripeCustomersCreate.mockReset();
   mockStripeCustomersCreate.mockResolvedValue({ id: "cus_new_123" });
   mockStripeCheckoutSessionsCreate.mockReset();
-  mockStripeCheckoutSessionsCreate.mockResolvedValue({ url: "https://checkout.stripe.com/session/abc" });
+  mockStripeCheckoutSessionsCreate.mockResolvedValue({ id: "cs_test_abc", client_secret: "cs_test_abc_secret" });
   mockStripeCheckoutSessionsList.mockReset();
   mockStripeCheckoutSessionsList.mockResolvedValue({ data: [], has_more: false });
   mockStripeSubscriptionsList.mockReset();
@@ -147,16 +147,22 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
   it("laisse passer une requête sans en-tête Origin (pas de blocage injustifié)", async () => {
     const response = await callRoute(undefined);
 
-    expect(response.status).toBe(303);
+    expect(response.status).toBe(200);
     expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("laisse passer l'origine légitime configurée (NEXT_PUBLIC_SITE_URL de test)", async () => {
+  it("06.28 : laisse passer l'origine légitime configurée (NEXT_PUBLIC_SITE_URL de test) et renvoie le client_secret en JSON — plus de redirection HTTP", async () => {
     const response = await callRoute("http://localhost:3000");
 
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("https://checkout.stripe.com/session/abc");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ clientSecret: "cs_test_abc_secret" });
     expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
+    const [[sessionArgs]] = mockStripeCheckoutSessionsCreate.mock.calls;
+    expect(sessionArgs.ui_mode).toBe("embedded");
+    expect(sessionArgs.return_url).toBeDefined();
+    expect(sessionArgs.success_url).toBeUndefined();
+    expect(sessionArgs.cancel_url).toBeUndefined();
   });
 
   it("renvoie 401 si non authentifié (non-régression, inchangé par la vérification d'origine)", async () => {
@@ -217,7 +223,8 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     it("06.27 : ne crée JAMAIS un customer Stripe séparément pour un nouveau compte — laisse Checkout le créer en un seul appel (via customer_email), puis persiste l'id lu sur la session", async () => {
       reservationResult = { ok: true, reason: "ok", existing_customer_id: null };
       mockStripeCheckoutSessionsCreate.mockResolvedValueOnce({
-        url: "https://checkout.stripe.com/session/abc",
+        id: "cs_test_abc",
+        client_secret: "cs_test_abc_secret",
         customer: "cus_new_123",
       });
 
@@ -244,12 +251,17 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
             param: "customer",
           }),
         )
-        .mockResolvedValueOnce({ url: "https://checkout.stripe.com/session/retry", customer: "cus_fresh_new" });
+        .mockResolvedValueOnce({
+          id: "cs_test_retry",
+          client_secret: "cs_test_retry_secret",
+          customer: "cus_fresh_new",
+        });
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(303);
-      expect(response.headers.get("location")).toBe("https://checkout.stripe.com/session/retry");
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual({ clientSecret: "cs_test_retry_secret" });
       expect(mockStripeCustomersCreate).not.toHaveBeenCalled();
       expect(mockUpdate).toHaveBeenCalledWith({ stripe_customer_id: "cus_fresh_new" });
       expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(2);
@@ -390,7 +402,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(303);
+      expect(response.status).toBe(200);
       expect(mockStripeCheckoutSessionsList).toHaveBeenCalledTimes(1);
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
@@ -481,7 +493,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(303);
+      expect(response.status).toBe(200);
       expect(mockStripeCheckoutSessionsList).toHaveBeenCalledWith({
         customer: "cus_existing_456",
         limit: 100,
@@ -538,7 +550,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(303);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 
@@ -585,7 +597,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(303);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 

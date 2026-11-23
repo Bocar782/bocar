@@ -15,6 +15,7 @@ const PROTECTED_PAGES: { path: string; expectedRedirect: RegExp }[] = [
   { path: "/dashboard/formations/11111111-1111-1111-1111-111111111111", expectedRedirect: /\/login/ },
   { path: "/dashboard/analyses/11111111-1111-1111-1111-111111111111", expectedRedirect: /\/login/ },
   { path: "/dashboard/parametres", expectedRedirect: /\/login/ },
+  { path: "/checkout", expectedRedirect: /\/login/ },
   { path: "/update-password", expectedRedirect: /\/forgot-password/ },
 ];
 

@@ -1,0 +1,63 @@
+"use client";
+
+import { useCallback, useState } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { EmbeddedCheckout, EmbeddedCheckoutProvider } from "@stripe/react-stripe-js";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { getStripePublishableKey } from "@/lib/stripe/public-env";
+
+// Prompt 06.28 : paiement intégré directement sur ce site (ui_mode:
+// "embedded", voir /api/stripe/checkout/route.ts) — remplace la redirection
+// vers checkout.stripe.com, qui se bloquait de façon répétée et
+// irrécupérable après le clic sur "S'abonner" (signalement utilisateur réel,
+// constaté sur plusieurs comptes, réseaux et appareils, alors que le serveur
+// lui-même répondait en 1,5s d'après les logs Netlify — voir route.ts).
+// `loadStripe` une seule fois au niveau module (pas à chaque rendu) : c'est
+// le usage documenté de Stripe.js, qui met lui-même son propre résultat en
+// cache.
+const stripePromise = loadStripe(getStripePublishableKey());
+
+export function CheckoutClient() {
+  const [error, setError] = useState<string | null>(null);
+
+  // Stripe.js appelle cette fonction lui-même, au moment où il monte le
+  // formulaire embarqué — jamais directement par ce composant. Elle ne doit
+  // jamais avaler une erreur : si `fetch` échoue réellement (après un
+  // contenu non-JSON ou une erreur 4xx/5xx), ce composant doit basculer sur
+  // l'état d'erreur plutôt que de laisser `EmbeddedCheckoutProvider` dans un
+  // état de chargement indéfini.
+  const fetchClientSecret = useCallback(async () => {
+    const response = await fetch("/api/stripe/checkout", { method: "POST" });
+    const data = (await response.json().catch(() => null)) as { clientSecret?: string; error?: string } | null;
+
+    if (!response.ok || !data?.clientSecret) {
+      const message = data?.error ?? "Impossible de créer la session de paiement. Réessaie dans un instant.";
+      setError(message);
+      throw new Error(message);
+    }
+
+    return data.clientSecret;
+  }, []);
+
+  if (error) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4 py-16">
+        <Card padding="md" className="w-full text-center">
+          <p className="text-sm text-foreground">{error}</p>
+          <Button href="/pricing" variant="secondary" fullWidth className="mt-6">
+            Retour aux tarifs
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <EmbeddedCheckoutProvider stripe={stripePromise} options={{ fetchClientSecret }}>
+        <EmbeddedCheckout />
+      </EmbeddedCheckoutProvider>
+    </div>
+  );
+}

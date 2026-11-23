@@ -83,10 +83,13 @@ export function PricingCards({
             Se connecter pour s&apos;abonner
           </Button>
         )}
+        {/* Prompt 06.28 : simple navigation vers /checkout (paiement intégré
+            sur ce site), plus de soumission directe vers /api/stripe/checkout
+            — cette route ne redirige plus (voir route.ts, ui_mode: "embedded"). */}
         {user && onFreePlan && (
-          <StripeSubmitForm action="/api/stripe/checkout" fullWidth className="mt-8">
+          <Button href="/checkout" fullWidth className="mt-8">
             S&apos;abonner
-          </StripeSubmitForm>
+          </Button>
         )}
         {user && !onFreePlan && (
           <div className="mt-8 space-y-2">

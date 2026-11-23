@@ -30,8 +30,12 @@ export const dynamic = "force-dynamic";
 // Netlify spécifique à ce site.
 export const maxDuration = 120;
 
-// Crée une session Stripe Checkout (abonnement Pro) et redirige l'utilisateur
-// vers la page de paiement hébergée par Stripe.
+// Crée une session Stripe Checkout (abonnement Pro) en mode "embedded"
+// (Prompt 06.28, remplace la redirection externe vers checkout.stripe.com,
+// voir la justification détaillée plus bas sur `ui_mode`) et renvoie son
+// `client_secret` en JSON — jamais de redirection HTTP : c'est la page
+// /checkout (côté client) qui monte le formulaire Stripe intégré avec ce
+// secret, sur le propre domaine de Tavyra.
 export async function POST(request: Request) {
   // Prompt 06.18 (correctif) : identifiant court par tentative, présent sur
   // CHAQUE ligne de log ci-dessous — permet de reconstituer dans les logs
@@ -196,8 +200,8 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!session.url) {
-      log("7_session_sans_url");
+    if (!session.client_secret) {
+      log("7_session_sans_client_secret");
       await releaseCheckoutLock(admin, user.id, attemptId, log);
       return NextResponse.json(
         { error: "Impossible de créer la session de paiement." },
@@ -205,8 +209,8 @@ export async function POST(request: Request) {
       );
     }
 
-    log("7_redirection", { url: session.url });
-    return NextResponse.redirect(session.url, { status: 303 });
+    log("7_session_prete", { sessionId: session.id });
+    return NextResponse.json({ clientSecret: session.client_secret });
   } catch (error) {
     await releaseCheckoutLock(admin, user.id, attemptId, log);
     const stripeError = error as {
@@ -270,6 +274,25 @@ async function releaseCheckoutLock(
   log("8_verrou_libere");
 }
 
+// Prompt 06.28 : `ui_mode: "embedded"` — le formulaire de paiement est monté
+// directement sur une page de ce site (/checkout, voir ce fichier dans
+// src/app/checkout/page.tsx) via Stripe.js, au lieu de rediriger l'utilisateur
+// vers une page hébergée sur le domaine séparé checkout.stripe.com. Suite à
+// un signalement utilisateur réel et répété : après la correction 06.27 (un
+// seul appel Stripe, redirection serveur confirmée rapide — 1,5s dans les
+// logs Netlify réels), le blocage persistait systématiquement après le clic
+// sur "S'abonner", sur plusieurs comptes, plusieurs réseaux (wifi et 5G) et
+// plusieurs appareils (ordinateur et téléphone) — écartant une lenteur
+// réseau ponctuelle. Le point commun identifié : dans tous les cas, le
+// blocage survient APRÈS que le serveur a renvoyé son ordre de redirection
+// vers checkout.stripe.com, pendant le chargement de cette page hébergée
+// séparément — jamais avant. `ui_mode: "embedded"` supprime cette étape de
+// navigation vers un domaine externe : plus de redirection HTTP à suivre,
+// plus de page séparée à charger, tout se joue dans le document déjà
+// chargé de Tavyra. Pas de `success_url`/`cancel_url` (propres au mode
+// redirection) : `return_url` est utilisé à la place, uniquement pour le cas
+// où Stripe doit malgré tout rediriger (ex. authentification 3D Secure du
+// moyen de paiement, hors du contrôle de ce code).
 function buildSessionParams(
   customer: { id: string } | { email: string },
   siteUrl: string,
@@ -277,12 +300,12 @@ function buildSessionParams(
 ): Stripe.Checkout.SessionCreateParams {
   return {
     mode: "subscription",
+    ui_mode: "embedded",
     ...("id" in customer
       ? { customer: customer.id }
       : { customer_email: customer.email }),
     line_items: [{ price: getStripePriceId(), quantity: 1 }],
-    success_url: `${siteUrl}/dashboard?upgraded=1`,
-    cancel_url: `${siteUrl}/pricing`,
+    return_url: `${siteUrl}/dashboard?upgraded=1`,
     client_reference_id: userId,
     metadata: { supabase_user_id: userId },
     subscription_data: { metadata: { supabase_user_id: userId } },
