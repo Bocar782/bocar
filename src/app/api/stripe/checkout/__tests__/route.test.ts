@@ -320,7 +320,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
     });
 
-    it("ne tente AUCUNE récupération pour un verrou vieux de 30 secondes (nettement sous le seuil de 2 minutes)", async () => {
+    it("ne tente AUCUNE récupération pour un verrou vieux de 30 secondes (nettement sous le seuil de 3 minutes)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = new Date(Date.now() - 30_000).toISOString();
 
@@ -331,9 +331,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).not.toHaveBeenCalled();
     });
 
-    it("ne tente AUCUNE récupération pour un verrou vieux de 119 secondes (juste sous le seuil de 2 minutes — marge testée au plus près)", async () => {
+    it("ne tente AUCUNE récupération pour un verrou vieux de 179 secondes (juste sous le seuil de 3 minutes — marge testée au plus près)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
-      currentPendingCheckoutAt = new Date(Date.now() - 119_000).toISOString();
+      currentPendingCheckoutAt = new Date(Date.now() - 179_000).toISOString();
 
       const response = await callRoute("http://localhost:3000");
 
@@ -342,9 +342,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).not.toHaveBeenCalled();
     });
 
-    it("autorise la vérification Stripe pour un verrou vieux de 121 secondes (juste après le seuil de 2 minutes)", async () => {
+    it("autorise la vérification Stripe pour un verrou vieux de 181 secondes (juste après le seuil de 3 minutes)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
-      currentPendingCheckoutAt = new Date(Date.now() - 121_000).toISOString();
+      currentPendingCheckoutAt = new Date(Date.now() - 181_000).toISOString();
       releaseResult = { released: true, reason: "released" };
       retryReservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
 
@@ -355,12 +355,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 
-    it("ne tente AUCUNE récupération pour un verrou vieux de 10 minutes si la requête d'origine n'a réellement pas fini en pratique (reproduit un Stripe lent proche de son propre timeout de 80s, bien avant le seuil applicatif)", async () => {
-      // Démontre explicitement que la marge de 2 minutes couvre largement
-      // le pire cas déjà possible pour un seul appel Stripe (timeout SDK
-      // par défaut : 80s, voir node_modules/stripe/cjs/stripe.core.js).
+    it("ne tente AUCUNE récupération pour un verrou vieux de 80 secondes — pile le timeout SDK Stripe d'UN SEUL appel (démontre que ce seul repère ne suffirait pas, d'où le seuil basé sur maxDuration)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
-      currentPendingCheckoutAt = new Date(Date.now() - 70_000).toISOString(); // 70s < 80s < 120s
+      currentPendingCheckoutAt = new Date(Date.now() - 80_000).toISOString();
 
       const response = await callRoute("http://localhost:3000");
 
@@ -369,18 +366,48 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).not.toHaveBeenCalled();
     });
 
+    it("ne tente AUCUNE récupération pour un verrou vieux de 118 secondes — quasiment maxDuration (120s) lui-même, la requête d'origine peut être sur le point d'être tuée par la plateforme sans avoir pu nettoyer", async () => {
+      // Démontre que s'arrêter au seuil naïf (un seul appel Stripe, 80s)
+      // aurait été dangereusement insuffisant : à 118s, la requête
+      // d'origine peut très bien être encore active (jusqu'à maxDuration
+      // =120s déclaré sur cette route), ou venir tout juste d'être tuée
+      // par la plateforme sans avoir eu la main pour libérer son verrou —
+      // dans les deux cas, aucune récupération ne doit être tentée avant
+      // la marge supplémentaire du seuil de 3 minutes.
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 118_000).toISOString();
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("06.22 : le seuil de récupération (3 min) reste strictement supérieur à maxDuration (120s) déclaré sur cette route, avec au moins 60s de marge — garde-fou vivant contre une future dérive des deux valeurs", async () => {
+      // Importe les deux constantes RÉELLES du module (pas des copies) :
+      // si l'une des deux est un jour modifiée sans l'autre, ce test
+      // échoue immédiatement plutôt que de laisser la marge de sécurité
+      // se réduire silencieusement.
+      const routeModule = await import("@/app/api/stripe/checkout/route");
+      const maxDurationMs = routeModule.maxDuration * 1000;
+      const MARGIN_MS = 60_000;
+
+      expect(routeModule.MIN_LOCK_AGE_BEFORE_RECOVERY_MS).toBeGreaterThanOrEqual(maxDurationMs + MARGIN_MS);
+    });
+
     it("06.21 : release_abandoned_checkout_lock (RPC) refuse elle-même toute libération si le verrou a moins de 60s — défense en profondeur indépendante de route.ts", async () => {
       // Ce test documente le comportement attendu de la RPC SQL
       // elle-même (vérifié séparément en conditions réelles sur un
       // Postgres local, voir la revue de sécurité 06.21) : même si
       // route.ts appelait un jour cette RPC sans son propre contrôle
-      // d'âge de 2 minutes, la RPC refuserait quand même tout verrou de
+      // d'âge de 3 minutes, la RPC refuserait quand même tout verrou de
       // moins de 60 secondes. Ici on vérifie que route.ts respecte
       // bien le refus `lock_too_recent` renvoyé par la RPC exactement
       // comme n'importe quel autre refus (`lock_changed_since_verification`) :
       // aucune nouvelle tentative, verrou conservé.
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
-      currentPendingCheckoutAt = new Date(Date.now() - 121_000).toISOString();
+      currentPendingCheckoutAt = new Date(Date.now() - 181_000).toISOString();
       releaseResult = { released: false, reason: "lock_too_recent" };
 
       const response = await callRoute("http://localhost:3000");

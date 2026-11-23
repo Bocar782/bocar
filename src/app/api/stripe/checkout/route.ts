@@ -9,6 +9,20 @@ import { getSiteUrl } from "@/lib/site-url";
 import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
+// Prompt 06.22 (durcissement, suite à une revue de sécurité sur la durée
+// maximale réelle de toute la séquence de création Checkout — pas
+// seulement un appel Stripe isolé) : cette route pouvait auparavant
+// tourner pour une durée NON BORNÉE par la plateforme, contrairement à
+// toutes les autres routes de ce projet qui appellent Stripe/Supabase
+// (/api/chat: 60s, /api/courses/plan, /api/courses/generate,
+// /api/analysis/generate: 120s chacune). Sans cette limite, aucun calcul
+// de seuil de récupération de verrou (voir tryRecoverAbandonedLock
+// ci-dessous) ne pouvait être fiable : impossible de borner le pire cas
+// réel. Fixée à 120s, cohérente avec les autres routes Stripe/Supabase du
+// projet — la plateforme tue désormais la fonction au-delà, qu'importe ce
+// que le SDK Stripe est en train de tenter (y compris ses propres retries
+// automatiques, voir MIN_LOCK_AGE_BEFORE_RECOVERY_MS plus bas).
+export const maxDuration = 120;
 
 // Crée une session Stripe Checkout (abonnement Pro) et redirige l'utilisateur
 // vers la page de paiement hébergée par Stripe.
@@ -280,6 +294,44 @@ function isMissingCustomerError(error: unknown): boolean {
 
 type ReservationResult = { ok: boolean; reason: string; existing_customer_id: string | null };
 
+// Prompt 06.22 (durcissement, suite à une revue de sécurité sur la durée
+// maximale RÉELLE de toute la séquence de création Checkout — pas
+// seulement un appel Stripe isolé). Âge minimum obligatoire d'un verrou
+// avant toute tentative de récupération (voir tryRecoverAbandonedLock).
+//
+// Analyse de la séquence complète, pas d'un seul appel :
+// - Le pire cas de code (customer Stripe persisté orphelin, correctif
+//   06.17) enchaîne JUSQU'À 4 appels Stripe séquentiels dans une seule
+//   requête : customers.create(), checkout.sessions.create() (échoue),
+//   customers.create() à nouveau, checkout.sessions.create() à nouveau —
+//   avec des écritures Supabase intercalées entre chacun.
+// - Le SDK Stripe (createStripeClient, aucun `maxNetworkRetries` défini)
+//   applique sa valeur par défaut : 2 retries automatiques par appel (3
+//   tentatives au total), chacune avec son propre timeout de 80 000 ms
+//   (vérifié dans node_modules/stripe/{RequestSender,stripe.core}.js) —
+//   un simple calcul "80s × 4 appels" sous-estimait donc largement le pire
+//   cas théorique en ignorant ces retries.
+// - Plutôt que d'essayer de borner ce pire cas théorique (qui peut devenir
+//   très large si on l'additionne naïvement — potentiellement plusieurs
+//   centaines de secondes dans un scénario pathologique de réseau
+//   totalement dégradé), cette route déclare désormais explicitement
+//   `export const maxDuration = 120` (ajouté par ce même correctif,
+//   cohérent avec les autres routes Stripe/Supabase du projet) : la
+//   PLATEFORME elle-même tue la fonction à 120s, qu'importe ce que le SDK
+//   est en train de tenter. C'est une garantie bien plus solide qu'un
+//   calcul d'estimation : une requête légitime ne peut PHYSIQUEMENT plus
+//   tourner au-delà de 120s, point final.
+// - Seuil fixé à 3 minutes (180s) = maxDuration (120s) + 60s de marge de
+//   sécurité. Avant ce seuil, une requête légitime peut encore être en
+//   train de s'exécuter ; après, elle a nécessairement déjà terminé
+//   (succès, erreur avec libération via le catch existant 06.15/06.18, ou
+//   terminaison forcée par la plateforme à 120s sans avoir pu exécuter son
+//   propre nettoyage — c'est CE dernier cas, et lui seul, que cette
+//   récupération vise à corriger). Reste très inférieur au délai de 30
+//   minutes (reserve_checkout_session, 0022) : la récupération reste
+//   nettement plus rapide que l'attente aveugle.
+export const MIN_LOCK_AGE_BEFORE_RECOVERY_MS = 3 * 60 * 1000;
+
 // Prompt 06.20 (durcissement, suite à la revue de sécurité du correctif
 // 06.19) : au moindre doute sur l'état réel d'un paiement, le verrou est
 // CONSERVÉ — jamais l'inverse. Statuts d'abonnement explicitement
@@ -384,39 +436,19 @@ async function tryRecoverAbandonedLock(
 
   const pendingCheckoutAt = current.pending_checkout_at;
 
-  // Prompt 06.21 (durcissement, suite à la revue de sécurité sur les
-  // conditions de concurrence) : un verrou tout juste posé ne doit JAMAIS
-  // être considéré comme "abandonné", même si la recherche Stripe ci-
-  // dessous ne trouve rien — la requête qui l'a posé peut tout simplement
-  // être encore en train de communiquer avec Stripe et n'avoir pas encore
-  // créé sa session Checkout. Chercher "y a-t-il une session ?" à cet
-  // instant précis donnerait "non" pour une bonne raison (elle n'existe
-  // pas ENCORE) qu'on ne peut pas distinguer d'un verrou réellement
-  // abandonné. Seul le TEMPS permet de lever cette ambiguïté.
-  //
-  // Seuil choisi : 2 minutes. Justification mesurée dans ce code même :
-  // - le client Stripe (createStripeClient, @/lib/stripe/client.ts) ne
-  //   fixe aucun `timeout` explicite, donc le SDK applique son propre
-  //   DEFAULT_TIMEOUT = 80 000 ms (80 s) par appel HTTP (vérifié dans
-  //   node_modules/stripe/cjs/stripe.core.js) — c'est la durée MAXIMALE
-  //   pendant laquelle un seul appel `stripe.customers.create()` ou
-  //   `stripe.checkout.sessions.create()` peut rester en vol avant que le
-  //   SDK lui-même ne l'abandonne et lève une erreur (laquelle déclenche
-  //   alors releaseCheckoutLock via le catch englobant, 06.15/06.18) ;
-  // - aucune fonction Netlify (maxDuration) n'est déclarée sur cette route,
-  //   donc la limite de la plateforme s'applique et est de toute façon
-  //   bien plus courte que 80 s dans la configuration actuelle.
-  // 2 minutes = 120 000 ms laisse donc une marge de 40 s AU-DESSUS du pire
-  // cas déjà possible pour un seul appel Stripe — avant ce seuil, une
-  // requête légitime peut encore être en cours ; après, elle a
-  // nécessairement déjà terminé (succès, erreur Stripe avec libération via
-  // le catch existant, ou terminaison forcée par la plateforme sans avoir
-  // pu exécuter son propre nettoyage — c'est CE dernier cas, et lui seul,
-  // que cette récupération vise à corriger). Reste très inférieur au délai
-  // de 30 minutes (reserve_checkout_session, 0022) : la récupération reste
-  // nettement plus rapide que l'attente aveugle, sans jamais risquer de
-  // toucher une requête encore active.
-  const MIN_LOCK_AGE_BEFORE_RECOVERY_MS = 2 * 60 * 1000;
+  // Prompt 06.21/06.22 (durcissement, suite aux revues de sécurité sur les
+  // conditions de concurrence puis sur la durée réelle de toute la
+  // séquence) : un verrou tout juste posé ne doit JAMAIS être considéré
+  // comme "abandonné", même si la recherche Stripe ci-dessous ne trouve
+  // rien — la requête qui l'a posé peut tout simplement être encore en
+  // train de communiquer avec Stripe (potentiellement plusieurs appels
+  // séquentiels, voir la justification complète du seuil au niveau module,
+  // MIN_LOCK_AGE_BEFORE_RECOVERY_MS). Chercher "y a-t-il une session ?" à
+  // cet instant précis donnerait "non" pour une bonne raison (elle
+  // n'existe pas ENCORE) qu'on ne peut pas distinguer d'un verrou
+  // réellement abandonné. Seul le TEMPS — borné de façon fiable par
+  // `maxDuration`, pas par une estimation du SDK — permet de lever cette
+  // ambiguïté.
   const lockAgeMs = Date.now() - new Date(pendingCheckoutAt).getTime();
   if (!Number.isFinite(lockAgeMs) || lockAgeMs < MIN_LOCK_AGE_BEFORE_RECOVERY_MS) {
     log("4a_recuperation_verrou_ignoree", {

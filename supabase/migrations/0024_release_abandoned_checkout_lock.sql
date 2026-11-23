@@ -86,12 +86,15 @@ begin
     return;
   end if;
 
-  -- Prompt 06.21 : plancher d'âge minimum, indépendant du contrôle côté
-  -- application — voir la justification en tête de fichier. 60 secondes :
-  -- volontairement plus court que le seuil applicatif de 2 minutes
-  -- (route.ts), car cette fonction ne fait elle-même AUCUN appel Stripe et
-  -- n'a donc pas besoin de la même marge ; c'est un filet de sécurité de
-  -- dernier recours, pas le contrôle principal.
+  -- Prompt 06.21/06.22 : plancher d'âge minimum, indépendant du contrôle
+  -- côté application — voir la justification en tête de fichier. 60
+  -- secondes : volontairement bien plus court que le seuil applicatif de
+  -- 3 minutes (MIN_LOCK_AGE_BEFORE_RECOVERY_MS, route.ts, aligné sur
+  -- maxDuration=120s + marge), car cette fonction ne fait elle-même AUCUN
+  -- appel Stripe et n'a donc pas besoin de la même marge ; c'est un filet
+  -- de sécurité de dernier recours, pas le contrôle principal — en
+  -- pratique le seuil applicatif de 3 minutes est toujours atteint en
+  -- premier.
   if v_pending_checkout_at > now() - interval '60 seconds' then
     return query select false, 'lock_too_recent'::text;
     return;
