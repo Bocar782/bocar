@@ -159,7 +159,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     expect(body).toEqual({ clientSecret: "cs_test_abc_secret" });
     expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     const [[sessionArgs]] = mockStripeCheckoutSessionsCreate.mock.calls;
-    expect(sessionArgs.ui_mode).toBe("embedded");
+    expect(sessionArgs.ui_mode).toBe("embedded_page");
     expect(sessionArgs.return_url).toBeDefined();
     expect(sessionArgs.success_url).toBeUndefined();
     expect(sessionArgs.cancel_url).toBeUndefined();

@@ -300,7 +300,16 @@ function buildSessionParams(
 ): Stripe.Checkout.SessionCreateParams {
   return {
     mode: "subscription",
-    ui_mode: "embedded",
+    // Prompt 06.28 (correctif) : "embedded" (nom historique documenté dans
+    // nos commentaires et encore accepté par d'anciennes versions d'API)
+    // n'est plus accepté par la version d'API Stripe réellement utilisée en
+    // production — confirmé par l'erreur Stripe réelle observée dans les
+    // logs Netlify : StripeInvalidRequestError "La valeur ui_mode
+    // 'embedded' n'est plus prise en charge. Utilisez plutôt
+    // 'embedded_page'." Valeur corrigée en conséquence (vérifiée dans les
+    // types du SDK installé : node_modules/stripe, Checkout/Sessions.d.ts,
+    // `type UiMode = 'elements' | 'embedded_page' | 'form' | 'hosted_page' | ...`).
+    ui_mode: "embedded_page",
     ...("id" in customer
       ? { customer: customer.id }
       : { customer_email: customer.email }),
