@@ -34,6 +34,47 @@ export function ProgressRing({
   );
 }
 
+/** Petite courbe de tendance (style "Wallet") — purement décorative, tracée
+ * à partir d'une série réelle déjà calculée (jamais générée ici). Rend
+ * `null` en dessous de 2 points : une courbe à 0 ou 1 point n'a aucun sens. */
+export function Sparkline({
+  data,
+  stroke = "var(--accent-violet-light)",
+  className = "",
+}: {
+  data: number[];
+  stroke?: string;
+  className?: string;
+}) {
+  if (data.length < 2) return null;
+
+  const width = 72;
+  const height = 26;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <polyline points={points} stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const WEEKDAY_LABELS = ["D", "L", "M", "M", "J", "V", "S"];
 
 export function ActivityBarChart({ data }: { data: { date: string; count: number }[] }) {
@@ -48,7 +89,10 @@ export function ActivityBarChart({ data }: { data: { date: string; count: number
             month: "short",
           });
           return (
-            <div key={d.date} className="group relative flex flex-1 flex-col items-center justify-end">
+            <div
+              key={d.date}
+              className="group relative flex h-full flex-1 flex-col items-center justify-end"
+            >
               <div
                 className={`w-full rounded-t-sm transition-all ${
                   d.count > 0

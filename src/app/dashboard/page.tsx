@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { ActivityBarChart, ProgressRing } from "@/components/dashboard/charts";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { IconFlame } from "@/components/dashboard/icons";
+import { StatCard } from "@/components/dashboard/stat-card";
 import { CourseListItem } from "@/components/course-list-item";
-import { IconGraduationCap } from "@/components/marketing/icons";
+import { IconChartLine, IconGraduationCap, IconTarget } from "@/components/marketing/icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -44,6 +46,10 @@ export default async function DashboardPage() {
     activeDayStreak: 0,
     activityByDay: [],
     recentActivity: [],
+    coursesCreatedThisWeek: 0,
+    courseCountSeries: [],
+    quizScoreSeries: [],
+    quizScoreTrend: null,
   }));
 
   const recentCourses = [...courses]
@@ -77,47 +83,58 @@ export default async function DashboardPage() {
           />
         ) : (
           <>
-            <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Card padding="sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                  Formations
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{stats.totalCourses}</p>
-                <p className="mt-0.5 text-xs text-foreground-muted">
-                  {stats.completedCourses} terminée{stats.completedCourses > 1 ? "s" : ""}
-                </p>
-              </Card>
-              <Card padding="sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                  En cours
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {stats.inProgressCourses}
-                </p>
-                <p className="mt-0.5 text-xs text-foreground-muted">formation(s) active(s)</p>
-              </Card>
-              <Card padding="sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                  Quiz complétés
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {stats.quizzesCompleted}
-                </p>
-                <p className="mt-0.5 text-xs text-foreground-muted">
-                  {stats.avgQuizScorePercent !== null
-                    ? `Score moyen : ${stats.avgQuizScorePercent}%`
-                    : "Aucun score pour l'instant"}
-                </p>
-              </Card>
-              <Card padding="sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-                  Série active
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {stats.activeDayStreak} jour{stats.activeDayStreak > 1 ? "s" : ""}
-                </p>
-                <p className="mt-0.5 text-xs text-foreground-muted">jours consécutifs</p>
-              </Card>
+            <section className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+              <StatCard
+                icon={<IconGraduationCap width={20} height={20} />}
+                gradient="from-accent-blue to-accent-violet"
+                label="Formations"
+                value={String(stats.totalCourses)}
+                sublabel={`${stats.completedCourses} terminée${stats.completedCourses > 1 ? "s" : ""}`}
+                trend={
+                  stats.coursesCreatedThisWeek > 0
+                    ? { direction: "up", text: `+${stats.coursesCreatedThisWeek} cette sem.` }
+                    : null
+                }
+                sparklineData={stats.courseCountSeries}
+                sparklineColor="var(--accent-blue-light)"
+              />
+              <StatCard
+                icon={<IconTarget width={20} height={20} />}
+                gradient="from-success to-success-light"
+                label="Taux de réussite quiz"
+                value={stats.avgQuizScorePercent !== null ? `${stats.avgQuizScorePercent}%` : "—"}
+                sublabel={
+                  stats.quizzesCompleted > 0
+                    ? `${stats.quizzesCompleted} quiz complété${stats.quizzesCompleted > 1 ? "s" : ""}`
+                    : "Aucun quiz pour l'instant"
+                }
+                trend={
+                  stats.quizScoreTrend
+                    ? {
+                        direction: stats.quizScoreTrend.deltaPoints >= 0 ? "up" : "down",
+                        text: `${Math.abs(stats.quizScoreTrend.deltaPoints)} pts`,
+                      }
+                    : null
+                }
+                sparklineData={stats.quizScoreSeries}
+                sparklineColor="var(--success-light)"
+              />
+              <StatCard
+                icon={<IconChartLine width={20} height={20} />}
+                gradient="from-accent-violet to-accent-violet-light"
+                label="Progression moyenne"
+                value={`${stats.avgProgressPercent}%`}
+                sublabel={`${stats.inProgressCourses} en cours`}
+              />
+              <StatCard
+                icon={<IconFlame width={20} height={20} />}
+                gradient="from-warning to-warning-light"
+                label="Série active"
+                value={`${stats.activeDayStreak} j`}
+                sublabel="jours consécutifs"
+                sparklineData={stats.activityByDay.slice(-7).map((d) => d.count)}
+                sparklineColor="var(--warning-light)"
+              />
             </section>
 
             <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

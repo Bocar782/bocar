@@ -27,6 +27,12 @@ export type ActivityEvent =
       total: number;
     };
 
+export type QuizScoreTrend = {
+  last7DaysAvgPercent: number;
+  previous7DaysAvgPercent: number;
+  deltaPoints: number;
+};
+
 export type DashboardStats = {
   totalCourses: number;
   completedCourses: number;
@@ -37,10 +43,23 @@ export type DashboardStats = {
   activeDayStreak: number;
   activityByDay: { date: string; count: number }[];
   recentActivity: ActivityEvent[];
+  /** Formations créées dans les 7 derniers jours (toujours calculable, même à 0). */
+  coursesCreatedThisWeek: number;
+  /** Nombre cumulé de formations, un point par jour sur la fenêtre d'activité
+   *  (14 jours) — permet une mini-courbe honnête de croissance réelle. */
+  courseCountSeries: number[];
+  /** Score moyen (%) par jour, UNIQUEMENT pour les jours où au moins un quiz a
+   *  été complété — pas un point par jour sur 14 jours (ce serait inventer des
+   *  valeurs pour les jours sans tentative). */
+  quizScoreSeries: number[];
+  /** `null` si moins d'une tentative notée dans l'une des deux fenêtres de 7
+   *  jours — jamais de tendance calculée sur une base vide. */
+  quizScoreTrend: QuizScoreTrend | null;
 };
 
 const ACTIVITY_WINDOW_DAYS = 14;
 const RECENT_ACTIVITY_LIMIT = 8;
+const QUIZ_SCORE_SERIES_LIMIT = 10;
 
 function dayKey(iso: string): string {
   return iso.slice(0, 10);
@@ -218,6 +237,72 @@ export async function getDashboardStats(
     cursor.setDate(cursor.getDate() - 1);
   }
 
+  // Formations créées cette semaine (toujours calculable, y compris 0) —
+  // sert de "tendance" honnête à la carte Formations, plutôt qu'un
+  // pourcentage qui diviserait par zéro sans historique suffisant.
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+  const coursesCreatedThisWeek = courses.filter(
+    (c) => new Date(c.createdAt).getTime() >= sevenDaysAgo.getTime(),
+  ).length;
+
+  // Série cumulée du nombre de formations, un point par jour sur la fenêtre
+  // d'activité : à chaque jour, combien de formations existaient déjà.
+  const courseCountSeries = activityByDay.map(({ date }) => {
+    const endOfDay = new Date(`${date}T23:59:59.999`);
+    return courses.filter((c) => new Date(c.createdAt).getTime() <= endOfDay.getTime()).length;
+  });
+
+  // Score moyen par jour, uniquement pour les jours où au moins un quiz a
+  // réellement été complété (pas d'interpolation inventée).
+  const scoreByDay = new Map<string, { sum: number; count: number }>();
+  for (const a of scoredAttempts) {
+    const key = dayKey(a.completed_at);
+    const bucket = scoreByDay.get(key) ?? { sum: 0, count: 0 };
+    bucket.sum += (a.score! / a.total!) * 100;
+    bucket.count += 1;
+    scoreByDay.set(key, bucket);
+  }
+  const quizScoreSeries = Array.from(scoreByDay.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .slice(-QUIZ_SCORE_SERIES_LIMIT)
+    .map(([, { sum, count }]) => Math.round(sum / count));
+
+  // Tendance du taux de réussite : moyenne des 7 derniers jours vs moyenne
+  // des 7 jours précédents — `null` dès que l'une des deux fenêtres n'a
+  // aucune tentative notée (jamais de tendance sur une base vide).
+  const fourteenDaysAgo = new Date(today);
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
+  fourteenDaysAgo.setHours(0, 0, 0, 0);
+  const last7: number[] = [];
+  const previous7: number[] = [];
+  for (const a of scoredAttempts) {
+    const at = new Date(a.completed_at).getTime();
+    const percent = (a.score! / a.total!) * 100;
+    if (at >= sevenDaysAgo.getTime()) {
+      last7.push(percent);
+    } else if (at >= fourteenDaysAgo.getTime()) {
+      previous7.push(percent);
+    }
+  }
+  const quizScoreTrend: QuizScoreTrend | null =
+    last7.length === 0 || previous7.length === 0
+      ? null
+      : (() => {
+          const last7DaysAvgPercent = Math.round(
+            last7.reduce((sum, v) => sum + v, 0) / last7.length,
+          );
+          const previous7DaysAvgPercent = Math.round(
+            previous7.reduce((sum, v) => sum + v, 0) / previous7.length,
+          );
+          return {
+            last7DaysAvgPercent,
+            previous7DaysAvgPercent,
+            deltaPoints: last7DaysAvgPercent - previous7DaysAvgPercent,
+          };
+        })();
+
   return {
     totalCourses,
     completedCourses,
@@ -228,5 +313,9 @@ export async function getDashboardStats(
     activeDayStreak,
     activityByDay,
     recentActivity: events.slice(0, RECENT_ACTIVITY_LIMIT),
+    coursesCreatedThisWeek,
+    courseCountSeries,
+    quizScoreSeries,
+    quizScoreTrend,
   };
 }

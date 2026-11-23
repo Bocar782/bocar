@@ -126,4 +126,63 @@ describe("getDashboardStats (vrai code)", () => {
     expect(stats.activityByDay).toHaveLength(14);
     expect(stats.activityByDay.at(-1)?.count).toBeGreaterThanOrEqual(1);
   });
+
+  it("calcule coursesCreatedThisWeek et une série cumulée cohérente (Prompt 06.2)", async () => {
+    const courses = [
+      { id: "c1", title: "Ancienne", createdAt: iso(20), chapterCount: 2, currentChapterIndex: 0 },
+      { id: "c2", title: "Récente A", createdAt: iso(3), chapterCount: 2, currentChapterIndex: 0 },
+      { id: "c3", title: "Récente B", createdAt: iso(1), chapterCount: 2, currentChapterIndex: 0 },
+    ];
+    const supabase = makeSupabase({
+      course_chapters: [],
+      quizzes: [],
+      quiz_attempts: [],
+      lesson_progress: [],
+    });
+
+    const stats = await getDashboardStats(supabase as never, "user-1", courses);
+
+    expect(stats.coursesCreatedThisWeek).toBe(2);
+    expect(stats.courseCountSeries).toHaveLength(14);
+    // Jamais décroissant (nombre cumulé), et se termine au total réel.
+    for (let i = 1; i < stats.courseCountSeries.length; i++) {
+      expect(stats.courseCountSeries[i]).toBeGreaterThanOrEqual(stats.courseCountSeries[i - 1]);
+    }
+    expect(stats.courseCountSeries.at(-1)).toBe(3);
+    // La formation vieille de 20 jours est déjà comptée au tout début de la fenêtre de 14 jours.
+    expect(stats.courseCountSeries[0]).toBe(1);
+  });
+
+  it("ne renvoie une tendance de score que si les deux fenêtres de 7 jours ont des tentatives notées (Prompt 06.2)", async () => {
+    const courses = [
+      { id: "c1", title: "Formation", createdAt: iso(20), chapterCount: 2, currentChapterIndex: 1 },
+    ];
+
+    const noTrendSupabase = makeSupabase({
+      course_chapters: [{ id: "chap-1", title: "Chap 1", course_id: "c1" }],
+      quizzes: [{ id: "quiz-1", course_id: "c1", kind: "final" }],
+      lesson_progress: [],
+      // Toutes les tentatives dans les 7 derniers jours : aucune dans la fenêtre précédente.
+      quiz_attempts: [{ quiz_id: "quiz-1", score: 9, total: 10, completed_at: iso(1) }],
+    });
+    const noTrendStats = await getDashboardStats(noTrendSupabase as never, "user-1", courses);
+    expect(noTrendStats.quizScoreTrend).toBeNull();
+    expect(noTrendStats.quizScoreSeries).toEqual([90]);
+
+    const withTrendSupabase = makeSupabase({
+      course_chapters: [{ id: "chap-1", title: "Chap 1", course_id: "c1" }],
+      quizzes: [{ id: "quiz-1", course_id: "c1", kind: "final" }],
+      lesson_progress: [],
+      quiz_attempts: [
+        { quiz_id: "quiz-1", score: 9, total: 10, completed_at: iso(1) }, // 90%, semaine en cours
+        { quiz_id: "quiz-1", score: 6, total: 10, completed_at: iso(10) }, // 60%, semaine précédente
+      ],
+    });
+    const withTrendStats = await getDashboardStats(withTrendSupabase as never, "user-1", courses);
+    expect(withTrendStats.quizScoreTrend).toEqual({
+      last7DaysAvgPercent: 90,
+      previous7DaysAvgPercent: 60,
+      deltaPoints: 30,
+    });
+  });
 });
