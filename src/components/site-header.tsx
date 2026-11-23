@@ -47,30 +47,19 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
         </Link>
 
         <nav className="hidden items-center gap-6 text-sm text-foreground-muted lg:flex xl:gap-8">
-          {NAV_LINKS.map((link) =>
-            // Prompt 05.30 : "Tarifs" mis en avant (pastille dégradée) sur la
-            // landing — retour utilisateur "je ne vois pas les tarifs" depuis
-            // l'accueil, /pricing reste la page dédiée (pas dupliquée ici).
-            isLight && link.label === "Tarifs" ? (
-              <a
-                key={link.href}
-                href={link.href}
-                className="rounded-full bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-3.5 py-1.5 text-sm font-medium text-white shadow-[0_4px_16px_-6px_rgba(147,51,234,0.6)] transition-all hover:brightness-110"
-              >
-                {link.label}
-              </a>
-            ) : (
-              <a
-                key={link.href}
-                href={link.href}
-                className={`transition-colors hover:text-foreground ${
-                  link.id && activeSection === link.id ? "text-foreground" : ""
-                }`}
-              >
-                {link.label}
-              </a>
-            ),
-          )}
+          {/* Prompt 05.34 : "Tarifs" revient à un lien texte simple comme les
+              autres — plus de pastille violette (retour utilisateur). */}
+          {NAV_LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className={`transition-colors hover:text-foreground ${
+                link.id && activeSection === link.id ? "text-foreground" : ""
+              }`}
+            >
+              {link.label}
+            </a>
+          ))}
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
@@ -126,29 +115,18 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
       {open && (
         <div className="border-t border-border-subtle bg-background/95 px-6 py-4 backdrop-blur-xl lg:hidden">
           <nav className="flex flex-col gap-1">
-            {NAV_LINKS.map((link) =>
-              isLight && link.label === "Tarifs" ? (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-3 py-2.5 text-sm font-medium text-white"
-                >
-                  {link.label}
-                </a>
-              ) : (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
-                    isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
-                  }`}
-                >
-                  {link.label}
-                </a>
-              ),
-            )}
+            {NAV_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className={`rounded-lg px-3 py-2.5 text-sm text-foreground-muted transition-colors hover:text-foreground ${
+                  isLight ? "hover:bg-background-elevated" : "hover:bg-white/5"
+                }`}
+              >
+                {link.label}
+              </a>
+            ))}
             <Link
               href="/login"
               onClick={() => setOpen(false)}

@@ -1,13 +1,13 @@
 import { MockFrame } from "./interface-showcase";
 import { IconGraduationCap, IconRocket } from "./icons";
 
-// Prompt 05.27 : deux compositions délibérément différentes (pas deux
-// cartes jumelles) — étudiants : carte (bg-background-card), texte puis
-// aperçu ; entrepreneurs : pas de carte, aperçu puis texte, séparé par un
-// simple filet. Les aperçus MockFrame montrent des contenus déjà réels du
-// produit, jamais inventés. Prompt 05.29 : ne sont plus volontairement
-// assombris par rapport au reste de la page — toute la landing est
-// désormais violet foncé, donc plus besoin d'un contraste séparé.
+// Prompt 05.27 : deux compositions, aperçus produit réels (jamais inventés).
+// Prompt 05.29 : plus d'assombrissement séparé — toute la landing est
+// désormais violet foncé. Prompt 05.34 : les deux cartes (étudiants /
+// entrepreneurs) utilisent désormais exactement la même structure (carte,
+// icône, titre, liste, aperçu en bas) — l'asymétrie d'origine créait un
+// "désaccord" visuel sur mobile une fois les colonnes empilées (l'aperçu
+// se retrouvait en haut d'un côté et en bas de l'autre).
 
 const STUDENT_POINTS = [
   "Réviser un chapitre du programme ou préparer un examen avec une formation construite sur mesure.",
@@ -23,7 +23,7 @@ const ENTREPRENEUR_POINTS = [
 
 export function AudienceBenefits() {
   return (
-    <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-16">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       {/* Étudiants : carte, texte en haut, aperçu en bas. Prompt 05.30 :
           petit filet dégradé brillant en haut de carte. */}
       <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
@@ -59,9 +59,26 @@ export function AudienceBenefits() {
         </div>
       </div>
 
-      {/* Entrepreneurs : pas de carte, aperçu en haut, texte en bas */}
-      <div className="border-t border-border-subtle pt-7 lg:border-t-0 lg:border-l lg:pl-10 lg:pt-0">
-        <div>
+      {/* Entrepreneurs : même carte que les étudiants (Prompt 05.34) —
+          texte en haut, aperçu en bas, même filet dégradé. */}
+      <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
+        <div
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] via-accent-violet to-[#8b5cf6]"
+        />
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
+          <IconRocket width={20} height={20} />
+        </span>
+        <h3 className="mt-4 text-lg font-semibold text-foreground">Pour les entrepreneurs</h3>
+        <ul className="mt-4 space-y-3 text-sm leading-relaxed text-foreground-muted">
+          {ENTREPRENEUR_POINTS.map((point) => (
+            <li key={point} className="flex gap-2.5">
+              <span className="mt-0.5 shrink-0 text-accent-violet">✓</span>
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-6">
           <MockFrame label="Chat avec Tavyra">
             <div className="space-y-2">
               <div className="ml-auto max-w-[80%] rounded-lg rounded-tr-sm bg-white/[0.06] px-3 py-2 text-xs text-foreground">
@@ -74,18 +91,6 @@ export function AudienceBenefits() {
             </div>
           </MockFrame>
         </div>
-        <span className="mt-6 flex h-10 w-10 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
-          <IconRocket width={20} height={20} />
-        </span>
-        <h3 className="mt-4 text-lg font-semibold text-foreground">Pour les entrepreneurs</h3>
-        <ul className="mt-4 space-y-3 text-sm leading-relaxed text-foreground-muted">
-          {ENTREPRENEUR_POINTS.map((point) => (
-            <li key={point} className="flex gap-2.5">
-              <span className="mt-0.5 shrink-0 text-accent-violet">✓</span>
-              <span>{point}</span>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );
