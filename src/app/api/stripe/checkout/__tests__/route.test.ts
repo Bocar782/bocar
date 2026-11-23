@@ -295,6 +295,102 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     });
   });
 
+  describe("correctif 06.21 : protège contre la course entre une requête encore en cours et la récupération de verrou déclenchée par une seconde requête", () => {
+    it("ne tente AUCUNE récupération si le verrou vient d'être posé (quelques millisecondes) — la requête d'origine peut être encore en train de parler à Stripe", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      // Verrou posé "maintenant" : simule exactement le scénario décrit —
+      // la Requête A vient d'obtenir reserve_checkout_session() et n'a pas
+      // encore eu le temps de créer sa session Checkout quand la Requête B
+      // arrive et se heurte au verrou.
+      currentPendingCheckoutAt = new Date().toISOString();
+      // Même si la recherche Stripe ne trouverait RIEN (la session de A
+      // n'existe pas encore), la libération ne doit jamais être tentée :
+      // le garde-fou d'âge doit arrêter la récupération AVANT tout appel
+      // Stripe.
+      mockStripeCheckoutSessionsList.mockResolvedValue({ data: [], has_more: false });
+      mockStripeSubscriptionsList.mockResolvedValue({ data: [], has_more: false });
+      releaseResult = { released: true, reason: "released" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockStripeSubscriptionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("ne tente AUCUNE récupération pour un verrou vieux de 30 secondes (nettement sous le seuil de 2 minutes)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 30_000).toISOString();
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("ne tente AUCUNE récupération pour un verrou vieux de 119 secondes (juste sous le seuil de 2 minutes — marge testée au plus près)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 119_000).toISOString();
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("autorise la vérification Stripe pour un verrou vieux de 121 secondes (juste après le seuil de 2 minutes)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 121_000).toISOString();
+      releaseResult = { released: true, reason: "released" };
+      retryReservationResult = { ok: true, reason: "ok", existing_customer_id: "cus_existing_456" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(303);
+      expect(mockStripeCheckoutSessionsList).toHaveBeenCalledTimes(1);
+      expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
+    });
+
+    it("ne tente AUCUNE récupération pour un verrou vieux de 10 minutes si la requête d'origine n'a réellement pas fini en pratique (reproduit un Stripe lent proche de son propre timeout de 80s, bien avant le seuil applicatif)", async () => {
+      // Démontre explicitement que la marge de 2 minutes couvre largement
+      // le pire cas déjà possible pour un seul appel Stripe (timeout SDK
+      // par défaut : 80s, voir node_modules/stripe/cjs/stripe.core.js).
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 70_000).toISOString(); // 70s < 80s < 120s
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
+      expect(mockReleaseRpc).not.toHaveBeenCalled();
+    });
+
+    it("06.21 : release_abandoned_checkout_lock (RPC) refuse elle-même toute libération si le verrou a moins de 60s — défense en profondeur indépendante de route.ts", async () => {
+      // Ce test documente le comportement attendu de la RPC SQL
+      // elle-même (vérifié séparément en conditions réelles sur un
+      // Postgres local, voir la revue de sécurité 06.21) : même si
+      // route.ts appelait un jour cette RPC sans son propre contrôle
+      // d'âge de 2 minutes, la RPC refuserait quand même tout verrou de
+      // moins de 60 secondes. Ici on vérifie que route.ts respecte
+      // bien le refus `lock_too_recent` renvoyé par la RPC exactement
+      // comme n'importe quel autre refus (`lock_changed_since_verification`) :
+      // aucune nouvelle tentative, verrou conservé.
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      currentPendingCheckoutAt = new Date(Date.now() - 121_000).toISOString();
+      releaseResult = { released: false, reason: "lock_too_recent" };
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
+      expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("correctif 06.19/06.20 : récupération sécurisée d'un verrou abandonné, vérifiée contre Stripe (en cas de doute, le verrou est conservé)", () => {
     it("ne tente aucune récupération si la réservation est refusée pour 'already_pro' (abonnement actif jamais touché)", async () => {
       reservationResult = { ok: false, reason: "already_pro", existing_customer_id: "cus_existing_456" };

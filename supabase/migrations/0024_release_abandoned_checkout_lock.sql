@@ -29,6 +29,16 @@
 -- 3. Relit status au moment de l'exécution et refuse si 'active'/'trialing'
 --    — ne touche jamais un abonnement réellement actif, même si l'appelant
 --    s'est trompé.
+-- 4. (Prompt 06.21, durcissement suite à une revue de sécurité sur les
+--    conditions de concurrence) Âge minimum obligatoire du verrou avant
+--    toute libération, appliqué ICI, indépendamment de tout contrôle côté
+--    application : un verrou tout juste posé peut appartenir à une requête
+--    encore en train de communiquer avec Stripe (elle n'a simplement pas
+--    encore créé sa session Checkout) — chercher "y a-t-il une session ?"
+--    à cet instant donnerait "non" pour une mauvaise raison, indiscernable
+--    d'un verrou réellement abandonné. Ce plancher protège même si
+--    l'appelant (route.ts) venait un jour à oublier son propre contrôle
+--    d'âge : défense en profondeur, jamais la seule protection.
 -- À exécuter après 0023_generation_progress.sql. Ne modifie ni 0022, ni
 -- aucune migration antérieure.
 
@@ -73,6 +83,17 @@ begin
   -- Rien à libérer.
   if v_pending_checkout_at is null then
     return query select false, 'no_pending_checkout'::text;
+    return;
+  end if;
+
+  -- Prompt 06.21 : plancher d'âge minimum, indépendant du contrôle côté
+  -- application — voir la justification en tête de fichier. 60 secondes :
+  -- volontairement plus court que le seuil applicatif de 2 minutes
+  -- (route.ts), car cette fonction ne fait elle-même AUCUN appel Stripe et
+  -- n'a donc pas besoin de la même marge ; c'est un filet de sécurité de
+  -- dernier recours, pas le contrôle principal.
+  if v_pending_checkout_at > now() - interval '60 seconds' then
+    return query select false, 'lock_too_recent'::text;
     return;
   end if;
 
