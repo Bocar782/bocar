@@ -206,13 +206,18 @@ async function analyzeTopic(
 // --- Diagnostic adaptatif (Prompt 05.18.1) ---
 
 // Bornes imposées en CODE, jamais seulement dans le prompt (même principe
-// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 7ᵉ
+// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 3ᵉ
 // question répondue, mais jamais avant ; elle ne peut jamais en poser plus
-// de 12, même si elle l'annonce. Volontairement élevé (jamais un nombre
-// fixe annoncé à l'utilisateur) : le diagnostic doit creuser assez pour que
-// la formation générée corresponde vraiment au niveau réel de la personne.
-export const MIN_DIAGNOSTIC_QUESTIONS = 7;
-export const MAX_DIAGNOSTIC_QUESTIONS = 12;
+// de 5, même si elle l'annonce. Réduit de 7-12 à 3-5 (Prompt 06.36, suite à
+// un signalement utilisateur réel sur le coût réel : chaque question de
+// diagnostic est un appel Claude séparé, facturé, AVANT même que la
+// formation elle-même ne commence à être générée — un diagnostic de 10-12
+// questions coûtait déjà une part significative du prix d'une formation
+// complète avant qu'elle n'existe). Ne garde que les questions les plus
+// déterminantes pour cerner le niveau réel de la personne, jamais un
+// nombre fixe annoncé à l'utilisateur.
+export const MIN_DIAGNOSTIC_QUESTIONS = 3;
+export const MAX_DIAGNOSTIC_QUESTIONS = 5;
 
 /**
  * Génère la PROCHAINE question de diagnostic, en tenant compte des réponses
