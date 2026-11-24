@@ -86,9 +86,18 @@ export async function POST(request: Request) {
   }
   const body = parsedBody.data;
 
-  const client = createAnthropicClient();
-
   try {
+    // Prompt 06.35 (suite à un signalement utilisateur réel : une clé
+    // ANTHROPIC_API_KEY absente ou vide en production faisait planter cet
+    // appel AVANT ce try/catch — exception non interceptée, renvoyée par
+    // Netlify/Next.js comme une page d'erreur HTML brute au lieu d'un JSON,
+    // provoquant côté navigateur "Unexpected token '<' ... is not valid
+    // JSON" au lieu du message propre attendu). Création du client
+    // désormais À L'INTÉRIEUR du try : toute erreur ici (y compris cette
+    // variable d'environnement manquante) retombe sur le même message
+    // générique ci-dessous, jamais une page brute.
+    const client = createAnthropicClient();
+
     if (body.action === "question") {
       const question = await generateDiagnosticQuestion(client, body.topic, body.previousAnswers);
       return NextResponse.json({ question });

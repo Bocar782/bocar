@@ -124,13 +124,18 @@ export async function POST(request: Request) {
 
   const chapterIndex = Math.min(currentChapterIndex, course.chapters.length - 1);
   const system = buildChatSystemPrompt(course, chapterIndex);
-  const client = createAnthropicClient();
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        // Prompt 06.35 : client créé ICI, à l'intérieur de ce try — une clé
+        // ANTHROPIC_API_KEY absente ou vide le ferait sinon planter avant
+        // le moindre octet envoyé au navigateur, ce qui produirait une
+        // page d'erreur serveur brute au lieu du message "Une erreur est
+        // survenue..." déjà prévu ci-dessous pour ce flux en streaming.
+        const client = createAnthropicClient();
         const anthropicStream = client.messages.stream({
           model: MODEL,
           max_tokens: 1536,
