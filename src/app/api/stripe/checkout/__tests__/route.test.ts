@@ -67,6 +67,15 @@ let pendingCheckoutAtReadError: Error | null = null;
 let releaseResult: ReleaseResult = { released: false, reason: "no_pending_checkout" };
 let releaseError: Error | null = null;
 
+// Prompt 06.32 : séquence des valeurs renvoyées par les lectures successives
+// de `stripe_customer_id` que fait `waitForPersistedCustomerId` (une entrée
+// par appel ; `undefined` au-delà de la fin du tableau se traduit par
+// `null`, c'est-à-dire "toujours pas persisté"). Vide par défaut : premier
+// appel renvoie déjà `null`, comportement inchangé pour tous les tests
+// existants qui ne configurent pas ce scénario.
+let customerIdPollSequence: (string | null)[] = [];
+let customerIdPollCallCount = 0;
+
 const rpcCalls: { fnName: string; args: unknown }[] = [];
 const mockReserveRpc = vi.fn();
 const mockReleaseRpc = vi.fn();
@@ -78,12 +87,23 @@ const mockUpdate = vi.fn(() => ({
       resolve({ data: null, error: null }),
   }),
 }));
-const mockSelect = vi.fn(() => ({
+// Prompt 06.32 : route selon la colonne demandée — `tryRecoverAbandonedLock`
+// lit `pending_checkout_at`, `waitForPersistedCustomerId` lit
+// `stripe_customer_id`. Un seul mock partagé (comme avant 06.32) ferait
+// répondre la mauvaise valeur à l'un des deux appelants.
+const mockSelect = vi.fn((columns: string) => ({
   eq: () => ({
-    maybeSingle: async () => ({
-      data: pendingCheckoutAtReadError ? null : { pending_checkout_at: currentPendingCheckoutAt },
-      error: pendingCheckoutAtReadError,
-    }),
+    maybeSingle: async () => {
+      if (columns === "stripe_customer_id") {
+        const value = customerIdPollSequence[customerIdPollCallCount] ?? null;
+        customerIdPollCallCount += 1;
+        return { data: { stripe_customer_id: value }, error: null };
+      }
+      return {
+        data: pendingCheckoutAtReadError ? null : { pending_checkout_at: currentPendingCheckoutAt },
+        error: pendingCheckoutAtReadError,
+      };
+    },
   }),
 }));
 
@@ -133,6 +153,8 @@ beforeEach(() => {
   retryReservationResult = null;
   currentPendingCheckoutAt = null;
   pendingCheckoutAtReadError = null;
+  customerIdPollSequence = [];
+  customerIdPollCallCount = 0;
   releaseResult = { released: false, reason: "no_pending_checkout" };
   releaseError = null;
   mockReserveRpc.mockClear();
@@ -417,8 +439,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).not.toHaveBeenCalled();
     });
 
-    it("ne tente aucune réutilisation si existing_customer_id est null (compte neuf, rien à retrouver côté Stripe)", async () => {
+    it("ne tente aucune réutilisation si existing_customer_id reste null même après l'attente bornée (06.32) — compte neuf, rien à retrouver côté Stripe", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+      customerIdPollSequence = [];
 
       const response = await callRoute("http://localhost:3000");
 
@@ -458,6 +481,56 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
     });
   });
 
+  describe("correctif 06.32 : plusieurs onglets ouverts en même temps sur /checkout, avec un compte tout juste créé (existing_customer_id pas encore persisté) — attend brièvement sa persistance plutôt que de refuser immédiatement", () => {
+    it("n'attend rien du tout si existing_customer_id est déjà connu (chemin inchangé, aucune latence ajoutée)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
+      mockStripeResumeSessionsList.mockResolvedValueOnce({
+        data: [{ id: "cs_open_existing", client_secret: "cs_open_existing_secret" }],
+        has_more: false,
+      });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(200);
+      // Jamais interrogé : aucune attente du client Stripe persisté n'était
+      // nécessaire, puisqu'il était déjà connu dès la réservation.
+      expect(customerIdPollCallCount).toBe(0);
+    });
+
+    it("réaffiche la session existante dès que le client Stripe persisté apparaît, après une brève attente (deuxième onglet ouvert juste après le premier, compte tout juste créé)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+      // Absent à la première lecture (la toute première requête n'a pas
+      // encore fini de le persister), présent à la deuxième.
+      customerIdPollSequence = [null, "cus_brand_new_789"];
+      mockStripeResumeSessionsList.mockResolvedValueOnce({
+        data: [{ id: "cs_open_brand_new", client_secret: "cs_open_brand_new_secret" }],
+        has_more: false,
+      });
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual({ clientSecret: "cs_open_brand_new_secret" });
+      expect(mockStripeResumeSessionsList).toHaveBeenCalledWith({
+        customer: "cus_brand_new_789",
+        status: "open",
+        limit: 1,
+      });
+    }, 10_000);
+
+    it("retombe sur le refus 409 inchangé si le client Stripe persisté n'apparaît jamais (abandonne après un nombre borné de tentatives, jamais une attente indéfinie)", async () => {
+      reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
+      customerIdPollSequence = [];
+
+      const response = await callRoute("http://localhost:3000");
+
+      expect(response.status).toBe(409);
+      expect(mockStripeResumeSessionsList).not.toHaveBeenCalled();
+      expect(customerIdPollCallCount).toBeGreaterThan(1);
+    }, 10_000);
+  });
+
   describe("correctif 06.19/06.20 : récupération sécurisée d'un verrou abandonné, vérifiée contre Stripe (en cas de doute, le verrou est conservé)", () => {
     it("ne tente aucune récupération si la réservation est refusée pour 'already_pro' (abonnement actif jamais touché)", async () => {
       reservationResult = { ok: false, reason: "already_pro", existing_customer_id: "cus_existing_456" };
@@ -470,21 +543,29 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
     });
 
-    it("06.20 : ne libère JAMAIS automatiquement si le customer Stripe est absent de Supabase (existing_customer_id null) — seul le délai de 30 min peut libérer ce cas", async () => {
+    it("06.20/06.32 : ne libère JAMAIS automatiquement si le customer Stripe reste introuvable même après l'attente bornée (existing_customer_id toujours null) — seul le délai de 30 min peut libérer ce cas", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
+      // Prompt 06.32 : jamais trouvé, même après l'attente bornée — ce
+      // test documente désormais ce cas précis (customer Stripe
+      // définitivement absent), distinct du cas "pas encore persisté"
+      // couvert par le describe 06.32 plus haut.
+      customerIdPollSequence = [];
       releaseResult = { released: true, reason: "released" };
       retryReservationResult = { ok: true, reason: "ok", existing_customer_id: null };
 
       const response = await callRoute("http://localhost:3000");
 
       expect(response.status).toBe(409);
-      expect(mockSelect).not.toHaveBeenCalled();
+      // Lecture tentée (nouveau, 06.32) pour voir si le client Stripe est
+      // apparu entre-temps — mais jamais la lecture de pending_checkout_at
+      // (tryRecoverAbandonedLock n'est jamais atteint sans customer id).
+      expect(customerIdPollCallCount).toBeGreaterThan(0);
       expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
       expect(mockStripeSubscriptionsList).not.toHaveBeenCalled();
       expect(mockReleaseRpc).not.toHaveBeenCalled();
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
-    });
+    }, 10_000);
 
     it("vérifie Stripe (toutes les sessions, sans filtre de statut côté appel), ne trouve rien en cours, libère le verrou et retente avec succès", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };

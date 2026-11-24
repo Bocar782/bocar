@@ -113,18 +113,35 @@ export async function POST(request: Request) {
       // permet désormais de simplement réafficher le MÊME formulaire déjà
       // créé. Contrairement à `tryRecoverAbandonedLock` ci-dessous (qui
       // LIBÈRE le verrou pour en créer un nouveau, réservé aux verrous
-      // réellement abandonnés, âgés d'au moins 16 minutes), cette
-      // récupération ne crée ni ne libère RIEN : elle retrouve la session
-      // Stripe `open` déjà existante pour ce client et renvoie son
-      // `client_secret` tel quel. Aucun nouvel abonnement ni nouvelle
-      // session n'est créé(e) — la protection anti-double-paiement reste
-      // entière, puisqu'il s'agit strictement de la même session.
-      const resumedSession = await tryResumeOpenSession(
-        stripe,
-        reservation.existing_customer_id,
-        attemptId,
-        log,
-      );
+      // réellement abandonnés), cette récupération ne crée ni ne libère
+      // RIEN : elle retrouve la session Stripe `open` déjà existante pour
+      // ce client et renvoie son `client_secret` tel quel. Aucun nouvel
+      // abonnement ni nouvelle session n'est créé(e) — la protection
+      // anti-double-paiement reste entière, puisqu'il s'agit strictement
+      // de la même session.
+      //
+      // Prompt 06.32 (suite à un signalement utilisateur réel : ouvrir
+      // PLUSIEURS onglets sur /checkout en même temps, avec le même compte
+      // — ex. dupliquer l'onglet juste après avoir cliqué "S'abonner" —
+      // bloquait le second onglet). Les deux fonctions ci-dessous ont
+      // besoin de `existing_customer_id` pour interroger Stripe — pour un
+      // compte qui n'a ENCORE jamais eu de client Stripe, cet identifiant
+      // n'existe en base QUE depuis la fin de la toute première requête
+      // (celle qui a posé le verrou et crée le client Stripe + sa
+      // session). Un second onglet ouvert dans la fenêtre de quelques
+      // centaines de millisecondes avant que cette première requête n'ait
+      // fini de persister cet identifiant voyait `existing_customer_id:
+      // null` et tombait directement sur le refus 409, sans même pouvoir
+      // vérifier Stripe. `waitForPersistedCustomerId` attend ici,
+      // brièvement et de façon bornée (quelques centaines de millisecondes
+      // au pire, jamais une attente perceptible), que cette persistance se
+      // termine, avant d'abandonner et de laisser le comportement
+      // inchangé (verrou conservé) si elle n'arrive jamais.
+      const recoveryCustomerId =
+        reservation.existing_customer_id ??
+        (await waitForPersistedCustomerId(admin, user.id, attemptId, log));
+
+      const resumedSession = await tryResumeOpenSession(stripe, recoveryCustomerId, attemptId, log);
       if (resumedSession?.client_secret) {
         log("4b_session_existante_reutilisee", { sessionId: resumedSession.id });
         return NextResponse.json({ clientSecret: resumedSession.client_secret });
@@ -134,7 +151,7 @@ export async function POST(request: Request) {
         stripe,
         admin,
         user.id,
-        reservation.existing_customer_id,
+        recoveryCustomerId,
         attemptId,
         log,
       );
@@ -453,14 +470,74 @@ async function listAllStripePages<T extends { id: string }>(
   return { items, truncated: true };
 }
 
+// Prompt 06.32 : nombre et espacement des lectures tentées par
+// waitForPersistedCustomerId ci-dessous — 5 x 300ms = 1,5s de pire cas,
+// jamais une attente perceptible, mais largement suffisant pour couvrir le
+// temps réel d'un aller-retour Supabase (persistStripeCustomerId, déjà
+// appelé par la toute première requête juste avant qu'elle ne réponde).
+const CUSTOMER_ID_POLL_ATTEMPTS = 5;
+const CUSTOMER_ID_POLL_DELAY_MS = 300;
+
+// Prompt 06.32 (suite à un signalement utilisateur réel : ouvrir plusieurs
+// onglets sur /checkout en même temps, avec le même compte, bloquait le
+// second onglet). Pour un compte qui n'a JAMAIS encore eu de client Stripe,
+// `reserve_checkout_session` ne renvoie `existing_customer_id` qu'une fois
+// que la toute première requête a fini de le persister (persistStripeCustomerId,
+// voir plus bas) — une fenêtre de quelques centaines de millisecondes tout
+// au plus (le temps de l'appel Stripe lui-même). Une seconde requête qui
+// arrive dans cette fenêtre précise (deuxième onglet ouvert presque
+// simultanément) ne peut alors ni réafficher la session existante
+// (tryResumeOpenSession) ni même vérifier son état auprès de Stripe
+// (tryRecoverAbandonedLock) — les deux ont besoin de cet identifiant.
+// Cette fonction attend, brièvement et de façon bornée, que cette
+// persistance se termine, avant d'abandonner (retourne `null`, comportement
+// inchangé : verrou conservé) si elle n'arrive jamais dans ce délai.
+async function waitForPersistedCustomerId(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  attemptId: string,
+  log: (step: string, details?: Record<string, unknown>) => void,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < CUSTOMER_ID_POLL_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, CUSTOMER_ID_POLL_DELAY_MS));
+    }
+
+    const { data, error } = await admin
+      .from("subscriptions")
+      .select("stripe_customer_id")
+      .eq("user_id", userId)
+      .maybeSingle<{ stripe_customer_id: string | null }>();
+
+    if (error) {
+      console.error(`[stripe/checkout:${attemptId}] échec de lecture en attendant le client Stripe persisté`, {
+        userId,
+        attempt,
+        message: error.message,
+        code: error.code,
+      });
+      continue;
+    }
+
+    if (data?.stripe_customer_id) {
+      log("4a_client_stripe_recupere_apres_attente", { attempt, customerId: data.stripe_customer_id });
+      return data.stripe_customer_id;
+    }
+  }
+
+  log("4a_client_stripe_toujours_absent_apres_attente");
+  return null;
+}
+
 // Prompt 06.29 : retrouve une session Stripe Checkout déjà créée et encore
 // `open` pour ce client, afin de la réafficher telle quelle (paiement
 // intégré, 06.28) au lieu de refuser une nouvelle tentative pendant qu'elle
 // est en cours. Ne crée, ne modifie ni ne libère RIEN : une pure lecture.
-// `existingCustomerId` null (compte neuf jamais parti jusqu'à Stripe) ou
-// tout échec de l'appel Stripe (fail-safe, jamais bloquant : la route
-// retombe simplement sur le comportement précédent, `tryRecoverAbandonedLock`
-// puis 409) renvoient `null`. `limit: 1` suffit : Stripe trie par création
+// `existingCustomerId` null (compte neuf jamais parti jusqu'à Stripe, ou
+// toujours null après waitForPersistedCustomerId ci-dessus) ou tout échec
+// de l'appel Stripe (fail-safe, jamais bloquant : la route retombe
+// simplement sur le comportement précédent, `tryRecoverAbandonedLock` puis
+// 409) renvoient `null`. `limit: 1` suffit : Stripe trie par création
 // décroissante, donc le premier résultat est la session la plus récente —
 // celle que `reserve_checkout_session` vient justement de signaler comme
 // verrou en cours.
