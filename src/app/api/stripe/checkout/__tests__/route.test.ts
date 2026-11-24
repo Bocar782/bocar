@@ -245,13 +245,13 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
     });
 
-    it("refuse (409) une deuxième requête Checkout concurrente, sans jamais appeler Stripe (protection anti-double-abonnement)", async () => {
+    it("06.33 : une deuxième requête Checkout concurrente obtient quand même l'accès (nouvelle session créée), par choix explicite et répété de l'utilisateur — l'ancienne protection anti-double-abonnement par refus est volontairement retirée", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
-      expect(mockStripeCheckoutSessionsCreate).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
     it("renvoie 503 sans jamais appeler Stripe si la réservation échoue techniquement (jamais de fallback silencieux)", async () => {
@@ -381,7 +381,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 
-    it("refuse toujours si Stripe montre une session 'open' ou un abonnement non sûr, même pour un verrou vieux (l'âge n'a jamais été la vraie protection)", async () => {
+    it("06.33 : ne libère JAMAIS via la RPC si Stripe montre une session 'open' ou un abonnement non sûr, même pour un verrou vieux (l'âge n'a jamais été la vraie protection) — mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       mockStripeCheckoutSessionsList.mockResolvedValue({
@@ -392,8 +392,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -439,36 +440,39 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).not.toHaveBeenCalled();
     });
 
-    it("ne tente aucune réutilisation si existing_customer_id reste null même après l'attente bornée (06.32) — compte neuf, rien à retrouver côté Stripe", async () => {
+    it("06.33 : ne tente aucune réutilisation si existing_customer_id reste null même après l'attente bornée (06.32) — compte neuf, rien à retrouver côté Stripe — mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
       customerIdPollSequence = [];
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockStripeResumeSessionsList).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("retombe sur le comportement précédent (409, ou récupération après 16 min) si aucune session 'open' n'est trouvée", async () => {
+    it("06.33 : si aucune session 'open' n'est trouvée, retombe sur la récupération vérifiée puis, à défaut, sur l'accès forcé (jamais un refus)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       mockStripeResumeSessionsList.mockResolvedValueOnce({ data: [], has_more: false });
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockStripeResumeSessionsList).toHaveBeenCalledTimes(1);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("comportement fail-safe : si la recherche de session ouverte échoue (réseau, clé API...), retombe sur le comportement précédent sans jamais planter", async () => {
+    it("06.33 : comportement fail-safe — si la recherche de session ouverte échoue (réseau, clé API...), retombe sur l'accès forcé sans jamais planter ni refuser", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       mockStripeResumeSessionsList.mockRejectedValueOnce(new Error("Stripe API indisponible"));
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("ignore une session 'open' sans client_secret (ne devrait jamais arriver en pratique, mais ne doit jamais planter) et retombe sur le comportement précédent", async () => {
+    it("06.33 : ignore une session 'open' sans client_secret (ne devrait jamais arriver en pratique, mais ne doit jamais planter) et retombe sur l'accès forcé", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       mockStripeResumeSessionsList.mockResolvedValueOnce({
         data: [{ id: "cs_sans_secret", client_secret: null }],
@@ -477,7 +481,8 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -519,15 +524,20 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       });
     }, 10_000);
 
-    it("retombe sur le refus 409 inchangé si le client Stripe persisté n'apparaît jamais (abandonne après un nombre borné de tentatives, jamais une attente indéfinie)", async () => {
+    it("06.33 : si le client Stripe persisté n'apparaît jamais (abandonne après un nombre borné de tentatives), crée quand même une NOUVELLE session plutôt que de refuser", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
       customerIdPollSequence = [];
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockStripeResumeSessionsList).not.toHaveBeenCalled();
       expect(customerIdPollCallCount).toBeGreaterThan(1);
+      // Toujours aucun client Stripe connu : la nouvelle session est créée
+      // via customer_email, exactement comme pour un compte neuf ordinaire.
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ customer_email: "user@test.local" }),
+      );
     }, 10_000);
   });
 
@@ -543,7 +553,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
     });
 
-    it("06.20/06.32 : ne libère JAMAIS automatiquement si le customer Stripe reste introuvable même après l'attente bornée (existing_customer_id toujours null) — seul le délai de 30 min peut libérer ce cas", async () => {
+    it("06.20/06.32/06.33 : si le customer Stripe reste introuvable même après l'attente bornée (existing_customer_id toujours null), la RPC de libération n'est jamais appelée, mais une NOUVELLE session est quand même créée (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: null };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       // Prompt 06.32 : jamais trouvé, même après l'attente bornée — ce
@@ -556,15 +566,16 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
-      // Lecture tentée (nouveau, 06.32) pour voir si le client Stripe est
-      // apparu entre-temps — mais jamais la lecture de pending_checkout_at
+      expect(response.status).toBe(200);
+      // Lecture tentée (06.32) pour voir si le client Stripe est apparu
+      // entre-temps — mais jamais la lecture de pending_checkout_at
       // (tryRecoverAbandonedLock n'est jamais atteint sans customer id).
       expect(customerIdPollCallCount).toBeGreaterThan(0);
       expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
       expect(mockStripeSubscriptionsList).not.toHaveBeenCalled();
       expect(mockReleaseRpc).not.toHaveBeenCalled();
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     }, 10_000);
 
     it("vérifie Stripe (toutes les sessions, sans filtre de statut côté appel), ne trouve rien en cours, libère le verrou et retente avec succès", async () => {
@@ -599,7 +610,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReserveRpc).toHaveBeenCalledTimes(2);
     });
 
-    it("ne libère JAMAIS si Stripe signale une session Checkout encore ouverte", async () => {
+    it("06.33 : ne libère JAMAIS via la RPC si Stripe signale une session Checkout encore ouverte, mais crée quand même une NOUVELLE session (accès forcé, demande explicite de l'utilisateur)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeCheckoutSessionsList.mockResolvedValue({
@@ -609,12 +620,15 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ customer: "cus_existing_456" }),
+      );
     });
 
-    it("06.20 : ne libère JAMAIS une session 'complete' dont le paiement est encore 'unpaid' (moyen de paiement asynchrone, ex. virement SEPA)", async () => {
+    it("06.33 : ne libère JAMAIS via la RPC une session 'complete' dont le paiement est encore 'unpaid' (moyen de paiement asynchrone, ex. virement SEPA), mais crée quand même une NOUVELLE session", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeCheckoutSessionsList.mockResolvedValue({
@@ -624,8 +638,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
     it("06.20 : libère normalement une session 'complete' avec 'no_payment_required' (ex. essai gratuit sans carte)", async () => {
@@ -644,7 +659,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 
-    it("ne libère JAMAIS si Stripe signale un abonnement actif non encore synchronisé par le webhook", async () => {
+    it("06.33 : ne libère JAMAIS via la RPC si Stripe signale un abonnement actif non encore synchronisé par le webhook, mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeSubscriptionsList.mockResolvedValue({
@@ -654,12 +669,13 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
     it.each(["incomplete", "past_due", "unpaid"])(
-      "06.20 : ne libère JAMAIS si un abonnement Stripe est '%s' (paiement en traitement ou en échec avec nouvelle tentative)",
+      "06.33 : ne libère JAMAIS via la RPC si un abonnement Stripe est '%s', mais crée quand même une NOUVELLE session (accès forcé)",
       async (status) => {
         reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
         currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
@@ -670,8 +686,9 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
         const response = await callRoute("http://localhost:3000");
 
-        expect(response.status).toBe(409);
+        expect(response.status).toBe(200);
         expect(mockReleaseRpc).not.toHaveBeenCalled();
+        expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -691,7 +708,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
     });
 
-    it("06.20 : traite un statut d'abonnement INCONNU (futur, non prévu par ce code) comme bloquant, jamais comme sûr", async () => {
+    it("06.33 : traite un statut d'abonnement INCONNU (futur, non prévu par ce code) comme bloquant pour la RPC de libération, mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeSubscriptionsList.mockResolvedValue({
@@ -701,11 +718,12 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("06.20 : pagination Stripe — parcourt toutes les pages avant de conclure (une session bloquante en page 2 est bien détectée)", async () => {
+    it("06.33 : pagination Stripe — parcourt toutes les pages avant de conclure (une session bloquante en page 2 est bien détectée), mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeCheckoutSessionsList
@@ -720,7 +738,7 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockStripeCheckoutSessionsList).toHaveBeenCalledTimes(2);
       expect(mockStripeCheckoutSessionsList).toHaveBeenNthCalledWith(2, {
         customer: "cus_existing_456",
@@ -728,9 +746,10 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
         starting_after: "cs_page1_paid",
       });
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("06.20 : pagination incomplète (limite de sécurité atteinte) est traitée comme une INCERTITUDE bloquante, jamais comme 'rien trouvé'", async () => {
+    it("06.33 : pagination incomplète (limite de sécurité atteinte) reste traitée comme une INCERTITUDE pour la RPC de libération, mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       // Toujours has_more: true -> la pagination atteint sa limite de
@@ -744,24 +763,26 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
       // S'arrête bien à la limite de sécurité plutôt que de boucler indéfiniment.
       expect(mockStripeCheckoutSessionsList.mock.calls.length).toBeLessThanOrEqual(10);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("comportement fail closed : si la vérification des sessions Stripe échoue (réseau, clé API...), ne libère rien", async () => {
+    it("06.33 : comportement fail closed pour la RPC si la vérification des sessions Stripe échoue (réseau, clé API...), mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeCheckoutSessionsList.mockRejectedValueOnce(new Error("Stripe API indisponible"));
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("comportement fail closed : si la vérification des abonnements Stripe échoue, ne libère rien", async () => {
+    it("06.33 : comportement fail closed pour la RPC si la vérification des abonnements Stripe échoue, mais crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       mockStripeSubscriptionsList.mockRejectedValueOnce(
@@ -770,32 +791,35 @@ describe("POST /api/stripe/checkout (vrai route.ts + vraie vérification d'origi
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("ne retente pas la réservation si la lecture du verrou échoue techniquement", async () => {
+    it("06.33 : même si la lecture du verrou échoue techniquement, crée quand même une NOUVELLE session (accès forcé) plutôt que de refuser", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       pendingCheckoutAtReadError = new Error("connexion Supabase perdue");
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockStripeCheckoutSessionsList).not.toHaveBeenCalled();
       expect(mockReleaseRpc).not.toHaveBeenCalled();
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
-    it("n'accède jamais la réservation si release_abandoned_checkout_lock refuse (verrou changé entre-temps)", async () => {
+    it("06.33 : même si release_abandoned_checkout_lock refuse (verrou changé entre-temps), crée quand même une NOUVELLE session (accès forcé)", async () => {
       reservationResult = { ok: false, reason: "checkout_in_progress", existing_customer_id: "cus_existing_456" };
       currentPendingCheckoutAt = "2026-01-01T00:00:00.000Z";
       releaseResult = { released: false, reason: "lock_changed_since_verification" };
 
       const response = await callRoute("http://localhost:3000");
 
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(200);
       expect(mockReleaseRpc).toHaveBeenCalledTimes(1);
       expect(mockReserveRpc).toHaveBeenCalledTimes(1);
+      expect(mockStripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
     });
 
     it("reflète le résultat de la RETENTATIVE si elle échoue à nouveau après une libération réussie (ex. devenu already_pro entre-temps)", async () => {

@@ -158,6 +158,35 @@ export async function POST(request: Request) {
       if (recovered) {
         reservation = recovered;
       }
+
+      // Prompt 06.33 (demande explicite et répétée de l'utilisateur : accéder
+      // à /checkout ne doit JAMAIS être bloqué, même si une ou plusieurs
+      // sessions de paiement existent déjà pour ce compte — "même si y'avait
+      // plusieurs session de paiement en cours, on pouvait quand même avoir
+      // accès à la page de paiement"). Au-delà de la réutilisation
+      // (tryResumeOpenSession, 06.29) et de la récupération vérifiée
+      // (tryRecoverAbandonedLock, 06.19/06.20/06.30) ci-dessus — toutes deux
+      // tentées en premier, donc jamais contournées inutilement — si le
+      // verrou ne peut toujours pas être levé (une session Stripe est
+      // réellement encore ouverte, un abonnement est dans un état jugé non
+      // sûr, ou l'état Stripe reste incertain), une NOUVELLE session est
+      // créée quand même plutôt que de refuser l'accès. Risque accepté
+      // EXPLICITEMENT par l'utilisateur (propriétaire du produit), après
+      // explication répétée du compromis (voir 06.19/06.20 plus haut) : il
+      // devient possible que deux sessions distinctes soient payées
+      // séparément pour le même compte, ce qui créerait deux abonnements
+      // Stripe actifs — ce code ne protège plus contre ce cas précis, par
+      // choix délibéré et répété de l'utilisateur. Ne s'applique jamais à
+      // `already_pro` (abonnement actif confirmé — aucune raison de créer
+      // une nouvelle session de paiement dans ce cas, message dédié
+      // ci-dessous).
+      if (!reservation.ok && reservation.reason !== "already_pro") {
+        log("4c_acces_force_malgre_verrou", {
+          reason: reservation.reason,
+          existingCustomerId: recoveryCustomerId,
+        });
+        reservation = { ok: true, reason: "forced_access", existing_customer_id: recoveryCustomerId };
+      }
     }
 
     if (!reservation.ok) {
