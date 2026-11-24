@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BackgroundGlow } from "@/components/background-glow";
 import { BrandMark } from "@/components/brand-mark";
-import { Card } from "@/components/ui/card";
 import { PRO_PLAN_PRICE_EUR } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
 import { getStripePublishableKey } from "@/lib/stripe/env";
@@ -16,14 +14,19 @@ import { CheckoutClient } from "./checkout-client";
 // NEXT_PUBLIC_) et la passe en prop — évite de dépendre d'une variable
 // d'environnement NEXT_PUBLIC_* supplémentaire à ajouter en production.
 //
-// Mise en page (même structure qu'une page publique, ex. pricing/page.tsx) :
-// avant ce correctif, /checkout n'avait ni fond ni en-tête ni largeur
-// contrôlée — le formulaire Stripe (déjà responsive par lui-même)
-// apparaissait minuscule au milieu d'un grand vide, illisible sur un écran
-// d'ordinateur. Ce composant serveur fournit le même cadre que le reste du
-// site (BackgroundGlow, en-tête avec logo + lien de retour, largeur
-// maximale centrée) ; CheckoutClient ne gère plus que le formulaire
-// lui-même et son propre état de chargement/erreur.
+// Mise en page (Prompt 06.31, suite à un signalement utilisateur réel sur
+// capture d'écran : le fond violet/sombre du reste du site (BackgroundGlow)
+// restait visible tout autour du formulaire Stripe, lui-même blanc — rendu
+// perçu comme "pas rempli", pas comme une vraie page de paiement pleine
+// page). Plus de BackgroundGlow ici, et `data-theme="light"` posé
+// directement sur la racine (mêmes jetons de couleur blancs que l'intérieur
+// de l'app en thème clair, voir globals.css/[data-theme="light"] et
+// theme-context.tsx) : toute la page est désormais blanche, comme le
+// formulaire Stripe lui-même — plus aucun violet visible nulle part, sur
+// mobile comme sur ordinateur. Indépendant de la préférence de thème de
+// l'intérieur de l'app (localStorage, theme-context.tsx) : cette page n'est
+// pas rendue par DashboardShell, donc toujours blanche, par choix délibéré
+// pour cette page précise.
 export default async function CheckoutPage() {
   const supabase = await createClient();
   const {
@@ -35,10 +38,8 @@ export default async function CheckoutPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-1 flex-col">
-      <BackgroundGlow />
-
-      <header className="relative z-10 flex items-center justify-between px-6 py-6 sm:px-10">
+    <div data-theme="light" className="flex min-h-screen flex-col bg-background">
+      <header className="flex items-center justify-between border-b border-border-subtle px-6 py-4 sm:px-10">
         <Link href="/dashboard" className="flex items-center gap-2">
           <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Tavyra</span>
@@ -51,7 +52,7 @@ export default async function CheckoutPage() {
         </Link>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center px-0 pb-6 pt-2 sm:px-6 sm:pb-16 sm:pt-6">
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center px-0 pb-0 pt-6 sm:px-6 sm:pt-10">
         <h1 className="text-center text-xl font-semibold tracking-tight sm:text-3xl">
           Passer au plan Pro
         </h1>
@@ -59,19 +60,19 @@ export default async function CheckoutPage() {
           {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} € / mois, résiliable à tout moment.
         </p>
 
-        {/* Prompt 06.28 (ajustement) : le formulaire Stripe lui-même garde
-            toujours une largeur de contenu modeste (choix volontaire de
-            Stripe pour la lisibilité d'un formulaire de paiement, non
+        {/* Prompt 06.31 : plus de carte (bordure/fond) autour du formulaire
+            — fond de la page déjà blanc (data-theme="light" ci-dessus),
+            exactement la même couleur que le formulaire Stripe lui-même :
+            une bordure ou un fond légèrement différent créerait de nouveau
+            une zone visuellement séparée, l'inverse de l'effet recherché.
+            `flex-1` : ce conteneur occupe tout l'espace vertical restant de
+            la page, jusqu'en bas de l'écran — le formulaire Stripe garde sa
+            propre largeur de confort au centre (choix de Stripe, non
             modifiable depuis cette page — il vit dans un iframe cross-
-            origin). Ce cadre (Card pleine largeur, sans marge latérale sur
-            mobile) occupe en revanche tout l'espace disponible, pour ne
-            jamais laisser de grand vide autour : visuellement "rempli" sur
-            toutes les tailles d'écran, même si le formulaire Stripe garde
-            sa propre largeur de confort au centre. */}
-        <div className="mt-4 w-full sm:mt-8">
-          <Card padding="sm" className="w-full rounded-none sm:rounded-2xl">
-            <CheckoutClient publishableKey={getStripePublishableKey()} />
-          </Card>
+            origin), mais la page qui l'entoure est désormais pleine page,
+            sans aucun vide coloré autour. */}
+        <div className="mt-4 flex w-full flex-1 flex-col sm:mt-8">
+          <CheckoutClient publishableKey={getStripePublishableKey()} />
         </div>
       </main>
     </div>
