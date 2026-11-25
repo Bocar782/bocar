@@ -219,8 +219,12 @@ async function analyzeTopic(
 // Claude — les RÉPONSES de l'utilisateur sont toujours transmises telles
 // quelles à buildCoursePlan, qui reste, lui, un vrai appel Claude (plan
 // payant uniquement désormais, voir course-generator.tsx).
-export const MIN_DIAGNOSTIC_QUESTIONS = 4;
-export const MAX_DIAGNOSTIC_QUESTIONS = 4;
+// Prompt 06.38 : porté de 4 à 8 — zéro appel Claude pour cette étape (voir
+// staticDiagnosticQuestions ci-dessous), donc aucun coût supplémentaire à
+// poser plus de questions ; seules les réponses à CES questions, transmises
+// à buildCoursePlan (plan payant), ont un vrai coût.
+export const MIN_DIAGNOSTIC_QUESTIONS = 8;
+export const MAX_DIAGNOSTIC_QUESTIONS = 8;
 
 function staticDiagnosticQuestions(topic: string): DiagnosticQuestion[] {
   return [
@@ -261,6 +265,50 @@ function staticDiagnosticQuestions(topic: string): DiagnosticQuestion[] {
         "Quelques minutes par jour",
         "Une session complète de temps en temps",
         "Je veux aller vite et intensément",
+      ],
+    },
+    {
+      id: "contexte",
+      question: "Dans quel contexte vas-tu utiliser ce que tu apprends ?",
+      type: "single_choice",
+      choices: [
+        "Un projet personnel",
+        "Mon travail ou mes études actuels",
+        "Une reconversion ou un nouveau projet professionnel",
+        "Simple curiosité, sans objectif précis",
+      ],
+    },
+    {
+      id: "format",
+      question: "Qu'est-ce qui t'aide le plus à apprendre ?",
+      type: "single_choice",
+      choices: [
+        "Des exemples concrets et du cas par cas",
+        "Comprendre d'abord la théorie, puis appliquer",
+        "Apprendre en pratiquant directement, sans trop de théorie",
+        "Un mélange équilibré des deux",
+      ],
+    },
+    {
+      id: "difficulte",
+      question: "Qu'est-ce qui te bloque le plus, en général, sur ce type de sujet ?",
+      type: "single_choice",
+      choices: [
+        "Le vocabulaire et les notions de base",
+        "Passer de la théorie à la pratique",
+        "Rester motivé(e) sur la durée",
+        "Rien en particulier, je veux juste aller plus loin",
+      ],
+    },
+    {
+      id: "connexe",
+      question: "As-tu déjà des connaissances dans un domaine proche de ce sujet ?",
+      type: "single_choice",
+      choices: [
+        "Non, c'est totalement nouveau pour moi",
+        "Oui, dans un domaine assez proche",
+        "Oui, dans un domaine très proche ou lié",
+        "Je ne sais pas trop",
       ],
     },
   ];
