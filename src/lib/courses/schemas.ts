@@ -95,13 +95,15 @@ export const ProgrammeSchema = z.object({
 export type Programme = z.infer<typeof ProgrammeSchema>;
 export type ProgrammeModule = Programme["modules"][number];
 
-// --- Diagnostic adaptatif avant génération (Prompt 05.18.1) ---
+// --- Diagnostic avant génération (Prompt 05.18.1, revu en 06.40) ---
 
 /**
- * Une question de diagnostic, posée une à la fois : la question suivante
- * est générée en tenant compte de la réponse à celle-ci (voir
- * `generateDiagnosticQuestion` dans generate.ts) — jamais une liste figée
- * décidée d'avance.
+ * Une question de diagnostic, posée une à la fois. Plan gratuit : banque
+ * figée par catégorie de sujet (voir `generateFreeDiagnosticQuestion` dans
+ * generate.ts, zéro appel Claude). Plan Pro : question suivante
+ * réellement générée en tenant compte des réponses précédentes (voir
+ * `generateAdaptiveDiagnosticQuestion`, vrai appel Claude) — jamais une
+ * liste figée décidée d'avance.
  */
 export const DiagnosticQuestionSchema = z.object({
   id: z.string().min(1).describe("Identifiant court et stable de cette question (slug)"),
@@ -113,13 +115,18 @@ export const DiagnosticQuestionSchema = z.object({
 export type DiagnosticQuestion = z.infer<typeof DiagnosticQuestionSchema>;
 
 /**
- * Décision du modèle à chaque étape du diagnostic : soit une question de
- * plus, soit `done: true` (assez d'informations recueillies). Le CODE
- * (jamais seulement ce champ) impose en plus un minimum et un maximum de
- * questions au total — voir MIN_DIAGNOSTIC_QUESTIONS/MAX_DIAGNOSTIC_QUESTIONS
- * et `generateDiagnosticQuestion` dans generate.ts.
+ * Décision du modèle à chaque étape du diagnostic ADAPTATIF (Prompt 06.40,
+ * réservé au plan Pro — voir `generateAdaptiveDiagnosticQuestion` dans
+ * generate.ts, le plan gratuit reste sur un diagnostic figé sans appel
+ * Claude, voir `generateFreeDiagnosticQuestion`) : soit une question de
+ * plus personnalisée, soit `done: true` (assez d'informations recueillies,
+ * nombre volontairement laissé libre plutôt que fixe), soit `unclear: true`
+ * si le sujet n'est pas compréhensible comme sujet de formation (dans ce
+ * cas `question` est toujours `null`). Le CODE impose en plus un plafond de
+ * sécurité au nombre total de questions — voir MAX_DIAGNOSTIC_QUESTIONS.
  */
 export const DiagnosticStepSchema = z.object({
+  unclear: z.boolean(),
   done: z.boolean(),
   question: DiagnosticQuestionSchema.nullable(),
 });

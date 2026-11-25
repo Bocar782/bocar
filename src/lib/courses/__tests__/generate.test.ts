@@ -11,11 +11,12 @@ import {
   MAX_DIAGNOSTIC_QUESTIONS,
   MAX_MODULE_COUNT,
   MIN_CHAPTERS_PER_MODULE,
-  MIN_DIAGNOSTIC_QUESTIONS,
   MIN_MODULE_COUNT,
   flattenModulePlans,
+  generateAdaptiveDiagnosticQuestion,
   generateCourse,
-  generateDiagnosticQuestion,
+  generateFreeDiagnosticQuestion,
+  isTopicPlausible,
   validateChapterContent,
   validateProgrammeStructure,
   writeChapter,
@@ -622,32 +623,145 @@ describe("generateCourse export sanity", () => {
   });
 });
 
-describe("Prompt 06.37 : generateDiagnosticQuestion — diagnostic figé, zéro appel Claude", () => {
-  it("renvoie exactement MAX_DIAGNOSTIC_QUESTIONS questions distinctes avant de s'arrêter à null", () => {
-    expect(MIN_DIAGNOSTIC_QUESTIONS).toBe(MAX_DIAGNOSTIC_QUESTIONS);
+describe("Prompt 06.40 : isTopicPlausible — heuristique zéro coût (aucun appel Claude)", () => {
+  it("rejette le charabia clavier (sans aucune voyelle)", () => {
+    expect(isTopicPlausible("hddkd")).toBe(false);
+    expect(isTopicPlausible("xzcvbn")).toBe(false);
+  });
 
-    const seenIds = new Set<string>();
+  it("rejette les sujets-blagues courants (ex. signalé réellement par un utilisateur)", () => {
+    expect(isTopicPlausible("caca")).toBe(false);
+    expect(isTopicPlausible("lol")).toBe(false);
+    expect(isTopicPlausible("asdf")).toBe(false);
+  });
+
+  it("accepte un vrai mot, même vague", () => {
+    expect(isTopicPlausible("voiture")).toBe(true);
+    expect(isTopicPlausible("ecommerce")).toBe(true);
+    expect(isTopicPlausible("la bourse")).toBe(true);
+    expect(isTopicPlausible("yoga")).toBe(true);
+  });
+
+  it("rejette une chaîne vide ou trop courte", () => {
+    expect(isTopicPlausible("")).toBe(false);
+    expect(isTopicPlausible("  ")).toBe(false);
+    expect(isTopicPlausible("a")).toBe(false);
+  });
+});
+
+describe("Prompt 06.40 : generateFreeDiagnosticQuestion — diagnostic figé par catégorie, zéro appel Claude (plan gratuit)", () => {
+  it("pose toujours 'niveau' en 1ère question, avec le sujet exact dans le texte", () => {
+    const question = generateFreeDiagnosticQuestion("La randonnée", []);
+    expect(question?.id).toBe("niveau");
+    expect(question?.question).toContain("La randonnée");
+  });
+
+  it("détecte la catégorie e-commerce et personnalise la question suivante selon la réponse précédente (effet d'écoute)", () => {
+    const afterNiveau = [{ questionId: "niveau", question: "Où en es-tu ?", answer: "Je découvre tout juste le sujet" }];
+    const q2 = generateFreeDiagnosticQuestion("Monter une boutique en ligne", afterNiveau);
+    expect(q2?.id).toBe("ventes");
+
+    const afterVentesNon = [
+      ...afterNiveau,
+      { questionId: "ventes", question: q2!.question, answer: "Non, jamais fait de vente" },
+    ];
+    const q3Non = generateFreeDiagnosticQuestion("Monter une boutique en ligne", afterVentesNon);
+    expect(q3Non?.question).toContain("démarrer tes premières ventes");
+
+    const afterVentesOui = [
+      ...afterNiveau,
+      { questionId: "ventes", question: q2!.question, answer: "Oui, régulièrement" },
+    ];
+    const q3Oui = generateFreeDiagnosticQuestion("Monter une boutique en ligne", afterVentesOui);
+    expect(q3Oui?.question).toContain("quelle plateforme");
+    expect(q3Oui?.question).toContain("Monter une boutique en ligne");
+  });
+
+  it("retombe sur la banque générique pour un sujet qui ne correspond à aucune catégorie connue, et s'arrête (longueur variable, jamais un nombre fixe)", () => {
     let previousAnswers: { questionId: string; question: string; answer: string }[] = [];
-
+    const seenIds = new Set<string>();
     for (let i = 0; i < MAX_DIAGNOSTIC_QUESTIONS; i++) {
-      const question = generateDiagnosticQuestion("Le sujet X", previousAnswers);
-      expect(question).not.toBeNull();
-      seenIds.add(question!.id);
-      previousAnswers = [
-        ...previousAnswers,
-        { questionId: question!.id, question: question!.question, answer: "une réponse" },
-      ];
+      const question = generateFreeDiagnosticQuestion("Le sujet X", previousAnswers);
+      if (!question) break;
+      seenIds.add(question.id);
+      previousAnswers = [...previousAnswers, { questionId: question.id, question: question.question, answer: "Non, jamais" }];
     }
-
-    expect(seenIds.size).toBe(MAX_DIAGNOSTIC_QUESTIONS);
-    expect(generateDiagnosticQuestion("Le sujet X", previousAnswers)).toBeNull();
+    // Banque générique : niveau + 4 questions = 5, nettement moins que
+    // MAX_DIAGNOSTIC_QUESTIONS — jamais un nombre fixe imposé à tous les sujets.
+    expect(seenIds.size).toBe(5);
+    expect(generateFreeDiagnosticQuestion("Le sujet X", previousAnswers)).toBeNull();
   });
 
   it("n'appelle jamais Claude : purement synchrone, aucune promesse réelle en vol", () => {
-    const result = generateDiagnosticQuestion("Autre sujet", []);
-    // Si c'était encore un appel réseau, ce ne serait jamais un objet
-    // directement disponible de façon synchrone.
+    const result = generateFreeDiagnosticQuestion("Autre sujet", []);
     expect(result).not.toBeInstanceOf(Promise);
     expect(result?.question).toContain("Autre sujet");
+  });
+});
+
+describe("Prompt 06.40 : generateAdaptiveDiagnosticQuestion — diagnostic réellement adaptatif (plan Pro, vrai appel Claude mocké)", () => {
+  function makeMockClient(parsedOutput: unknown) {
+    return {
+      messages: {
+        parse: vi.fn(async () => ({ stop_reason: "end_turn", parsed_output: parsedOutput })),
+      },
+    };
+  }
+
+  it("signale unclear:true pour un sujet jugé incompréhensible par le modèle, sans jamais renvoyer de question", async () => {
+    const mockClient = makeMockClient({ unclear: true, done: false, question: null });
+
+    const result = await generateAdaptiveDiagnosticQuestion(mockClient as never, "hddkd", []);
+
+    expect(result.unclear).toBe(true);
+    expect(result.question).toBeNull();
+  });
+
+  it("transmet l'historique complet des réponses précédentes au modèle (pour une vraie personnalisation)", async () => {
+    let capturedUser = "";
+    const mockClient = {
+      messages: {
+        parse: vi.fn(async (args: { messages: { content: string }[] }) => {
+          capturedUser = args.messages[0].content;
+          return {
+            stop_reason: "end_turn",
+            parsed_output: {
+              unclear: false,
+              done: false,
+              question: { id: "q2", question: "Sur quelle plateforme ?", type: "single_choice", choices: ["A", "B"] },
+            },
+          };
+        }),
+      },
+    };
+    const previousAnswers = [{ questionId: "ventes", question: "As-tu déjà vendu ?", answer: "Oui, régulièrement" }];
+
+    await generateAdaptiveDiagnosticQuestion(mockClient as never, "Le e-commerce", previousAnswers);
+
+    expect(capturedUser).toContain("As-tu déjà vendu ?");
+    expect(capturedUser).toContain("Oui, régulièrement");
+  });
+
+  it("renvoie question:null, unclear:false quand le modèle décide done:true (nombre de questions laissé libre)", async () => {
+    const mockClient = makeMockClient({ unclear: false, done: true, question: null });
+
+    const result = await generateAdaptiveDiagnosticQuestion(mockClient as never, "Le sujet", []);
+
+    expect(result.unclear).toBe(false);
+    expect(result.question).toBeNull();
+  });
+
+  it("s'arrête au plafond de sécurité MAX_DIAGNOSTIC_QUESTIONS SANS appeler Claude au-delà (garde-fou de coût même pour le plan Pro)", async () => {
+    const mockClient = makeMockClient({ unclear: false, done: false, question: { id: "trop", question: "?", type: "single_choice", choices: ["A"] } });
+    const previousAnswers = Array.from({ length: MAX_DIAGNOSTIC_QUESTIONS }, (_, i) => ({
+      questionId: `q${i}`,
+      question: `Question ${i}`,
+      answer: "une réponse",
+    }));
+
+    const result = await generateAdaptiveDiagnosticQuestion(mockClient as never, "Le sujet", previousAnswers);
+
+    expect(result.question).toBeNull();
+    expect(mockClient.messages.parse).not.toHaveBeenCalled();
   });
 });

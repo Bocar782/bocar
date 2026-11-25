@@ -239,6 +239,11 @@ export function CourseGenerator({
   const [resumeNotice, setResumeNotice] = useState<string | null>(() =>
     loadStoredGeneration() ? "Reprise de ta génération en cours…" : null,
   );
+  // Prompt 06.40 (demande explicite : "si tu comprends pas le sujet met un
+  // message en disant que tu ne comprends pas le sujet") : distinct de
+  // `error` (réservé aux vraies pannes) — un sujet pas compris n'est pas
+  // une erreur technique, juste une invitation à préciser.
+  const [unclearTopicNotice, setUnclearTopicNotice] = useState<string | null>(null);
   const [restoredDraftNotice, setRestoredDraftNotice] = useState<string | null>(() => {
     if (loadStoredGeneration() || locked) return null;
     const draft = loadFreeDraftTopic();
@@ -330,6 +335,7 @@ export function CourseGenerator({
     if (!trimmed || status !== "idle") return;
     setStatus("building_plan");
     setError(null);
+    setUnclearTopicNotice(null);
     try {
       const response = await fetch("/api/courses/plan", {
         method: "POST",
@@ -338,6 +344,13 @@ export function CourseGenerator({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error ?? "Impossible de démarrer le diagnostic.");
+      if (payload.unclear) {
+        setUnclearTopicNotice(
+          `Je ne suis pas sûre de comprendre ce que tu veux apprendre avec « ${trimmed} ». Peux-tu préciser ou reformuler ton sujet ?`,
+        );
+        setStatus("idle");
+        return;
+      }
       if (payload.question) {
         setCurrentQuestion(payload.question as DiagnosticQuestion);
         setDiagnosticAnswers([]);
@@ -370,6 +383,16 @@ export function CourseGenerator({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error ?? "Impossible de poursuivre le diagnostic.");
+      if (payload.unclear) {
+        // Prompt 06.40 : ne peut arriver qu'au fil du diagnostic adaptatif
+        // (plan Pro) — ramène à l'écran de départ pour reformuler le sujet
+        // plutôt que de continuer un diagnostic sur un sujet mal compris.
+        setUnclearTopicNotice(
+          `Je ne suis pas sûre de comprendre ce que tu veux apprendre avec « ${topic.trim()} ». Peux-tu préciser ou reformuler ton sujet ?`,
+        );
+        setStatus("idle");
+        return;
+      }
       if (payload.question) {
         setCurrentQuestion(payload.question as DiagnosticQuestion);
         setStatus("diagnostic");
@@ -682,6 +705,7 @@ export function CourseGenerator({
     setCurrentQuestion(null);
     setResumeNotice(null);
     setRestoredDraftNotice(null);
+    setUnclearTopicNotice(null);
   }
 
   if (status === "done" && course) {
@@ -1044,6 +1068,11 @@ export function CourseGenerator({
           {restoredDraftNotice}
         </Callout>
       )}
+      {unclearTopicNotice && (
+        <Callout tone="warning" role="status" className="mb-4">
+          {unclearTopicNotice}
+        </Callout>
+      )}
       {error && <Callout tone="error" className="mb-4">{error}</Callout>}
       <form onSubmit={handleFormSubmit} className="group relative rounded-[28px] p-px">
         <div
@@ -1056,6 +1085,7 @@ export function CourseGenerator({
             value={topic}
             onChange={(e) => {
               setTopic(e.target.value.slice(0, MAX_LENGTH));
+              setUnclearTopicNotice(null);
               resizeTextarea();
             }}
             placeholder="Que veux-tu apprendre ?"

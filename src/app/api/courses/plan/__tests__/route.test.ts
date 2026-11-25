@@ -1,28 +1,40 @@
-// Vrais tests automatisés (Prompt 05.18.1) : importent et exécutent le VRAI
-// handler POST de route.ts. Seules les frontières externes (client
-// Supabase, client Anthropic, les fonctions de generate.ts) sont mockées —
-// aucun appel réel à Anthropic ni à Supabase. Vérifie en particulier que
-// cette route n'appelle JAMAIS la moindre RPC de réservation de quota
-// (`reserve_generation_slot`) : le diagnostic et la construction/
-// l'ajustement du plan ne doivent jamais consommer une place de génération.
+// Vrais tests automatisés (Prompt 05.18.1, étendus en 06.40) : importent et
+// exécutent le VRAI handler POST de route.ts. Seules les frontières
+// externes (client Supabase, client Anthropic, les fonctions de
+// generate.ts/plan.ts) sont mockées — aucun appel réel à Anthropic ni à
+// Supabase. Vérifie en particulier que cette route n'appelle JAMAIS la
+// moindre RPC de réservation de quota (`reserve_generation_slot`) : le
+// diagnostic et la construction/l'ajustement du plan ne doivent jamais
+// consommer une place de génération. Prompt 06.40 : vérifie aussi que le
+// plan gratuit ne déclenche JAMAIS createAnthropicClient/buildCoursePlan,
+// même par un appel direct à cette route (pas seulement via l'UI).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Analysis, Programme, VerifiedExample } from "@/lib/courses/schemas";
 
-const mockGenerateDiagnosticQuestion = vi.fn();
+const mockGenerateFreeDiagnosticQuestion = vi.fn();
+const mockGenerateAdaptiveDiagnosticQuestion = vi.fn();
+const mockIsTopicPlausible = vi.fn();
 const mockBuildCoursePlan = vi.fn();
 
 class FakeCourseGenerationError extends Error {}
 
 vi.mock("@/lib/courses/generate", () => ({
-  generateDiagnosticQuestion: (...args: unknown[]) => mockGenerateDiagnosticQuestion(...args),
+  generateFreeDiagnosticQuestion: (...args: unknown[]) => mockGenerateFreeDiagnosticQuestion(...args),
+  generateAdaptiveDiagnosticQuestion: (...args: unknown[]) => mockGenerateAdaptiveDiagnosticQuestion(...args),
+  isTopicPlausible: (...args: unknown[]) => mockIsTopicPlausible(...args),
   buildCoursePlan: (...args: unknown[]) => mockBuildCoursePlan(...args),
   CourseGenerationError: FakeCourseGenerationError,
-  MAX_DIAGNOSTIC_QUESTIONS: 5,
+  MAX_DIAGNOSTIC_QUESTIONS: 10,
 }));
 
 const mockCreateAnthropicClient = vi.fn(() => ({ fakeClient: true }));
 vi.mock("@/lib/anthropic/client", () => ({
   createAnthropicClient: () => mockCreateAnthropicClient(),
+}));
+
+const mockIsOnFreePlan = vi.fn();
+vi.mock("@/lib/courses/plan", () => ({
+  isOnFreePlan: (...args: unknown[]) => mockIsOnFreePlan(...args),
 }));
 
 type RpcCall = { fnName: string; args: unknown };
@@ -51,9 +63,14 @@ vi.mock("@/lib/supabase/server", () => ({
 
 beforeEach(() => {
   currentSupabaseMock = makeSupabaseMock(true);
-  mockGenerateDiagnosticQuestion.mockReset();
+  mockGenerateFreeDiagnosticQuestion.mockReset();
+  mockGenerateAdaptiveDiagnosticQuestion.mockReset();
+  mockIsTopicPlausible.mockReset().mockReturnValue(true);
   mockBuildCoursePlan.mockReset();
   mockCreateAnthropicClient.mockClear();
+  // Pro par défaut (comportement historique de ces tests, avant 06.40) —
+  // les tests "plan gratuit" ci-dessous positionnent explicitement false.
+  mockIsOnFreePlan.mockReset().mockResolvedValue(false);
 });
 
 const FAKE_ANALYSIS: Analysis = {
@@ -111,7 +128,7 @@ describe("POST /api/courses/plan — vérification d'origine et d'authentificati
     const { response } = await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] }, "https://evil.example");
 
     expect(response.status).toBe(403);
-    expect(mockGenerateDiagnosticQuestion).not.toHaveBeenCalled();
+    expect(mockGenerateFreeDiagnosticQuestion).not.toHaveBeenCalled();
   });
 
   it("renvoie 401 si l'utilisateur n'est pas authentifié", async () => {
@@ -121,7 +138,7 @@ describe("POST /api/courses/plan — vérification d'origine et d'authentificati
 
     expect(response.status).toBe(401);
     expect(json?.error).toBe("Non authentifié.");
-    expect(mockGenerateDiagnosticQuestion).not.toHaveBeenCalled();
+    expect(mockGenerateFreeDiagnosticQuestion).not.toHaveBeenCalled();
   });
 });
 
@@ -151,13 +168,11 @@ describe("POST /api/courses/plan — validation des entrées", () => {
   });
 });
 
-describe("POST /api/courses/plan — action 'question' (diagnostic)", () => {
-  it("transmet le sujet et l'historique des réponses à generateDiagnosticQuestion, sans jamais réserver de quota", async () => {
-    mockGenerateDiagnosticQuestion.mockResolvedValue({
-      id: "q2",
-      question: "Quel est ton objectif ?",
-      type: "single_choice",
-      choices: ["A", "B"],
+describe("POST /api/courses/plan — action 'question', plan Pro (diagnostic adaptatif, Prompt 06.40)", () => {
+  it("appelle createAnthropicClient puis generateAdaptiveDiagnosticQuestion avec le sujet et l'historique, sans jamais réserver de quota", async () => {
+    mockGenerateAdaptiveDiagnosticQuestion.mockResolvedValue({
+      question: { id: "q2", question: "Quel est ton objectif ?", type: "single_choice", choices: ["A", "B"] },
+      unclear: false,
     });
     const previousAnswers = [{ questionId: "q1", question: "Niveau ?", answer: "Débutant" }];
 
@@ -170,29 +185,116 @@ describe("POST /api/courses/plan — action 'question' (diagnostic)", () => {
       type: "single_choice",
       choices: ["A", "B"],
     });
-    expect(mockGenerateDiagnosticQuestion).toHaveBeenCalledWith("Sujet", previousAnswers);
+    expect(json.unclear).toBe(false);
+    expect(mockCreateAnthropicClient).toHaveBeenCalledTimes(1);
+    expect(mockGenerateAdaptiveDiagnosticQuestion).toHaveBeenCalledWith({ fakeClient: true }, "Sujet", previousAnswers);
     expect(currentSupabaseMock.rpcCalls).toHaveLength(0);
   });
 
-  it("renvoie question:null quand le diagnostic est terminé, sans erreur", async () => {
-    mockGenerateDiagnosticQuestion.mockResolvedValue(null);
+  it("renvoie unclear:true, question:null quand le modèle juge le sujet incompréhensible", async () => {
+    mockGenerateAdaptiveDiagnosticQuestion.mockResolvedValue({ question: null, unclear: true });
+
+    const { response, json } = await callRoute({ action: "question", topic: "hddkd", previousAnswers: [] });
+
+    expect(response.status).toBe(200);
+    expect(json.question).toBeNull();
+    expect(json.unclear).toBe(true);
+  });
+
+  it("renvoie question:null quand le diagnostic est terminé (done décidé par le modèle), sans erreur", async () => {
+    mockGenerateAdaptiveDiagnosticQuestion.mockResolvedValue({ question: null, unclear: false });
+
+    const { response, json } = await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] });
+
+    expect(response.status).toBe(200);
+    expect(json.question).toBeNull();
+    expect(json.unclear).toBe(false);
+  });
+});
+
+describe("POST /api/courses/plan — action 'question', plan gratuit (diagnostic figé, Prompt 06.40)", () => {
+  beforeEach(() => {
+    mockIsOnFreePlan.mockResolvedValue(true);
+  });
+
+  it("n'appelle JAMAIS createAnthropicClient ni generateAdaptiveDiagnosticQuestion — seulement l'heuristique + la banque figée", async () => {
+    mockGenerateFreeDiagnosticQuestion.mockReturnValue({
+      id: "niveau",
+      question: "Où en es-tu avec Sujet ?",
+      type: "single_choice",
+      choices: ["A", "B"],
+    });
+    const previousAnswers = [{ questionId: "q1", question: "Niveau ?", answer: "Débutant" }];
+
+    const { response, json } = await callRoute({ action: "question", topic: "Sujet", previousAnswers });
+
+    expect(response.status).toBe(200);
+    expect(json.question).toEqual({
+      id: "niveau",
+      question: "Où en es-tu avec Sujet ?",
+      type: "single_choice",
+      choices: ["A", "B"],
+    });
+    expect(mockCreateAnthropicClient).not.toHaveBeenCalled();
+    expect(mockGenerateAdaptiveDiagnosticQuestion).not.toHaveBeenCalled();
+    expect(mockGenerateFreeDiagnosticQuestion).toHaveBeenCalledWith("Sujet", previousAnswers);
+    expect(currentSupabaseMock.rpcCalls).toHaveLength(0);
+  });
+
+  it("renvoie unclear:true, question:null si l'heuristique juge le sujet implausible (sans jamais appeler generateFreeDiagnosticQuestion)", async () => {
+    mockIsTopicPlausible.mockReturnValue(false);
+
+    const { response, json } = await callRoute({ action: "question", topic: "hddkd", previousAnswers: [] });
+
+    expect(response.status).toBe(200);
+    expect(json.question).toBeNull();
+    expect(json.unclear).toBe(true);
+    expect(mockGenerateFreeDiagnosticQuestion).not.toHaveBeenCalled();
+    expect(mockCreateAnthropicClient).not.toHaveBeenCalled();
+  });
+
+  it("renvoie question:null (sans unclear) quand la banque figée est épuisée", async () => {
+    mockGenerateFreeDiagnosticQuestion.mockReturnValue(null);
 
     const { response, json } = await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] });
 
     expect(response.status).toBe(200);
     expect(json.question).toBeNull();
   });
+});
 
-  it("06.37 : n'appelle JAMAIS createAnthropicClient pour l'action 'question' (diagnostic figé, zéro coût)", async () => {
-    mockGenerateDiagnosticQuestion.mockResolvedValue(null);
+describe("POST /api/courses/plan — plan gratuit, actions 'build'/'adjust' (Prompt 06.40)", () => {
+  beforeEach(() => {
+    mockIsOnFreePlan.mockResolvedValue(true);
+  });
 
-    await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] });
+  it("renvoie 403 pour 'build' sans jamais appeler buildCoursePlan ni createAnthropicClient, même par un appel direct contournant l'UI", async () => {
+    const { response, json } = await callRoute({ action: "build", topic: "Sujet", diagnosticAnswers: [] });
 
+    expect(response.status).toBe(403);
+    expect(json?.error).toContain("plan gratuit");
+    expect(mockBuildCoursePlan).not.toHaveBeenCalled();
     expect(mockCreateAnthropicClient).not.toHaveBeenCalled();
+  });
+
+  it("renvoie 403 pour 'adjust' sans jamais appeler buildCoursePlan", async () => {
+    const { response, json } = await callRoute({
+      action: "adjust",
+      topic: "Sujet",
+      diagnosticAnswers: [],
+      adjustmentRequest: "Plus d'exemples",
+      analysis: FAKE_ANALYSIS,
+      verifiedExamples: FAKE_VERIFIED_EXAMPLES,
+      programme: FAKE_PROGRAMME,
+    });
+
+    expect(response.status).toBe(403);
+    expect(json?.error).toContain("plan gratuit");
+    expect(mockBuildCoursePlan).not.toHaveBeenCalled();
   });
 });
 
-describe("POST /api/courses/plan — action 'build'", () => {
+describe("POST /api/courses/plan — action 'build' (plan Pro)", () => {
   it("construit le plan à partir du sujet et des réponses du diagnostic, sans jamais réserver de quota", async () => {
     const fakePlan = {
       analysis: FAKE_ANALYSIS,
@@ -214,7 +316,7 @@ describe("POST /api/courses/plan — action 'build'", () => {
   });
 });
 
-describe("POST /api/courses/plan — action 'adjust'", () => {
+describe("POST /api/courses/plan — action 'adjust' (plan Pro)", () => {
   it("transmet le plan précédent complet et la demande d'ajustement à buildCoursePlan, sans jamais réserver de quota", async () => {
     const adjustedPlan = {
       analysis: FAKE_ANALYSIS,

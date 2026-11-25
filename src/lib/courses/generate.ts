@@ -6,6 +6,7 @@ import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
+  DiagnosticStepSchema,
   FinalQuizSchema,
   ModuleQuizSchema,
   ProgrammeSchema,
@@ -202,130 +203,508 @@ async function analyzeTopic(
   };
 }
 
-// --- Diagnostic figé, zéro coût (Prompt 06.37) ---
+// --- Diagnostic (Prompt 06.40) ---
 
-// Remplace l'ancien diagnostic adaptatif (un appel Claude par question,
-// Prompt 05.18.1, déjà réduit de 7-12 à 3-5 questions en 06.36) suite à une
-// demande explicite de l'utilisateur : ces questions sont posées à TOUT LE
-// MONDE, plan gratuit ET payant, AVANT même de savoir si une formation sera
-// réellement générée — à l'échelle (ex. une fraction d'1 million de vues
-// sur un réseau social), chaque appel Claude ici, même petit, devient un
-// coût réel et répété, multiplié par le nombre de visiteurs qui ne vont
-// jamais au-delà de cette étape. Les 4 questions ci-dessous sont
-// génériques (pas calibrées sur le sujet précis comme l'ancien diagnostic
-// IA) mais couvrent les mêmes axes utiles à `buildCoursePlan` ensuite :
-// niveau réel, pratique concrète déjà faite, objectif, temps disponible.
-// Seule la génération de la QUESTION elle-même n'est plus confiée à
-// Claude — les RÉPONSES de l'utilisateur sont toujours transmises telles
-// quelles à buildCoursePlan, qui reste, lui, un vrai appel Claude (plan
-// payant uniquement désormais, voir course-generator.tsx).
-// Prompt 06.38 : porté de 4 à 8 — zéro appel Claude pour cette étape (voir
-// staticDiagnosticQuestions ci-dessous), donc aucun coût supplémentaire à
-// poser plus de questions ; seules les réponses à CES questions, transmises
-// à buildCoursePlan (plan payant), ont un vrai coût.
-export const MIN_DIAGNOSTIC_QUESTIONS = 8;
-export const MAX_DIAGNOSTIC_QUESTIONS = 8;
+// Plafond de sécurité commun aux DEUX parcours ci-dessous (figé/gratuit et
+// adaptatif/Pro) — jamais un nombre fixe imposé à chaque formation (demande
+// explicite : "laisse champ libre"), seulement une limite haute pour éviter
+// un diagnostic interminable. Utilisé aussi comme borne de validation des
+// tableaux de réponses côté route.ts.
+export const MAX_DIAGNOSTIC_QUESTIONS = 10;
 
-function staticDiagnosticQuestions(topic: string): DiagnosticQuestion[] {
-  return [
-    {
-      id: "niveau",
-      question: `Où en es-tu aujourd'hui avec "${topic}" ?`,
-      type: "single_choice",
-      choices: [
-        "Je découvre tout juste le sujet",
-        "J'ai déjà quelques bases",
-        "Je suis à l'aise, je veux progresser",
-        "Je suis déjà expérimenté(e)",
-      ],
-    },
-    {
-      id: "pratique",
-      question:
-        "As-tu déjà mis ça en pratique concrètement (un projet, un outil, une action réelle) ?",
-      type: "single_choice",
-      choices: ["Non, jamais", "Un peu, de façon basique", "Oui, plusieurs fois", "Oui, régulièrement"],
-    },
-    {
-      id: "objectif",
-      question: "Quel est ton objectif principal avec cette formation ?",
-      type: "single_choice",
-      choices: [
-        "Comprendre les bases",
-        "Approfondir mes connaissances",
-        "Résoudre un problème précis",
-        "Me professionnaliser sur ce sujet",
-      ],
-    },
-    {
-      id: "temps",
-      question: "Combien de temps veux-tu consacrer à l'apprentissage ?",
-      type: "single_choice",
-      choices: [
-        "Quelques minutes par jour",
-        "Une session complète de temps en temps",
-        "Je veux aller vite et intensément",
-      ],
-    },
-    {
-      id: "contexte",
-      question: "Dans quel contexte vas-tu utiliser ce que tu apprends ?",
-      type: "single_choice",
-      choices: [
-        "Un projet personnel",
-        "Mon travail ou mes études actuels",
-        "Une reconversion ou un nouveau projet professionnel",
-        "Simple curiosité, sans objectif précis",
-      ],
-    },
-    {
-      id: "format",
-      question: "Qu'est-ce qui t'aide le plus à apprendre ?",
-      type: "single_choice",
-      choices: [
-        "Des exemples concrets et du cas par cas",
-        "Comprendre d'abord la théorie, puis appliquer",
-        "Apprendre en pratiquant directement, sans trop de théorie",
-        "Un mélange équilibré des deux",
-      ],
-    },
-    {
-      id: "difficulte",
-      question: "Qu'est-ce qui te bloque le plus, en général, sur ce type de sujet ?",
-      type: "single_choice",
-      choices: [
-        "Le vocabulaire et les notions de base",
-        "Passer de la théorie à la pratique",
-        "Rester motivé(e) sur la durée",
-        "Rien en particulier, je veux juste aller plus loin",
-      ],
-    },
-    {
-      id: "connexe",
-      question: "As-tu déjà des connaissances dans un domaine proche de ce sujet ?",
-      type: "single_choice",
-      choices: [
-        "Non, c'est totalement nouveau pour moi",
-        "Oui, dans un domaine assez proche",
-        "Oui, dans un domaine très proche ou lié",
-        "Je ne sais pas trop",
-      ],
-    },
-  ];
+// Mots/suites de lettres qu'un visiteur tape parfois pour "juste essayer"
+// (constaté en réel : "caca") — jamais exhaustif, seulement les cas les
+// plus courants. Volontairement limité au français/anglais générique :
+// repéré au-delà de ça, un sujet reste accepté par défaut (mieux vaut
+// laisser passer un sujet correct que bloquer un sujet valide).
+const NONSENSE_TOPIC_BLOCKLIST = new Set([
+  "caca", "pipi", "prout", "zut", "nimportequoi", "truc", "bidule", "chose",
+  "lol", "mdr", "haha", "hihi", "blabla", "bla", "test", "testtest",
+  "asdf", "asdfgh", "qwerty", "azerty", "xxx", "osef", "nan", "bof",
+  "rien", "abc", "coucou", "salut", "quoi", "ouais", "nimportquoi",
+]);
+
+function normalizeTopicText(topic: string): string {
+  return topic
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
+const VOWEL_PATTERN = /[aeiouy]/;
+
+// Une suite de lettres sans aucune voyelle (ex. "hddkd") ou un caractère
+// martelé (ex. "aaaa") n'est jamais un vrai mot — repéré sans IA.
+function looksLikeGibberishToken(token: string): boolean {
+  if (token.length < 4) return false;
+  if (!VOWEL_PATTERN.test(token)) return true;
+  if (/^(.)\1{3,}$/.test(token)) return true;
+  return false;
 }
 
 /**
- * Renvoie la PROCHAINE question de diagnostic (banque fixe, zéro appel
- * Claude) — `null` une fois les `MAX_DIAGNOSTIC_QUESTIONS` questions
- * posées. Reste `async`-compatible (appelée avec `await` côté route) pour
- * ne jamais imposer de changement de forme à l'appelant si ce diagnostic
- * redevenait un jour dynamique.
+ * Heuristique SANS AUCUN appel Claude (réservée au plan gratuit, voir
+ * route.ts — le plan Pro laisse le vrai modèle juger lui-même de la
+ * clarté du sujet). Volontairement limitée : elle repère le charabia
+ * clavier et une courte liste de sujets-blagues courants, jamais une
+ * compréhension réelle du sens — un sujet qui passe cette heuristique
+ * n'est donc pas forcément un BON sujet de formation, seulement un sujet
+ * qui n'est pas du charabia évident.
  */
-export function generateDiagnosticQuestion(
+export function isTopicPlausible(topic: string): boolean {
+  const normalized = normalizeTopicText(topic);
+  if (normalized.length < 2) return false;
+
+  const compact = normalized.replace(/[^a-z0-9]+/g, "");
+  if (NONSENSE_TOPIC_BLOCKLIST.has(compact)) return false;
+
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.every((t) => NONSENSE_TOPIC_BLOCKLIST.has(t))) return false;
+  if (tokens.every((t) => looksLikeGibberishToken(t))) return false;
+
+  return true;
+}
+
+type TopicCategory =
+  | "ecommerce"
+  | "business"
+  | "tech"
+  | "langue"
+  | "finance"
+  | "sante"
+  | "creatif"
+  | "generic";
+
+const CATEGORY_KEYWORDS: Record<Exclude<TopicCategory, "generic">, string[]> = {
+  ecommerce: ["ecommerce", "e-commerce", "boutique en ligne", "boutique", "dropshipping", "shopify", "vente en ligne", "marketplace", "amazon fba", "etsy"],
+  business: ["entreprise", "business", "entrepreneuriat", "startup", "marketing", "negociation", "management", "strategie", "freelance", "ventes", "commercial"],
+  tech: ["programmation", "code", "developpement", "developpeur", "python", "javascript", "informatique", "intelligence artificielle", "data", "excel", "seo", "html", "css", "react", "sql", "cybersecurite"],
+  langue: ["anglais", "espagnol", "allemand", "italien", "grammaire", "vocabulaire", "langue etrangere"],
+  finance: ["bourse", "investissement", "investir", "argent", "finance", "crypto", "immobilier", "epargne", "budget"],
+  sante: ["fitness", "musculation", "sport", "nutrition", "sante", "bien-etre", "meditation", "yoga", "sommeil"],
+  creatif: ["dessin", "musique", "ecriture", "photographie", "photo", "art", "design", "guitare", "piano", "peinture"],
+};
+
+function detectTopicCategory(topic: string): TopicCategory {
+  const normalized = normalizeTopicText(topic);
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS) as [TopicCategory, string[]][]) {
+    if (keywords.some((keyword) => normalized.includes(keyword))) return category;
+  }
+  return "generic";
+}
+
+type FreeDiagnosticStep = {
+  id: string;
+  build: (topic: string, lastAnswer: string | null) => { question: string; choices: string[] };
+};
+
+function niveauStep(topic: string): { question: string; choices: string[] } {
+  return {
+    question: `Où en es-tu aujourd'hui avec "${topic}" ?`,
+    choices: [
+      "Je découvre tout juste le sujet",
+      "J'ai déjà quelques bases",
+      "Je suis à l'aise, je veux progresser",
+      "Je suis déjà expérimenté(e)",
+    ],
+  };
+}
+
+// Banques par catégorie (Prompt 06.40, zéro appel Claude pour le plan
+// gratuit) : la 1ʳᵉ question ("niveau") est toujours la même, les
+// suivantes sont écrites pour CE type de sujet précis et au moins l'une
+// d'entre elles tient compte littéralement de la réponse précédente
+// (`lastAnswer`), pour donner l'impression d'être réellement écouté même
+// sans IA — jamais un nombre fixe de questions, chaque catégorie a sa
+// propre longueur.
+const CATEGORY_STEPS: Record<TopicCategory, FreeDiagnosticStep[]> = {
+  ecommerce: [
+    {
+      id: "ventes",
+      build: () => ({
+        question: "As-tu déjà réalisé des ventes, même petites ?",
+        choices: [
+          "Non, jamais fait de vente",
+          "Quelques ventes test seulement",
+          "Oui, régulièrement",
+          "Oui, c'est déjà mon activité principale",
+        ],
+      }),
+    },
+    {
+      id: "plateforme",
+      build: (topic, lastAnswer) =>
+        lastAnswer?.startsWith("Non")
+          ? {
+              question: "Qu'est-ce qui t'empêche le plus de démarrer tes premières ventes ?",
+              choices: ["Trouver les bons produits", "Créer ma boutique en ligne", "Trouver des clients", "La partie technique"],
+            }
+          : {
+              question: `Tu as déjà vendu — sur quelle plateforme principalement, pour "${topic}" ?`,
+              choices: ["Shopify ou un site perso", "Amazon ou une marketplace", "Instagram, TikTok ou les réseaux sociaux", "Un autre canal"],
+            },
+    },
+    {
+      id: "produit",
+      build: () => ({
+        question: "Quel type de produit veux-tu vendre (ou vends-tu déjà) ?",
+        choices: [
+          "Un produit physique que je fabrique",
+          "Un produit physique que j'achète pour revendre",
+          "Un produit numérique ou un service",
+          "Je n'ai pas encore décidé",
+        ],
+      }),
+    },
+    {
+      id: "objectif",
+      build: () => ({
+        question: "Quel est ton objectif principal avec le e-commerce ?",
+        choices: [
+          "Un revenu complémentaire",
+          "En faire mon activité principale",
+          "Tester une idée avant de me lancer vraiment",
+          "Comprendre comment ça marche, par curiosité",
+        ],
+      }),
+    },
+    {
+      id: "temps",
+      build: () => ({
+        question: "Combien de temps peux-tu y consacrer chaque semaine ?",
+        choices: ["Quelques heures", "Plusieurs soirs par semaine", "Beaucoup de temps disponible", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  business: [
+    {
+      id: "activite",
+      build: () => ({
+        question: "As-tu déjà une activité ou une entreprise, même petite ?",
+        choices: ["Non, c'est un projet pour l'instant", "Oui, en tout début d'activité", "Oui, depuis un moment déjà", "Non, je travaille pour quelqu'un d'autre"],
+      }),
+    },
+    {
+      id: "frein",
+      build: (topic, lastAnswer) =>
+        lastAnswer?.startsWith("Non, c'est un projet")
+          ? {
+              question: "Qu'est-ce qui te freine le plus pour démarrer ?",
+              choices: ["Le manque de clarté sur l'offre", "Le manque de temps", "Le manque de confiance", "Le manque de moyens financiers"],
+            }
+          : {
+              question: `Dans "${topic}", quelle est ta plus grande difficulté actuelle ?`,
+              choices: ["Trouver des clients", "Gérer mon temps", "Fixer mes prix", "Développer une stratégie claire"],
+            },
+    },
+    {
+      id: "objectif",
+      build: () => ({
+        question: "Quel est ton objectif principal ?",
+        choices: ["Me lancer", "Stabiliser mon activité actuelle", "Faire grandir ce que j'ai déjà", "Changer complètement de direction"],
+      }),
+    },
+    {
+      id: "secteur",
+      build: () => ({
+        question: "Ton projet s'adresse surtout à qui ?",
+        choices: ["Des particuliers", "Des entreprises", "Les deux", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  tech: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà écrit du code ou utilisé cet outil concrètement ?",
+        choices: ["Jamais", "Un peu, en autodidacte", "Oui, sur des petits projets", "Oui, régulièrement"],
+      }),
+    },
+    {
+      id: "projet",
+      build: (topic, lastAnswer) =>
+        lastAnswer === "Jamais"
+          ? {
+              question: "Qu'est-ce qui t'attire le plus dans ce sujet ?",
+              choices: ["Créer quelque chose de concret", "Changer de métier", "Comprendre comment ça marche", "On me le demande pour mon travail"],
+            }
+          : {
+              question: `As-tu déjà un projet précis en tête pour "${topic}" ?`,
+              choices: ["Oui, un projet concret", "Une idée pas encore précise", "Non, j'apprends pour l'instant sans projet", "C'est pour mon travail actuel"],
+            },
+    },
+    {
+      id: "niveau_technique",
+      build: () => ({
+        question: "À l'aise avec la logique/les bases techniques en général ?",
+        choices: ["Pas du tout", "Un peu", "Oui, assez à l'aise", "Oui, très à l'aise"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: () => ({
+        question: "Quel est ton objectif principal ?",
+        choices: ["Un projet personnel", "Une reconversion professionnelle", "Une compétence utile pour mon poste actuel", "Par curiosité"],
+      }),
+    },
+  ],
+  langue: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà l'occasion de pratiquer (voyage, travail, proches) ?",
+        choices: ["Jamais", "Rarement", "De temps en temps", "Régulièrement"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: (topic, lastAnswer) =>
+        lastAnswer === "Jamais" || lastAnswer === "Rarement"
+          ? {
+              question: "Dans quel contexte veux-tu pouvoir l'utiliser bientôt ?",
+              choices: ["Un voyage prévu", "Le travail", "Discuter avec quelqu'un en particulier", "Pas de contexte précis, juste apprendre"],
+            }
+          : {
+              question: `Dans quel contexte pratiques-tu déjà, ou veux-tu progresser avec "${topic}" ?`,
+              choices: ["Le travail", "Des voyages", "Des échanges avec des proches", "Pour le plaisir d'apprendre"],
+            },
+    },
+    {
+      id: "competence",
+      build: () => ({
+        question: "Qu'est-ce qui te bloque le plus aujourd'hui ?",
+        choices: ["Parler à l'oral", "Comprendre à l'oral", "La grammaire/l'écrit", "Le vocabulaire"],
+      }),
+    },
+    {
+      id: "temps",
+      build: () => ({
+        question: "Combien de temps veux-tu y consacrer ?",
+        choices: ["Quelques minutes par jour", "Quelques fois par semaine", "Intensément sur une courte période", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  finance: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà investi ou géré un budget sérieusement ?",
+        choices: ["Jamais", "Un peu, sans vraie méthode", "Oui, de façon régulière", "Oui, c'est déjà une vraie habitude"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: (topic, lastAnswer) =>
+        lastAnswer === "Jamais"
+          ? {
+              question: "Qu'est-ce qui te retient le plus pour commencer ?",
+              choices: ["La peur de perdre de l'argent", "Le manque de connaissances", "Le manque de temps", "Je ne sais pas par où commencer"],
+            }
+          : {
+              question: `Avec "${topic}", quel est ton objectif principal maintenant ?`,
+              choices: ["Protéger ce que j'ai déjà", "Faire grandir mon épargne", "Comprendre mieux ce que je fais déjà", "Changer complètement de stratégie"],
+            },
+    },
+    {
+      id: "horizon",
+      build: () => ({
+        question: "Sur quel horizon de temps raisonnes-tu ?",
+        choices: ["Court terme", "Quelques années", "Long terme (retraite, etc.)", "Je ne sais pas encore"],
+      }),
+    },
+    {
+      id: "risque",
+      build: () => ({
+        question: "Comment tu te situes face au risque ?",
+        choices: ["Je préfère la sécurité avant tout", "Un peu de risque mesuré", "À l'aise avec plus de risque", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  sante: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà une pratique régulière liée à ce sujet ?",
+        choices: ["Non, je démarre de zéro", "Un peu, de façon irrégulière", "Oui, régulièrement", "Oui, depuis longtemps"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: (topic, lastAnswer) =>
+        lastAnswer === "Non, je démarre de zéro"
+          ? {
+              question: "Qu'est-ce qui t'a donné envie de commencer maintenant ?",
+              choices: ["Une envie de changement", "Un conseil médical ou de santé", "Un objectif précis (événement, saison...)", "Juste par curiosité"],
+            }
+          : {
+              question: `Avec "${topic}", quel est ton objectif principal maintenant ?`,
+              choices: ["Progresser encore", "Tenir sur la durée", "Corriger une mauvaise habitude", "Me remettre après une pause"],
+            },
+    },
+    {
+      id: "contrainte",
+      build: () => ({
+        question: "As-tu une contrainte particulière à prendre en compte ?",
+        choices: ["Aucune contrainte particulière", "Peu de temps disponible", "Une limite physique ou de santé", "Je débute, j'ai besoin de douceur"],
+      }),
+    },
+    {
+      id: "temps",
+      build: () => ({
+        question: "Combien de temps peux-tu y consacrer ?",
+        choices: ["Quelques minutes par jour", "Quelques séances par semaine", "Je peux y mettre beaucoup de temps", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  creatif: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà pratiqué, même en amateur ?",
+        choices: ["Jamais", "Un peu, pour le plaisir", "Oui, régulièrement", "Oui, à un niveau déjà avancé"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: (topic, lastAnswer) =>
+        lastAnswer === "Jamais"
+          ? {
+              question: "Qu'est-ce qui te donne envie de t'y mettre maintenant ?",
+              choices: ["Une envie personnelle depuis longtemps", "Un projet précis en tête", "Pour me détendre", "Pour en faire quelque chose de professionnel un jour"],
+            }
+          : {
+              question: `Avec "${topic}", quel est ton objectif principal maintenant ?`,
+              choices: ["Progresser techniquement", "Trouver mon propre style", "En faire une activité professionnelle", "Juste pour le plaisir"],
+            },
+    },
+    {
+      id: "materiel",
+      build: () => ({
+        question: "As-tu déjà le matériel/les outils de base ?",
+        choices: ["Oui, tout ce qu'il faut", "Un peu, pas encore tout", "Non, pas encore", "Je ne sais pas ce qu'il me faut"],
+      }),
+    },
+    {
+      id: "temps",
+      build: () => ({
+        question: "Combien de temps veux-tu y consacrer ?",
+        choices: ["Quelques minutes par jour", "Quelques sessions par semaine", "Beaucoup de temps disponible", "Je ne sais pas encore"],
+      }),
+    },
+  ],
+  // Sujet non reconnu par les catégories ci-dessus : questions génériques
+  // mais qui restent personnalisées par le texte exact du sujet et, pour
+  // la 2ᵉ question, par la réponse donnée à la 1ʳᵉ.
+  generic: [
+    {
+      id: "pratique",
+      build: () => ({
+        question: "As-tu déjà mis ça en pratique concrètement (un projet, un outil, une action réelle) ?",
+        choices: ["Non, jamais", "Un peu, de façon basique", "Oui, plusieurs fois", "Oui, régulièrement"],
+      }),
+    },
+    {
+      id: "objectif",
+      build: (topic, lastAnswer) =>
+        lastAnswer?.startsWith("Non")
+          ? {
+              question: `Qu'est-ce qui te donne envie d'apprendre "${topic}" maintenant ?`,
+              choices: ["Une curiosité personnelle", "Un besoin précis (travail, projet...)", "Une reconversion", "Je ne sais pas encore bien pourquoi"],
+            }
+          : {
+              question: "Quel est ton objectif principal avec cette formation ?",
+              choices: ["Comprendre les bases", "Approfondir mes connaissances", "Résoudre un problème précis", "Me professionnaliser sur ce sujet"],
+            },
+    },
+    {
+      id: "contexte",
+      build: () => ({
+        question: "Dans quel contexte vas-tu utiliser ce que tu apprends ?",
+        choices: [
+          "Un projet personnel",
+          "Mon travail ou mes études actuels",
+          "Une reconversion ou un nouveau projet professionnel",
+          "Simple curiosité, sans objectif précis",
+        ],
+      }),
+    },
+    {
+      id: "temps",
+      build: () => ({
+        question: "Combien de temps veux-tu consacrer à l'apprentissage ?",
+        choices: ["Quelques minutes par jour", "Une session complète de temps en temps", "Je veux aller vite et intensément"],
+      }),
+    },
+  ],
+};
+
+/**
+ * Renvoie la PROCHAINE question du diagnostic FIGÉ (zéro appel Claude,
+ * réservé au plan gratuit — voir route.ts) — `null` une fois la banque de
+ * la catégorie détectée épuisée (longueur volontairement variable selon
+ * la catégorie, jamais un nombre fixe imposé à tous les sujets). La 1ʳᵉ
+ * question est toujours "niveau" ; les suivantes viennent de
+ * `CATEGORY_STEPS`, certaines tenant compte littéralement de la réponse
+ * précédente pour donner l'impression d'être réellement écouté.
+ */
+export function generateFreeDiagnosticQuestion(
   topic: string,
   previousAnswers: DiagnosticAnswer[],
 ): DiagnosticQuestion | null {
-  return staticDiagnosticQuestions(topic)[previousAnswers.length] ?? null;
+  const index = previousAnswers.length;
+  if (index === 0) {
+    const { question, choices } = niveauStep(topic);
+    return { id: "niveau", question, type: "single_choice", choices };
+  }
+
+  const category = detectTopicCategory(topic);
+  const steps = CATEGORY_STEPS[category];
+  const stepIndex = index - 1;
+  if (stepIndex >= steps.length) return null;
+
+  const step = steps[stepIndex];
+  const lastAnswer = previousAnswers[index - 1]?.answer ?? null;
+  const { question, choices } = step.build(topic, lastAnswer);
+  return { id: step.id, question, type: "single_choice", choices };
+}
+
+/**
+ * Diagnostic ADAPTATIF réservé au plan Pro (Prompt 06.40, demande
+ * explicite : "le plan Pro pourra faire des appels Anthropic mais pas le
+ * plan gratuit") : un vrai appel Claude, qui juge lui-même si le sujet est
+ * compréhensible comme sujet de formation (`unclear: true` sinon, ex.
+ * "hddkd" ou "caca"), et qui construit CHAQUE question suivante en tenant
+ * compte du contenu réel des réponses précédentes — jamais une banque
+ * figée. Le nombre de questions reste volontairement ouvert ("done" décidé
+ * par le modèle), seulement plafonné par MAX_DIAGNOSTIC_QUESTIONS.
+ */
+export async function generateAdaptiveDiagnosticQuestion(
+  client: Anthropic,
+  topic: string,
+  previousAnswers: DiagnosticAnswer[],
+): Promise<{ question: DiagnosticQuestion | null; unclear: boolean }> {
+  if (previousAnswers.length >= MAX_DIAGNOSTIC_QUESTIONS) {
+    return { question: null, unclear: false };
+  }
+
+  const history =
+    previousAnswers.length === 0
+      ? "(aucune question posée encore)"
+      : previousAnswers.map((a) => `- ${a.question} → ${a.answer}`).join("\n");
+
+  const result = await parseStructured(client, {
+    system:
+      "Tu es Tavyra, une experte en ingénierie pédagogique qui mène un diagnostic avant de construire une formation sur mesure. Ton rôle : d'abord vérifier que le sujet demandé est compréhensible comme sujet de formation réel (ex. \"voiture\", \"la bourse\", \"le piano\" sont compréhensibles même vagues ; \"hddkd\" ou \"caca\" ne le sont pas). Ensuite, poser UNE SEULE question à la fois, qui tient VRAIMENT compte du contenu des réponses précédentes (reformule ou référence ce que la personne vient de répondre, comme le ferait une vraie personne qui l'écoute) plutôt que des questions génériques interchangeables. Décide toi-même quand tu as assez d'informations pour construire un bon plan (`done: true`), sans viser un nombre de questions précis.",
+    user: `Sujet demandé : "${topic}"\n\nHistorique des réponses déjà données :\n${history}\n\nSi "${topic}" n'est pas compréhensible comme sujet de formation, renvoie unclear: true, done: false, question: null. Sinon, si tu as déjà assez d'informations (ou si l'historique est déjà riche), renvoie unclear: false, done: true, question: null. Sinon, renvoie unclear: false, done: false, et UNE question pertinente qui tient compte du contenu réel de la dernière réponse si elle existe.`,
+    schema: DiagnosticStepSchema,
+    maxTokens: 700,
+  });
+
+  if (result.unclear) return { question: null, unclear: true };
+  if (result.done || !result.question) return { question: null, unclear: false };
+  return { question: result.question, unclear: false };
 }
 
 /**

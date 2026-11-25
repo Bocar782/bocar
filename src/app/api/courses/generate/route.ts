@@ -15,6 +15,7 @@ import {
   type CourseStepInput,
   type CourseStepProgress,
 } from "@/lib/courses/generate";
+import { isOnFreePlan } from "@/lib/courses/plan";
 import { saveCourse } from "@/lib/courses/persist";
 import { quotaExceededMessage, releaseReservation } from "@/lib/courses/reservation";
 import {
@@ -99,15 +100,29 @@ export async function POST(request: Request) {
   const body = parsedBody.data;
 
   if (body.action === "start") {
-    return handleStart(supabase, body);
+    return handleStart(supabase, user.id, body);
   }
   return handleStep(supabase, body.reservationId);
 }
 
 async function handleStart(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
   body: z.infer<typeof StartBodySchema>,
 ) {
+  // Prompt 06.40 : le plan gratuit ne doit JAMAIS déclencher une vraie
+  // génération (Prompt 06.37), même par un appel direct à cette route qui
+  // contournerait l'interface (qui ne propose plus ce bouton à un compte
+  // gratuit — voir course-generator.tsx, `triggerFreeUpsell`). Vérifié ICI,
+  // côté serveur, avant même de construire un plan ou de réserver un
+  // quota — jamais seulement une protection côté UI.
+  if (await isOnFreePlan(supabase, userId)) {
+    return NextResponse.json(
+      { error: "Le plan gratuit ne permet pas de générer une vraie formation. Passe au plan Pro pour continuer." },
+      { status: 403 },
+    );
+  }
+
   const topic = body.topic.trim();
   if (!topic) {
     return NextResponse.json({ error: "Le sujet ne peut pas être vide." }, { status: 400 });

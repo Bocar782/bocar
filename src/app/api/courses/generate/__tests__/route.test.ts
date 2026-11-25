@@ -30,6 +30,14 @@ vi.mock("@/lib/courses/persist", () => ({
   saveCourse: (...args: unknown[]) => mockSaveCourse(...args),
 }));
 
+// Prompt 06.40 : Pro par défaut pour tous les tests existants ci-dessous
+// (comportement inchangé) — un describe dédié plus bas positionne `true`
+// pour vérifier que le plan gratuit est désormais bloqué ICI, côté serveur.
+const mockIsOnFreePlan = vi.fn();
+vi.mock("@/lib/courses/plan", () => ({
+  isOnFreePlan: (...args: unknown[]) => mockIsOnFreePlan(...args),
+}));
+
 type RpcCall = { fnName: string; args: unknown };
 
 function makeSupabaseMock() {
@@ -125,6 +133,7 @@ beforeEach(() => {
   mockPerformCourseStepUnit.mockReset();
   mockSaveCourse.mockReset();
   mockCreateAnthropicClient.mockClear();
+  mockIsOnFreePlan.mockReset().mockResolvedValue(false);
 });
 
 const ANALYSIS: Analysis = {
@@ -263,6 +272,35 @@ describe("POST /api/courses/generate — action 'start'", () => {
 
     expect(response.status).toBe(409);
     expect(json.error).toContain("Recharge la page");
+  });
+});
+
+describe("POST /api/courses/generate — plan gratuit (Prompt 06.40)", () => {
+  it("renvoie 403 pour 'start', sans jamais construire de plan ni réserver de quota, même par un appel direct contournant l'UI", async () => {
+    mockIsOnFreePlan.mockResolvedValue(true);
+
+    const { response, json } = await callRoute({
+      action: "start",
+      idempotencyKey: "k1",
+      topic: "Sujet",
+      plan: { analysis: ANALYSIS, verifiedExamples: VERIFIED_EXAMPLES, programme: PROGRAMME },
+    });
+
+    expect(response.status).toBe(403);
+    expect(json?.error).toContain("plan gratuit");
+    expect(mockBuildCoursePlan).not.toHaveBeenCalled();
+    const startCalls = currentSupabaseMock.rpcCalls.filter((c) => c.fnName === "start_generation_task");
+    expect(startCalls).toHaveLength(0);
+  });
+
+  it("renvoie 403 pour 'start' même sans plan fourni (parcours 'configuration rapide')", async () => {
+    mockIsOnFreePlan.mockResolvedValue(true);
+
+    const { response, json } = await callRoute({ action: "start", idempotencyKey: "k1", topic: "Sujet" });
+
+    expect(response.status).toBe(403);
+    expect(json?.error).toContain("plan gratuit");
+    expect(mockBuildCoursePlan).not.toHaveBeenCalled();
   });
 });
 

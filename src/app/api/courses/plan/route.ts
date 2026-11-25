@@ -6,13 +6,16 @@ import {
   CourseGenerationError,
   MAX_DIAGNOSTIC_QUESTIONS,
   buildCoursePlan,
-  generateDiagnosticQuestion,
+  generateAdaptiveDiagnosticQuestion,
+  generateFreeDiagnosticQuestion,
+  isTopicPlausible,
 } from "@/lib/courses/generate";
 import {
   AnalysisSchema,
   ResearchExtractionSchema,
   ProgrammeSchema,
 } from "@/lib/courses/schemas";
+import { isOnFreePlan } from "@/lib/courses/plan";
 import { checkRequestOrigin } from "@/lib/security/origin-check";
 
 export const dynamic = "force-dynamic";
@@ -86,14 +89,47 @@ export async function POST(request: Request) {
   }
   const body = parsedBody.data;
 
+  // Prompt 06.40 (demande explicite : "le diagnostic intelligent se fait
+  // dans tous les plans tant que ça ne fait pas d'appel à mon compte
+  // Anthropic, le plan Pro lui pourra faire des appels Anthropic mais pas
+  // le plan gratuit") : seule vérification de plan lue UNE FOIS ici,
+  // réutilisée pour les 3 actions ci-dessous — jamais une 2ᵉ lecture.
+  const isFree = await isOnFreePlan(supabase, user.id);
+
+  // Prompt 06.40 : le plan gratuit ne doit JAMAIS pouvoir déclencher
+  // buildCoursePlan (vrai appel Claude), même par un appel direct à cette
+  // route qui contournerait l'interface (qui, elle, ne propose jamais ce
+  // bouton à un compte gratuit — voir course-generator.tsx,
+  // `triggerFreeUpsell`). Vérifié ICI, côté serveur, pas seulement côté UI.
+  if (isFree && body.action !== "question") {
+    return NextResponse.json(
+      { error: "Le plan gratuit ne permet pas de construire une vraie formation. Passe au plan Pro pour continuer." },
+      { status: 403 },
+    );
+  }
+
   try {
-    // Prompt 06.37 : l'action "question" ne fait PLUS aucun appel Claude
-    // (diagnostic figé, zéro coût, voir generate.ts) — ne crée donc jamais
-    // le client Anthropic pour elle, uniquement pour "build"/"adjust"
-    // ci-dessous, qui en ont réellement besoin.
     if (body.action === "question") {
-      const question = await generateDiagnosticQuestion(body.topic, body.previousAnswers);
-      return NextResponse.json({ question });
+      // Prompt 06.40 : le plan gratuit reste à ZÉRO appel Claude pour le
+      // diagnostic (demande explicite) — heuristique + banque figée par
+      // catégorie, jamais le client Anthropic. Le plan Pro, lui, est
+      // désormais autorisé à appeler Claude pour un diagnostic réellement
+      // adaptatif (compréhension du sujet + questions personnalisées).
+      if (isFree) {
+        if (!isTopicPlausible(body.topic)) {
+          return NextResponse.json({ question: null, unclear: true });
+        }
+        const question = generateFreeDiagnosticQuestion(body.topic, body.previousAnswers);
+        return NextResponse.json({ question });
+      }
+
+      const client = createAnthropicClient();
+      const { question, unclear } = await generateAdaptiveDiagnosticQuestion(
+        client,
+        body.topic,
+        body.previousAnswers,
+      );
+      return NextResponse.json({ question, unclear });
     }
 
     // Prompt 06.35 (suite à un signalement utilisateur réel : une clé
