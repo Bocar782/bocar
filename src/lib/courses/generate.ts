@@ -709,7 +709,11 @@ function normalizeQuestionText(text: string): string {
 
 // --- Étape 6 : quiz final (Prompt 05.8) ---
 
-const QUESTION_COUNT = 10;
+// Prompt 06.37 (suite) : réduit de 10 à 8 pour que le total de questions
+// d'une formation (quiz de module + quiz final) reste proche de 20 au
+// maximum (voir MODULE_QUIZ_QUESTION_COUNT plus bas) — coût de sortie
+// Claude réduit en conséquence, sans vider le quiz final de son sens.
+const QUESTION_COUNT = 8;
 
 /**
  * Génère le quiz FINAL : une évaluation globale de toute la formation,
@@ -777,7 +781,11 @@ async function writeQuiz(
 
 // --- Étape 7 : quiz de module (Prompt 05.6) ---
 
-const MODULE_QUIZ_QUESTION_COUNT = 5;
+// Prompt 06.37 (suite) : réduit de 5 à 3 — avec entre 2 et 4 modules
+// (MIN_MODULE_COUNT/MAX_MODULE_COUNT), ça fait au plus 3×4 = 12 questions
+// de module + 8 au quiz final (QUESTION_COUNT) = 20 au total dans le pire
+// cas, contre jusqu'à 30 avant (5×4 + 10).
+const MODULE_QUIZ_QUESTION_COUNT = 3;
 
 /**
  * Génère le quiz d'UN module, à partir du contenu réel de ses seules leçons
