@@ -40,6 +40,7 @@ type Status =
   | "building_plan"
   | "plan_review"
   | "generating"
+  | "free_ready"
   | "done"
   | "error";
 
@@ -66,6 +67,7 @@ function phaseIndexForStatus(status: Status): number {
     case "plan_review":
       return 2;
     case "generating":
+    case "free_ready":
       return 3;
     default:
       return 0;
@@ -160,6 +162,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Prompt 06.39 (demande explicite : "assure-toi que quand il a l'abonnement
+// il a accès à sa formation") : le sujet tapé avant la fausse génération du
+// plan gratuit est conservé ici, pour qu'un utilisateur qui s'abonne juste
+// après (voir le bouton de l'écran "free_ready" ci-dessous) retrouve ce même
+// sujet pré-rempli à son retour sur cette page, au lieu de devoir tout
+// retaper. `sessionStorage` (pas `localStorage`) : jamais conservé plus
+// longtemps qu'un onglet, jamais question de données sensibles persistées.
+const FREE_DRAFT_TOPIC_KEY = "tavyra:free-draft-topic";
+
+function loadFreeDraftTopic(): string | null {
+  try {
+    return sessionStorage.getItem(FREE_DRAFT_TOPIC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeFreeDraftTopic(value: string | null) {
+  try {
+    if (value) sessionStorage.setItem(FREE_DRAFT_TOPIC_KEY, value);
+    else sessionStorage.removeItem(FREE_DRAFT_TOPIC_KEY);
+  } catch {
+    // Stockage indisponible : le sujet ne sera pas pré-rempli après
+    // l'abonnement, mais ça n'empêche jamais de créer sa formation.
+  }
+}
+
 type StartResponse = { reservationId?: string; error?: string };
 type StepResponse = {
   done?: boolean;
@@ -183,7 +212,24 @@ export function CourseGenerator({
   locked: boolean;
 }) {
   const router = useRouter();
-  const [topic, setTopic] = useState(() => loadStoredGeneration()?.topic ?? "");
+  // Prompt 06.39 (demande explicite : "assure-toi que quand il a
+  // l'abonnement il a accès à sa formation") : si ce compte est désormais
+  // Pro et qu'aucune vraie génération n'est en cours de reprise, on
+  // retrouve ici le sujet laissé en attente par l'écran "free_ready"
+  // (abonnement souscrit juste après, voir storeFreeDraftTopic ci-dessus) —
+  // jamais pour un compte resté gratuit. Calculé UNE SEULE FOIS, dans les
+  // initialiseurs paresseux de useState ci-dessous (jamais dans un effet,
+  // qui ne doit pas appeler setState de façon synchrone) — exactement
+  // comme `loadStoredGeneration()` ci-dessous, déjà lu de la même façon.
+  const [topic, setTopic] = useState(() => {
+    const stored = loadStoredGeneration();
+    if (stored) return stored.topic;
+    if (!locked) {
+      const draft = loadFreeDraftTopic();
+      if (draft) return draft;
+    }
+    return "";
+  });
   const [status, setStatus] = useState<Status>(() => (loadStoredGeneration() ? "generating" : "idle"));
   const [stage, setStage] = useState<GenerationStage>("chapitres");
   const [course, setCourse] = useState<GeneratedCourse | null>(null);
@@ -193,6 +239,15 @@ export function CourseGenerator({
   const [resumeNotice, setResumeNotice] = useState<string | null>(() =>
     loadStoredGeneration() ? "Reprise de ta génération en cours…" : null,
   );
+  const [restoredDraftNotice, setRestoredDraftNotice] = useState<string | null>(() => {
+    if (loadStoredGeneration() || locked) return null;
+    const draft = loadFreeDraftTopic();
+    if (!draft) return null;
+    // Consommé une seule fois ici (dernier des deux initialiseurs à lire
+    // cette entrée) : jamais réutilisé à un prochain montage.
+    storeFreeDraftTopic(null);
+    return `On a retrouvé le sujet de ta formation : « ${draft} ». Tu peux la créer dès maintenant.`;
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // --- Diagnostic adaptatif ---
@@ -334,9 +389,13 @@ export function CourseGenerator({
   // generateCourse — les étapes réellement coûteuses en appels Claude).
   // Une fois le diagnostic terminé (lui-même désormais gratuit, voir
   // generate.ts), on affiche quelques secondes le même indicateur de
-  // progression que pour une vraie génération, puis on redirige vers
-  // /pricing — jamais de formation réelle produite pour ce plan. Les
-  // comptes Pro (`!locked`) suivent le parcours réel inchangé ci-dessous.
+  // progression que pour une vraie génération, puis — Prompt 06.39, demande
+  // explicite : "précise-lui que la formation est prête mais faut passer
+  // sur un plan" — on affiche l'écran "free_ready" ci-dessous au lieu de
+  // rediriger silencieusement : jamais de formation réelle produite pour ce
+  // plan, mais JAMAIS non plus un utilisateur qui se retrouve sur /pricing
+  // sans comprendre pourquoi. Les comptes Pro (`!locked`) suivent le
+  // parcours réel inchangé ci-dessous.
   const FREE_TEASER_STAGES: GenerationStage[] = ["analyse", "recherche", "programme", "chapitres"];
   const FREE_TEASER_STEP_MS = 700;
 
@@ -348,7 +407,11 @@ export function CourseGenerator({
       index += 1;
       if (index >= FREE_TEASER_STAGES.length) {
         clearInterval(interval);
-        router.push("/pricing");
+        // Prompt 06.39 : sujet conservé pour être retrouvé automatiquement
+        // si l'utilisateur s'abonne dans la foulée (voir l'effet de
+        // restauration plus haut) — jamais perdu entre cet écran et /pricing.
+        storeFreeDraftTopic(topic.trim());
+        setStatus("free_ready");
         return;
       }
       setStage(FREE_TEASER_STAGES[index]);
@@ -618,6 +681,7 @@ export function CourseGenerator({
     setDiagnosticAnswers([]);
     setCurrentQuestion(null);
     setResumeNotice(null);
+    setRestoredDraftNotice(null);
   }
 
   if (status === "done" && course) {
@@ -652,6 +716,28 @@ export function CourseGenerator({
         )}
         <GenerationProgress currentStage={stage} />
       </div>
+    );
+  }
+
+  // Prompt 06.39 : jamais un silence suivi d'une redirection surprise vers
+  // /pricing — l'utilisateur sait explicitement pourquoi il atterrit là.
+  if (status === "free_ready") {
+    return (
+      <Card variant="panel" className="w-full max-w-2xl text-center">
+        <span
+          aria-hidden
+          className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light"
+        >
+          ✦
+        </span>
+        <p className="mt-4 text-sm font-medium text-foreground">Ta formation est prête</p>
+        <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
+          Passe au plan Pro pour y accéder dès maintenant — ton sujet reste prêt, tu n&apos;as rien à retaper.
+        </p>
+        <Button href="/pricing" className="mt-4">
+          Voir les tarifs
+        </Button>
+      </Card>
     );
   }
 
@@ -953,6 +1039,11 @@ export function CourseGenerator({
 
   return (
     <div className="w-full max-w-2xl">
+      {restoredDraftNotice && (
+        <Callout tone="info" role="status" className="mb-4">
+          {restoredDraftNotice}
+        </Callout>
+      )}
       {error && <Callout tone="error" className="mb-4">{error}</Callout>}
       <form onSubmit={handleFormSubmit} className="group relative rounded-[28px] p-px">
         <div

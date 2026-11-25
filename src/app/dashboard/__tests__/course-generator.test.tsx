@@ -307,8 +307,8 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
   });
 });
 
-describe("CourseGenerator — plan gratuit : jamais de vraie génération, faux chargement puis redirection (Prompt 06.37)", () => {
-  it("pour un compte locked, n'appelle jamais /api/courses/plan (build) ni /api/courses/generate après le diagnostic — affiche l'indicateur de progression puis redirige vers /pricing", async () => {
+describe("CourseGenerator — plan gratuit : jamais de vraie génération, faux chargement puis écran d'upsell explicite (Prompts 06.37/06.39)", () => {
+  it("pour un compte locked, n'appelle jamais /api/courses/plan (build) ni /api/courses/generate après le diagnostic — affiche l'indicateur de progression puis un écran explicite invitant à passer au plan Pro (jamais de redirection silencieuse)", async () => {
     installFetchMock();
     fetchHandler = async (url, body) => {
       if (url === "/api/courses/plan" && body.action === "question") return jsonResponse({ question: null });
@@ -343,7 +343,36 @@ describe("CourseGenerator — plan gratuit : jamais de vraie génération, faux 
     });
     vi.useRealTimers();
 
-    expect(mockPush).toHaveBeenCalledWith("/pricing");
+    // Prompt 06.39 (demande explicite : "précise-lui que la formation est
+    // prête mais faut passer sur un plan") : jamais de redirection
+    // silencieuse — un écran explicite avec un lien vers /pricing, que
+    // l'utilisateur choisit lui-même de suivre.
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Ta formation est prête");
+    expect(container.querySelector('a[href="/pricing"]')).not.toBeNull();
+  });
+
+  it("retrouve automatiquement, pour un compte désormais Pro, le sujet laissé en attente par l'écran précédent — et ne le réutilise qu'une seule fois (Prompt 06.39)", async () => {
+    installFetchMock();
+    sessionStorage.setItem("tavyra:free-draft-topic", "Le sujet laissé en attente");
+
+    await renderGenerator({ remainingGenerations: 3, locked: false });
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("Le sujet laissé en attente");
+    expect(container.textContent).toContain("On a retrouvé le sujet de ta formation");
+    expect(sessionStorage.getItem("tavyra:free-draft-topic")).toBeNull();
+  });
+
+  it("ne retrouve jamais ce sujet en attente pour un compte resté sur le plan gratuit (Prompt 06.39)", async () => {
+    installFetchMock();
+    sessionStorage.setItem("tavyra:free-draft-topic", "Le sujet laissé en attente");
+
+    await renderGenerator({ remainingGenerations: 1, locked: true });
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("");
+    expect(container.textContent).not.toContain("On a retrouvé le sujet de ta formation");
   });
 });
 
