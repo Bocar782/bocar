@@ -87,6 +87,15 @@ export async function POST(request: Request) {
   const body = parsedBody.data;
 
   try {
+    // Prompt 06.37 : l'action "question" ne fait PLUS aucun appel Claude
+    // (diagnostic figé, zéro coût, voir generate.ts) — ne crée donc jamais
+    // le client Anthropic pour elle, uniquement pour "build"/"adjust"
+    // ci-dessous, qui en ont réellement besoin.
+    if (body.action === "question") {
+      const question = await generateDiagnosticQuestion(body.topic, body.previousAnswers);
+      return NextResponse.json({ question });
+    }
+
     // Prompt 06.35 (suite à un signalement utilisateur réel : une clé
     // ANTHROPIC_API_KEY absente ou vide en production faisait planter cet
     // appel AVANT ce try/catch — exception non interceptée, renvoyée par
@@ -97,11 +106,6 @@ export async function POST(request: Request) {
     // variable d'environnement manquante) retombe sur le même message
     // générique ci-dessous, jamais une page brute.
     const client = createAnthropicClient();
-
-    if (body.action === "question") {
-      const question = await generateDiagnosticQuestion(client, body.topic, body.previousAnswers);
-      return NextResponse.json({ question });
-    }
 
     if (body.action === "build") {
       const plan = await buildCoursePlan(client, body.topic, {

@@ -73,8 +73,9 @@ export default async function CreateCoursePage() {
           Que veux-tu apprendre aujourd&apos;hui ?
         </h1>
         <p className="mt-2 max-w-md text-center text-sm text-foreground-muted">
-          Décris un sujet, Tavyra construit ta formation complète — adaptée à ton niveau et à
-          tes objectifs.
+          {onFreePlan
+            ? "Décris un sujet, réponds à un quiz de diagnostic gratuit et découvre le programme que Tavyra construirait pour toi."
+            : "Décris un sujet, Tavyra construit ta formation complète — adaptée à ton niveau et à tes objectifs."}
         </p>
 
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">

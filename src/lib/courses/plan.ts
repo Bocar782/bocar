@@ -30,7 +30,8 @@ export const PRO_PLAN_MONTHLY_ANALYSIS_LIMIT = 2;
 // Chaque ligne correspond à une restriction/fonctionnalité RÉELLEMENT
 // appliquée dans le code, vérifiée avant rédaction (Prompt 05.13) :
 // - Le verrouillage des chapitres/quiz au-delà de FREE_PLAN_UNLOCKED_CHAPTERS
-//   est appliqué dans course-view.tsx (CourseView, `locked`/`isLockedForThisCourse`).
+//   est appliqué dans course-view.tsx (CourseView, `locked`/`isLockedForThisCourse`)
+//   et ne concerne que les formations générées avant le Prompt 06.37.
 // - Le chat (chapter-chat.tsx) reste disponible sur le plan gratuit, mais
 //   seulement dans le contexte des chapitres débloqués (`maxChapterIndex`,
 //   voir course-generator.tsx / dashboard/formations/[id]/page.tsx) : ce
@@ -40,13 +41,18 @@ export const PRO_PLAN_MONTHLY_ANALYSIS_LIMIT = 2;
 //   getQuizAttemptHistory) n'est restreint par AUCUNE vérification de plan
 //   dans le code : ce n'est donc jamais listé ici comme un avantage Pro à
 //   part entière, seulement une conséquence du quota de formations/mois.
+// - Prompt 06.37 : le plan gratuit ne génère plus AUCUNE formation réelle
+//   (voir course-generator.tsx, `triggerFreeUpsell`) — le diagnostic
+//   personnalisé reste gratuit pour tout le monde, mais sert uniquement à
+//   amener vers l'offre Pro. Ce texte doit refléter cette réalité, jamais
+//   promettre une formation complète sur le plan gratuit.
 export const FREE_PLAN_FEATURES: readonly string[] = [
-  `${FREE_PLAN_COURSE_LIMIT} formation complète générée par Tavyra`,
-  `Les ${FREE_PLAN_UNLOCKED_CHAPTERS} premiers chapitres en accès libre`,
+  "Quiz de diagnostic personnalisé, 100 % gratuit",
+  "Aperçu du programme sur mesure pour ton sujet",
 ];
 
 /** Limite affichée séparément (ton visuel "—" plutôt que "✓") sur les deux pages. */
-export const FREE_PLAN_LIMITATION = "Chapitres suivants et quiz verrouillés";
+export const FREE_PLAN_LIMITATION = "Formation complète réservée au plan Pro";
 
 export const PRO_PLAN_FEATURES: readonly string[] = [
   `${PRO_PLAN_MONTHLY_COURSE_LIMIT} formations générées par mois (quota renouvelé à chaque période de facturation)`,

@@ -307,6 +307,46 @@ describe("CourseGenerator — diagnostic adaptatif, plan et validation", () => {
   });
 });
 
+describe("CourseGenerator — plan gratuit : jamais de vraie génération, faux chargement puis redirection (Prompt 06.37)", () => {
+  it("pour un compte locked, n'appelle jamais /api/courses/plan (build) ni /api/courses/generate après le diagnostic — affiche l'indicateur de progression puis redirige vers /pricing", async () => {
+    installFetchMock();
+    fetchHandler = async (url, body) => {
+      if (url === "/api/courses/plan" && body.action === "question") return jsonResponse({ question: null });
+      throw new Error(
+        `Plan gratuit : aucune vraie génération ne doit jamais être déclenchée — appel inattendu : ${url} ${JSON.stringify(body)}`,
+      );
+    };
+
+    await renderGenerator({ remainingGenerations: 1, locked: true });
+    await setTextareaValue("Un sujet de test");
+
+    // `vi.useFakeTimers()` est activé APRÈS le clic (qui déclenche l'appel
+    // réseau réel, asynchrone) mais AVANT que `setInterval` (dans
+    // triggerFreeUpsell) ne soit posé — sinon ce `setInterval`, créé sous
+    // les vrais timers, ne serait plus contrôlable ensuite.
+    const button = findButton("Créer ma formation");
+    vi.useFakeTimers();
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Même indicateur visuel qu'une vraie génération (cohérence de
+    // l'expérience), mais aucun appel "build"/"generate" n'a eu lieu — le
+    // mock ci-dessus aurait levé une erreur sinon, ce qui aurait fait
+    // échouer ce test.
+    expect(container.textContent).toContain("Génération en cours");
+    expect(mockPush).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    vi.useRealTimers();
+
+    expect(mockPush).toHaveBeenCalledWith("/pricing");
+  });
+});
+
 describe("CourseGenerator — idempotence au démarrage (Prompt 05.20.1)", () => {
   it("persiste l'idempotencyKey en sessionStorage AVANT le premier appel réseau de démarrage", async () => {
     installFetchMock();

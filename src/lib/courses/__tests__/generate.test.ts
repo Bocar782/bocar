@@ -8,11 +8,14 @@ import {
   CourseGenerationError,
   MAX_CHAPTERS_PER_MODULE,
   MAX_CONCURRENT_AI_CALLS,
+  MAX_DIAGNOSTIC_QUESTIONS,
   MAX_MODULE_COUNT,
   MIN_CHAPTERS_PER_MODULE,
+  MIN_DIAGNOSTIC_QUESTIONS,
   MIN_MODULE_COUNT,
   flattenModulePlans,
   generateCourse,
+  generateDiagnosticQuestion,
   validateChapterContent,
   validateProgrammeStructure,
   writeChapter,
@@ -616,5 +619,35 @@ describe("generateCourse export sanity", () => {
   it("expose bien generateCourse et CourseGenerationError", () => {
     expect(typeof generateCourse).toBe("function");
     expect(CourseGenerationError).toBeDefined();
+  });
+});
+
+describe("Prompt 06.37 : generateDiagnosticQuestion — diagnostic figé, zéro appel Claude", () => {
+  it("renvoie exactement MAX_DIAGNOSTIC_QUESTIONS questions distinctes avant de s'arrêter à null", () => {
+    expect(MIN_DIAGNOSTIC_QUESTIONS).toBe(MAX_DIAGNOSTIC_QUESTIONS);
+
+    const seenIds = new Set<string>();
+    let previousAnswers: { questionId: string; question: string; answer: string }[] = [];
+
+    for (let i = 0; i < MAX_DIAGNOSTIC_QUESTIONS; i++) {
+      const question = generateDiagnosticQuestion("Le sujet X", previousAnswers);
+      expect(question).not.toBeNull();
+      seenIds.add(question!.id);
+      previousAnswers = [
+        ...previousAnswers,
+        { questionId: question!.id, question: question!.question, answer: "une réponse" },
+      ];
+    }
+
+    expect(seenIds.size).toBe(MAX_DIAGNOSTIC_QUESTIONS);
+    expect(generateDiagnosticQuestion("Le sujet X", previousAnswers)).toBeNull();
+  });
+
+  it("n'appelle jamais Claude : purement synchrone, aucune promesse réelle en vol", () => {
+    const result = generateDiagnosticQuestion("Autre sujet", []);
+    // Si c'était encore un appel réseau, ce ne serait jamais un objet
+    // directement disponible de façon synchrone.
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(result?.question).toContain("Autre sujet");
   });
 });

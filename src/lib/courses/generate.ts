@@ -6,7 +6,6 @@ import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
-  DiagnosticStepSchema,
   FinalQuizSchema,
   ModuleQuizSchema,
   ProgrammeSchema,
@@ -203,79 +202,82 @@ async function analyzeTopic(
   };
 }
 
-// --- Diagnostic adaptatif (Prompt 05.18.1) ---
+// --- Diagnostic figé, zéro coût (Prompt 06.37) ---
 
-// Bornes imposées en CODE, jamais seulement dans le prompt (même principe
-// que MIN/MAX_MODULE_COUNT) : l'IA peut arrêter le diagnostic dès la 3ᵉ
-// question répondue, mais jamais avant ; elle ne peut jamais en poser plus
-// de 5, même si elle l'annonce. Réduit de 7-12 à 3-5 (Prompt 06.36, suite à
-// un signalement utilisateur réel sur le coût réel : chaque question de
-// diagnostic est un appel Claude séparé, facturé, AVANT même que la
-// formation elle-même ne commence à être générée — un diagnostic de 10-12
-// questions coûtait déjà une part significative du prix d'une formation
-// complète avant qu'elle n'existe). Ne garde que les questions les plus
-// déterminantes pour cerner le niveau réel de la personne, jamais un
-// nombre fixe annoncé à l'utilisateur.
-export const MIN_DIAGNOSTIC_QUESTIONS = 3;
-export const MAX_DIAGNOSTIC_QUESTIONS = 5;
+// Remplace l'ancien diagnostic adaptatif (un appel Claude par question,
+// Prompt 05.18.1, déjà réduit de 7-12 à 3-5 questions en 06.36) suite à une
+// demande explicite de l'utilisateur : ces questions sont posées à TOUT LE
+// MONDE, plan gratuit ET payant, AVANT même de savoir si une formation sera
+// réellement générée — à l'échelle (ex. une fraction d'1 million de vues
+// sur un réseau social), chaque appel Claude ici, même petit, devient un
+// coût réel et répété, multiplié par le nombre de visiteurs qui ne vont
+// jamais au-delà de cette étape. Les 4 questions ci-dessous sont
+// génériques (pas calibrées sur le sujet précis comme l'ancien diagnostic
+// IA) mais couvrent les mêmes axes utiles à `buildCoursePlan` ensuite :
+// niveau réel, pratique concrète déjà faite, objectif, temps disponible.
+// Seule la génération de la QUESTION elle-même n'est plus confiée à
+// Claude — les RÉPONSES de l'utilisateur sont toujours transmises telles
+// quelles à buildCoursePlan, qui reste, lui, un vrai appel Claude (plan
+// payant uniquement désormais, voir course-generator.tsx).
+export const MIN_DIAGNOSTIC_QUESTIONS = 4;
+export const MAX_DIAGNOSTIC_QUESTIONS = 4;
+
+function staticDiagnosticQuestions(topic: string): DiagnosticQuestion[] {
+  return [
+    {
+      id: "niveau",
+      question: `Où en es-tu aujourd'hui avec "${topic}" ?`,
+      type: "single_choice",
+      choices: [
+        "Je découvre tout juste le sujet",
+        "J'ai déjà quelques bases",
+        "Je suis à l'aise, je veux progresser",
+        "Je suis déjà expérimenté(e)",
+      ],
+    },
+    {
+      id: "pratique",
+      question:
+        "As-tu déjà mis ça en pratique concrètement (un projet, un outil, une action réelle) ?",
+      type: "single_choice",
+      choices: ["Non, jamais", "Un peu, de façon basique", "Oui, plusieurs fois", "Oui, régulièrement"],
+    },
+    {
+      id: "objectif",
+      question: "Quel est ton objectif principal avec cette formation ?",
+      type: "single_choice",
+      choices: [
+        "Comprendre les bases",
+        "Approfondir mes connaissances",
+        "Résoudre un problème précis",
+        "Me professionnaliser sur ce sujet",
+      ],
+    },
+    {
+      id: "temps",
+      question: "Combien de temps veux-tu consacrer à l'apprentissage ?",
+      type: "single_choice",
+      choices: [
+        "Quelques minutes par jour",
+        "Une session complète de temps en temps",
+        "Je veux aller vite et intensément",
+      ],
+    },
+  ];
+}
 
 /**
- * Génère la PROCHAINE question de diagnostic, en tenant compte des réponses
- * déjà données — jamais une liste figée décidée d'avance : chaque appel ne
- * voit que ce qui a déjà été répondu, donc la question qu'il produit
- * s'adapte réellement (par ex. ne redemande pas le niveau si la réponse à
- * la question précédente l'a déjà révélé, creuse au contraire un point
- * encore flou). Retourne `null` quand le diagnostic est terminé : soit
- * parce que l'IA l'a décidé (jamais avant `MIN_DIAGNOSTIC_QUESTIONS`
- * questions répondues), soit parce que `MAX_DIAGNOSTIC_QUESTIONS` est déjà
- * atteint (dans ce cas, le plafond est appliqué AVANT tout appel IA — pas
- * même la peine de demander).
+ * Renvoie la PROCHAINE question de diagnostic (banque fixe, zéro appel
+ * Claude) — `null` une fois les `MAX_DIAGNOSTIC_QUESTIONS` questions
+ * posées. Reste `async`-compatible (appelée avec `await` côté route) pour
+ * ne jamais imposer de changement de forme à l'appelant si ce diagnostic
+ * redevenait un jour dynamique.
  */
-export async function generateDiagnosticQuestion(
-  client: Anthropic,
+export function generateDiagnosticQuestion(
   topic: string,
   previousAnswers: DiagnosticAnswer[],
-): Promise<DiagnosticQuestion | null> {
-  if (previousAnswers.length >= MAX_DIAGNOSTIC_QUESTIONS) {
-    return null;
-  }
-
-  const history =
-    previousAnswers.length > 0
-      ? previousAnswers.map((a, i) => `${i + 1}. ${a.question} → ${a.answer}`).join("\n")
-      : "(aucune question posée encore — c'est la première)";
-
-  const result = await parseStructured(client, {
-    system:
-      "Tu es Tavyra. Avant de construire une formation, tu poses de nombreuses questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données — pour cerner précisément où se situe déjà la personne sur CE sujet précis : ce qu'elle a déjà fait concrètement (des actions réelles, pas des ressentis — par ex. pour l'e-commerce : a-t-elle déjà créé un site, déjà lancé des publicités, utilisé tel outil), les notions ou le vocabulaire spécifiques au sujet qu'elle connaît déjà ou non (par ex. sait-elle ce qu'est un CTA), ses objectifs concrets, le contexte dans lequel elle va utiliser ce qu'elle apprend, le temps qu'elle veut y consacrer, et ses préférences pédagogiques. Jamais deux questions qui demandent la même chose, et jamais une question générique interchangeable d'un sujet à l'autre : chaque question doit porter sur une action, un outil ou une notion précise propre à ce sujet. Pose une question fermée à choix (3 à 5 choix courts) chaque fois que c'est possible ; une question ouverte seulement si une réponse libre est vraiment nécessaire.",
-    user: `Sujet de la formation demandée : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nPose la question suivante la plus utile pour cerner précisément où en est la personne sur CE sujet précis — une action concrète déjà faite ou non, un outil déjà utilisé ou non, une notion/un terme déjà connu ou non — jamais une question générique qui s'appliquerait à n'importe quel sujet. Si tu estimes avoir déjà assez d'informations pour construire un bon plan parfaitement calibré sur son niveau réel (entre ${MIN_DIAGNOSTIC_QUESTIONS} et ${MAX_DIAGNOSTIC_QUESTIONS} questions au total), réponds done=true sans question. Ne dépasse jamais ${MAX_DIAGNOSTIC_QUESTIONS} questions au total.`,
-    schema: DiagnosticStepSchema,
-    maxTokens: 1024,
-  });
-
-  const alreadyAsked = previousAnswers.length;
-  const mustAskAnother = alreadyAsked < MIN_DIAGNOSTIC_QUESTIONS;
-
-  if (result.question && (mustAskAnother || !result.done)) {
-    return result.question;
-  }
-  if (!mustAskAnother) {
-    return null;
-  }
-  // Le modèle a répondu done=true (ou aucune question) avant le minimum
-  // imposé : ne jamais s'arrêter plus tôt que prévu, mais ne pas re-tenter
-  // indéfiniment non plus — une seule relance avec une consigne plus ferme.
-  const retry = await parseStructured(client, {
-    system:
-      "Tu es Tavyra. Avant de construire une formation, tu poses quelques questions de diagnostic — une à la fois, chacune adaptée aux réponses déjà données.",
-    user: `Sujet : "${topic}".\n\nQuestions déjà posées et réponses obtenues :\n${history}\n\nIl est encore trop tôt pour arrêter le diagnostic (minimum ${MIN_DIAGNOSTIC_QUESTIONS} questions). Pose une question de diagnostic supplémentaire, utile et non répétitive.`,
-    schema: DiagnosticStepSchema,
-    maxTokens: 1024,
-  });
-  if (retry.question) return retry.question;
-  throw new CourseGenerationError(
-    "Impossible de générer les questions de diagnostic pour ce sujet.",
-  );
+): DiagnosticQuestion | null {
+  return staticDiagnosticQuestions(topic)[previousAnswers.length] ?? null;
 }
 
 /**

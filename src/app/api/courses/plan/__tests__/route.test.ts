@@ -170,11 +170,7 @@ describe("POST /api/courses/plan — action 'question' (diagnostic)", () => {
       type: "single_choice",
       choices: ["A", "B"],
     });
-    expect(mockGenerateDiagnosticQuestion).toHaveBeenCalledWith(
-      { fakeClient: true },
-      "Sujet",
-      previousAnswers,
-    );
+    expect(mockGenerateDiagnosticQuestion).toHaveBeenCalledWith("Sujet", previousAnswers);
     expect(currentSupabaseMock.rpcCalls).toHaveLength(0);
   });
 
@@ -185,6 +181,14 @@ describe("POST /api/courses/plan — action 'question' (diagnostic)", () => {
 
     expect(response.status).toBe(200);
     expect(json.question).toBeNull();
+  });
+
+  it("06.37 : n'appelle JAMAIS createAnthropicClient pour l'action 'question' (diagnostic figé, zéro coût)", async () => {
+    mockGenerateDiagnosticQuestion.mockResolvedValue(null);
+
+    await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] });
+
+    expect(mockCreateAnthropicClient).not.toHaveBeenCalled();
   });
 });
 
@@ -244,15 +248,15 @@ describe("POST /api/courses/plan — action 'adjust'", () => {
 });
 
 describe("POST /api/courses/plan — gestion des erreurs", () => {
-  it("conserve le message d'une CourseGenerationError (erreur métier conçue pour être affichée)", async () => {
-    mockGenerateDiagnosticQuestion.mockRejectedValue(
-      new FakeCourseGenerationError("Impossible de générer les questions de diagnostic pour ce sujet."),
+  it("conserve le message d'une CourseGenerationError (erreur métier conçue pour être affichée) sur l'action 'build'", async () => {
+    mockBuildCoursePlan.mockRejectedValue(
+      new FakeCourseGenerationError("Impossible de construire un plan cohérent pour ce sujet."),
     );
 
-    const { response, json } = await callRoute({ action: "question", topic: "Sujet", previousAnswers: [] });
+    const { response, json } = await callRoute({ action: "build", topic: "Sujet", diagnosticAnswers: [] });
 
     expect(response.status).toBe(502);
-    expect(json?.error).toBe("Impossible de générer les questions de diagnostic pour ce sujet.");
+    expect(json?.error).toBe("Impossible de construire un plan cohérent pour ce sujet.");
   });
 
   it("ne révèle jamais le détail d'une erreur inattendue (non métier)", async () => {

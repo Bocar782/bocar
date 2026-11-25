@@ -327,7 +327,39 @@ export function CourseGenerator({
     }
   }
 
+  // Prompt 06.37 (demande explicite de l'utilisateur, suite à un risque de
+  // viralité réel : "si je fais 1M de vues et que 10% testent en gratuit,
+  // ça tuera mon crédit") : le plan gratuit ne déclenche plus JAMAIS la
+  // vraie construction du plan ni la vraie génération (buildCoursePlan,
+  // generateCourse — les étapes réellement coûteuses en appels Claude).
+  // Une fois le diagnostic terminé (lui-même désormais gratuit, voir
+  // generate.ts), on affiche quelques secondes le même indicateur de
+  // progression que pour une vraie génération, puis on redirige vers
+  // /pricing — jamais de formation réelle produite pour ce plan. Les
+  // comptes Pro (`!locked`) suivent le parcours réel inchangé ci-dessous.
+  const FREE_TEASER_STAGES: GenerationStage[] = ["analyse", "recherche", "programme", "chapitres"];
+  const FREE_TEASER_STEP_MS = 700;
+
+  function triggerFreeUpsell() {
+    setStatus("generating");
+    setStage(FREE_TEASER_STAGES[0]);
+    let index = 0;
+    const interval = setInterval(() => {
+      index += 1;
+      if (index >= FREE_TEASER_STAGES.length) {
+        clearInterval(interval);
+        router.push("/pricing");
+        return;
+      }
+      setStage(FREE_TEASER_STAGES[index]);
+    }, FREE_TEASER_STEP_MS);
+  }
+
   async function buildPlan(answers: DiagnosticAnswer[]) {
+    if (locked) {
+      triggerFreeUpsell();
+      return;
+    }
     setStatus("building_plan");
     setError(null);
     try {
