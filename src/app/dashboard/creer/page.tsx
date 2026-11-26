@@ -5,6 +5,7 @@ import { getUsageStatuses, type UsageStatus } from "@/lib/courses/plan";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../actions";
 import { GeneratorTabs } from "../generator-tabs";
+import { ProUpsellPanel } from "@/components/dashboard/pro-upsell-panel";
 
 const DEFAULT_USAGE = { isPro: false, used: 0, limit: 1, remaining: 1, resetsAt: null };
 
@@ -104,6 +105,12 @@ export default async function CreateCoursePage(props: PageProps<"/dashboard/cree
             initialTopic={initialTopic}
           />
         </div>
+
+        {onFreePlan && (
+          <div className="mt-14 w-full">
+            <ProUpsellPanel />
+          </div>
+        )}
 
         <section className="mt-14 w-full border-t border-border-subtle pt-10">
           <h2 className="text-center text-xs font-semibold uppercase tracking-wide text-foreground-muted">

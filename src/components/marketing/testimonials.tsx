@@ -11,7 +11,7 @@ import Image from "next/image";
 // de chaque avis (5 par défaut, 4 pour un avis qui reste positif mais
 // nuance avec une réserve concrète — ex. Evan ci-dessous) — jamais une
 // note transmise par la personne elle-même, qui ne nous en a donné aucune.
-const TESTIMONIALS = [
+export const TESTIMONIALS = [
   {
     name: "Camille",
     photo: "/testimonials/camille.jpg",

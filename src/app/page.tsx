@@ -130,7 +130,7 @@ export default async function Home() {
                 style={{ ["--d" as string]: "340ms" }}
               >
                 <MagneticButton href="/signup" className={PRIMARY_CTA}>
-                  Commencer mon diagnostic gratuit →
+                  Créer ma première formation →
                 </MagneticButton>
                 <a
                   href="#fonctionnalites"

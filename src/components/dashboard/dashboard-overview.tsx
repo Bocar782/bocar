@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PRO_PLAN_FEATURES, PRO_PLAN_PRICE_EUR } from "@/lib/courses/plan";
 import { TopicSuggestions } from "@/components/dashboard/topic-suggestions";
+import { QuickActions } from "@/components/dashboard/quick-actions";
 import type { DashboardStats } from "@/lib/dashboard/stats";
 
 type RecentCourse = {
@@ -114,7 +115,14 @@ export function DashboardOverview({
         <TopicSuggestions className="rise mt-5" />
       )}
 
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="mt-6">
+        <QuickActions locked={locked} />
+      </div>
+
+      <h2 className="mt-10 text-base font-semibold tracking-tight text-foreground">
+        Ta progression
+      </h2>
+      <section className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div className="rise" style={{ ["--d" as string]: "80ms" }}>
           <StatCard
             icon={<IconGraduationCap width={20} height={20} />}
