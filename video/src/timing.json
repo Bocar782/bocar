@@ -1,0 +1,100 @@
+{
+  "fps": 30,
+  "bpm": 120,
+  "total": 1110,
+  "scenes": {
+    "hook": [
+      0,
+      90
+    ],
+    "problem": [
+      90,
+      210
+    ],
+    "reveal": [
+      210,
+      300
+    ],
+    "demo": [
+      300,
+      540
+    ],
+    "immersion": [
+      540,
+      840
+    ],
+    "desire": [
+      840,
+      960
+    ],
+    "cta": [
+      960,
+      1110
+    ]
+  },
+  "hook": {
+    "countEnd": 42,
+    "line1": 52,
+    "line2": 60
+  },
+  "problem": {
+    "beats": [
+      0,
+      30,
+      60
+    ],
+    "collapse": 90
+  },
+  "reveal": {
+    "sparkle": 14,
+    "wordmark": 22,
+    "tagline": 40,
+    "exit": 68
+  },
+  "demo": {
+    "typeStart": 24,
+    "typeEnd": 66,
+    "click1": 84,
+    "diagIn": 90,
+    "hover": 116,
+    "click2": 126,
+    "planIn": 150,
+    "click3": 184,
+    "genIn": 195,
+    "ready": 232
+  },
+  "immersion": {
+    "shots": [
+      0,
+      60,
+      120,
+      180,
+      240
+    ],
+    "check1": 26,
+    "check2": 40,
+    "reveal": 145,
+    "quizPick": 204,
+    "quizNext": 214,
+    "score": 220,
+    "userMsg": 250,
+    "typingStart": 258,
+    "answerStart": 268
+  },
+  "desire": {
+    "words": [
+      0,
+      15,
+      30,
+      45
+    ],
+    "line": 62
+  },
+  "cta": {
+    "tab": 0,
+    "line2": 22,
+    "morph": 46,
+    "button": 78,
+    "shimmer": 100
+  }
+}

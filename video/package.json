@@ -1,0 +1,25 @@
+{
+  "name": "tavyra-ad",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Publicité verticale 9:16 de Tavyra, produite avec Remotion",
+  "scripts": {
+    "studio": "remotion studio",
+    "music": "python3 audio/generate_music.py",
+    "render": "remotion render TavyraAd out/tavyra-ad.mp4 --codec=h264 --crf=16 --audio-bitrate=320k --pixel-format=yuv420p"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.547",
+    "@remotion/cli": "^4.0.547",
+    "@remotion/fonts": "^4.0.547",
+    "@remotion/renderer": "^4.0.547",
+    "geist": "^1.9.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.547"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.3",
+    "typescript": "^7.0.2"
+  }
+}
