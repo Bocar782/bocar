@@ -10,7 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
 import { getGenerationStatus } from "@/lib/courses/generation-status";
-import { FREE_PLAN_UNLOCKED_CHAPTERS } from "@/lib/courses/plan";
+import {
+  FREE_PLAN_UNLOCKED_CHAPTERS,
+  PRO_PLAN_FEATURES,
+  PRO_PLAN_PRICE_EUR,
+} from "@/lib/courses/plan";
 import type {
   Analysis,
   DiagnosticAnswer,
@@ -750,21 +754,73 @@ export function CourseGenerator({
   // /pricing — l'utilisateur sait explicitement pourquoi il atterrit là.
   if (status === "free_ready") {
     return (
-      <Card variant="panel" className="w-full max-w-2xl text-center">
-        <span
-          aria-hidden
-          className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue/15 to-accent-violet/15 text-accent-violet-light"
-        >
-          ✦
-        </span>
-        <p className="mt-4 text-sm font-medium text-foreground">Ta formation est prête</p>
-        <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
-          Passe au plan Pro pour y accéder dès maintenant — ton sujet reste prêt, tu n&apos;as rien à retaper.
-        </p>
-        <Button href="/pricing" className="mt-4">
-          Voir les tarifs
-        </Button>
-      </Card>
+      <div className="rise w-full max-w-2xl">
+        <div className="relative overflow-hidden rounded-[28px] border border-accent-violet/30 bg-background-card/90 shadow-[0_30px_80px_-40px_var(--glow)]">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-24 left-1/2 h-48 w-96 -translate-x-1/2 rounded-full bg-accent-violet/30 blur-3xl"
+          />
+          <div className="relative px-6 pb-6 pt-8 text-center sm:px-10">
+            <span className="bg-brand mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-2xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_30px_-10px_var(--glow)]">
+              ✦
+            </span>
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-accent-violet-light">
+              Diagnostic terminé
+            </p>
+            <h2 className="mt-2 text-balance text-2xl font-semibold tracking-tight text-foreground">
+              Ta formation est prête
+            </h2>
+            <p className="mt-1 text-balance text-base font-medium text-accent-violet-light">
+              « {topic.trim()} »
+            </p>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-foreground-muted">
+              {diagnosticAnswers.length > 0 ? "Elle est calée sur tes réponses au diagnostic. " : ""}
+              Passe au plan Pro pour y accéder dès maintenant — ton sujet reste prêt, tu n&apos;as
+              rien à retaper.
+            </p>
+
+            {diagnosticAnswers.length > 0 && (
+              <div className="mx-auto mt-5 flex max-w-lg flex-wrap justify-center gap-2">
+                {diagnosticAnswers.slice(0, 4).map((a) => (
+                  <span
+                    key={a.questionId}
+                    className="max-w-[14rem] truncate rounded-full border border-border-subtle bg-overlay/[0.04] px-3 py-1 text-xs text-foreground-muted"
+                  >
+                    ✓ {a.answer}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="relative border-t border-border-subtle bg-overlay/[0.02] px-6 py-6 sm:px-10">
+            <ul className="grid gap-2.5 text-left text-sm sm:grid-cols-2">
+              {PRO_PLAN_FEATURES.map((feature) => (
+                <li key={feature} className="flex gap-2.5">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">
+                    ✓
+                  </span>
+                  <span className="text-foreground-muted">{feature}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <Button href="/checkout" className="w-full sm:w-auto sm:px-10">
+                Débloquer ma formation · {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €/mois
+              </Button>
+              <p className="text-[11px] text-foreground-muted">
+                Paiement sécurisé via Stripe · Résiliation en un clic, à tout moment
+              </p>
+              <a
+                href="/pricing"
+                className="text-xs font-medium text-accent-violet-light transition-colors hover:text-foreground"
+              >
+                Voir le détail des offres
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -789,9 +845,14 @@ export function CourseGenerator({
             : "Tu as utilisé tes formations pour cette période de facturation. Le quota se réinitialise automatiquement à ton prochain renouvellement."}
         </p>
         {locked && (
-          <Button href="/pricing" className="mt-4">
-            Voir les tarifs
-          </Button>
+          <div className="mt-5 flex flex-col items-center gap-2">
+            <Button href="/checkout">
+              Passer au Pro · {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €/mois
+            </Button>
+            <a href="/pricing" className="text-xs font-medium text-accent-violet-light hover:text-foreground">
+              Voir le détail des offres
+            </a>
+          </div>
         )}
       </Card>
     );
@@ -806,60 +867,59 @@ export function CourseGenerator({
         <JourneyBreadcrumb status={status} />
         {error && <Callout tone="error" className="mb-4">{error}</Callout>}
 
-        {/* Fil des réponses déjà données : un vrai suivi visible, jamais un
-            total fixe annoncé à l'avance (le diagnostic est adaptatif — voir
-            MIN/MAX_DIAGNOSTIC_QUESTIONS dans generate.ts) — seulement ce qui
-            a réellement été répondu jusqu'ici. */}
+        {/* Progression : une pastille par réponse déjà donnée + la question
+            en cours — jamais un total fixe annoncé (diagnostic adaptatif). */}
+        <div className="mb-4 flex items-center gap-1.5" aria-hidden>
+          {diagnosticAnswers.map((a) => (
+            <span key={a.questionId} className="bg-brand h-1.5 w-8 rounded-full" />
+          ))}
+          <span className="h-1.5 w-8 animate-pulse rounded-full bg-accent-violet/50" />
+        </div>
+
         {diagnosticAnswers.length > 0 && (
-          <ol className="mb-4 space-y-1.5">
+          <ol className="mb-4 flex flex-wrap gap-2">
             {diagnosticAnswers.map((a) => (
               <li
                 key={a.questionId}
-                className="flex items-start gap-2.5 rounded-xl border border-border-subtle bg-overlay/[0.02] px-3.5 py-2.5"
+                className="flex max-w-full items-center gap-2 rounded-xl border border-border-subtle bg-background-card/80 px-3 py-1.5 text-xs"
               >
-                <span
-                  aria-hidden
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to text-white"
-                >
-                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                    <path
-                      d="M2 5.5l2.3 2.3L9 3"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-xs text-foreground-muted">{a.question}</span>
-                  <span className="block truncate text-sm font-medium text-foreground">{a.answer}</span>
-                </span>
+                <span className="text-accent-violet-light">✓</span>
+                <span className="min-w-0 truncate text-foreground-muted">{a.question}</span>
+                <span className="shrink-0 font-medium text-foreground">{a.answer}</span>
               </li>
             ))}
           </ol>
         )}
 
-        <Card variant="elevated">
-          <div className="flex items-center gap-3">
-            <BrandMark size={30} />
+        <div
+          key={currentQuestion.id}
+          className="rise relative overflow-hidden rounded-[28px] border border-border-subtle bg-background-card/90 p-6 shadow-[0_30px_80px_-40px_var(--glow)] sm:p-8"
+        >
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-accent-violet/20 blur-3xl"
+          />
+          <div className="relative flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-[0_8px_20px_-10px_var(--glow)]">
+              <BrandMark size={28} />
+            </span>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-accent-violet-light">
-                Diagnostic Tavyra
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-violet-light">
+                Diagnostic Tavyra · Question {diagnosticAnswers.length + 1}
               </p>
               <p className="text-xs text-foreground-muted">
-                Question {diagnosticAnswers.length + 1} — pour caler cette formation sur ton niveau réel
+                Pour caler cette formation sur ton niveau réel
               </p>
             </div>
           </div>
 
-          <h3 className="mt-4 text-xl font-semibold leading-snug text-foreground">
+          <h3 className="relative mt-6 text-balance text-xl font-semibold leading-snug text-foreground sm:text-2xl">
             {currentQuestion.question}
           </h3>
 
           {isChoice ? (
-            <div className="mt-5 flex flex-col gap-2">
-              {currentQuestion.choices!.map((choice) => {
+            <div className="relative mt-6 flex flex-col gap-2.5">
+              {currentQuestion.choices!.map((choice, index) => {
                 const active = diagnosticChoice === choice;
                 return (
                   <button
@@ -867,49 +927,43 @@ export function CourseGenerator({
                     type="button"
                     onClick={() => setDiagnosticChoice(choice)}
                     aria-pressed={active}
-                    className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left text-sm transition-all active:scale-[0.99] ${
+                    className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left text-sm transition-all duration-200 active:scale-[0.99] ${
                       active
-                        ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
-                        : "border-border-subtle bg-overlay/[0.02] text-foreground hover:bg-overlay/[0.05]"
+                        ? "border-accent-violet/70 bg-accent-violet/[0.12] text-foreground shadow-[0_10px_30px_-16px_var(--glow)]"
+                        : "border-border-subtle bg-overlay/[0.03] text-foreground hover:-translate-y-0.5 hover:border-accent-violet/40 hover:bg-overlay/[0.06]"
                     }`}
                   >
                     <span
                       aria-hidden
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                        active ? "border-accent-violet bg-accent-violet" : "border-border-subtle"
+                      data-mark={active ? "✓" : String.fromCharCode(65 + index)}
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold transition-all before:content-[attr(data-mark)] ${
+                        active
+                          ? "bg-brand text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+                          : "bg-overlay/[0.06] text-foreground-muted group-hover:text-foreground"
                       }`}
-                    >
-                      {active && (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                          <path
-                            d="M1.5 5l2.5 2.5 4.5-5"
-                            stroke="white"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </span>
-                    {choice}
+                    />
+                    <span className="flex-1">{choice}</span>
                   </button>
                 );
               })}
             </div>
           ) : (
-            <div className="mt-5">
+            <div className="relative mt-6">
               <textarea
                 value={diagnosticChoice}
                 onChange={(e) => setDiagnosticChoice(e.target.value.slice(0, MAX_ANSWER_LENGTH))}
                 maxLength={MAX_ANSWER_LENGTH}
-                rows={2}
+                rows={3}
                 placeholder="Ta réponse…"
-                className="w-full resize-none rounded-xl border border-border-subtle bg-overlay/[0.03] px-4 py-3 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none"
+                className="w-full resize-none rounded-2xl border border-border-subtle bg-overlay/[0.03] px-4 py-3.5 text-sm text-foreground placeholder:text-foreground-muted/60 focus:border-accent-violet/60 focus:outline-none focus:ring-4 focus:ring-accent-violet/10"
               />
             </div>
           )}
 
-          <div className="mt-6 flex justify-end border-t border-border-subtle pt-4">
+          <div className="relative mt-7 flex items-center justify-between gap-3 border-t border-border-subtle pt-5">
+            <p className="text-xs text-foreground-muted">
+              {locked ? "Diagnostic 100 % gratuit" : "Quelques questions seulement"}
+            </p>
             <Button
               type="button"
               disabled={!canAdvance}
@@ -918,7 +972,7 @@ export function CourseGenerator({
               Question suivante →
             </Button>
           </div>
-        </Card>
+        </div>
       </div>
     );
   }

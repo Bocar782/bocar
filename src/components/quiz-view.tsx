@@ -312,12 +312,23 @@ function QuestionCard({
   const multiple = isMultipleChoice(question);
   const trueFalse = question.questionType === "true_false";
 
+  const progress = Math.round(((index + 1) / total) * 100);
+
   return (
-    <div>
-      <span className="text-xs font-mono text-accent-violet-light">
-        Question {index + 1}/{total}
-      </span>
-      <h3 className="mt-2 text-lg font-semibold leading-snug text-foreground">
+    <div key={index} className="rise">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-violet-light">
+          Question {index + 1}/{total}
+        </span>
+        <span className="text-xs text-foreground-muted">{progress}%</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-overlay/[0.07]">
+        <div
+          className="bg-brand h-full rounded-full transition-[width] duration-500 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <h3 className="mt-5 text-balance text-xl font-semibold leading-snug text-foreground">
         {question.question}
       </h3>
       {multiple && (
@@ -327,16 +338,17 @@ function QuestionCard({
       )}
 
       {trueFalse ? (
-        <div className="mt-5 grid grid-cols-2 gap-2.5">
+        <div className="mt-6 grid grid-cols-2 gap-3">
           {question.choices.map((choice, i) => (
             <button
               key={i}
               type="button"
               onClick={() => onToggle(i)}
-              className={`rounded-xl border px-4 py-4 text-center text-sm font-medium transition-all active:scale-[0.98] ${
+              aria-pressed={selected.includes(i)}
+              className={`rounded-2xl border px-4 py-5 text-center text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
                 selected.includes(i)
-                  ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
-                  : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
+                  ? "border-accent-violet/70 bg-accent-violet/[0.12] text-foreground shadow-[0_10px_30px_-16px_var(--glow)]"
+                  : "border-border-subtle bg-overlay/[0.03] text-foreground-muted hover:-translate-y-0.5 hover:border-accent-violet/40 hover:text-foreground"
               }`}
             >
               {choice}
@@ -344,49 +356,42 @@ function QuestionCard({
           ))}
         </div>
       ) : (
-        <div className="mt-5 space-y-2.5">
-          {question.choices.map((choice, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onToggle(i)}
-              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${
-                selected.includes(i)
-                  ? "border-accent-violet/60 bg-accent-violet/10 text-foreground"
-                  : "border-border-subtle bg-white/[0.02] text-foreground-muted hover:bg-white/[0.05]"
-              }`}
-            >
-              {multiple && (
+        <div className="mt-6 space-y-2.5">
+          {question.choices.map((choice, i) => {
+            const active = selected.includes(i);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onToggle(i)}
+                aria-pressed={active}
+                className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left text-sm transition-all duration-200 active:scale-[0.99] ${
+                  active
+                    ? "border-accent-violet/70 bg-accent-violet/[0.12] text-foreground shadow-[0_10px_30px_-16px_var(--glow)]"
+                    : "border-border-subtle bg-overlay/[0.03] text-foreground-muted hover:-translate-y-0.5 hover:border-accent-violet/40 hover:text-foreground"
+                }`}
+              >
                 <span
                   aria-hidden
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                    selected.includes(i)
-                      ? "border-accent-violet bg-accent-violet"
-                      : "border-border-subtle"
+                  data-mark={active ? "✓" : String.fromCharCode(65 + i)}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center text-xs font-bold transition-all before:content-[attr(data-mark)] ${
+                    multiple ? "rounded-md" : "rounded-lg"
+                  } ${
+                    active
+                      ? "bg-brand text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]"
+                      : "bg-overlay/[0.06] text-foreground-muted group-hover:text-foreground"
                   }`}
-                >
-                  {selected.includes(i) && (
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                      <path
-                        d="M1.5 5l2.5 2.5 4.5-5"
-                        stroke="white"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </span>
-              )}
-              <span>{choice}</span>
-            </button>
-          ))}
+                />
+                <span className="flex-1">{choice}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-7 flex justify-end border-t border-border-subtle pt-5">
         <Button onClick={onNext} disabled={selected.length === 0}>
-          {index === total - 1 ? "Voir mon score" : "Suivant"}
+          {index === total - 1 ? "Voir mon score" : "Suivant →"}
         </Button>
       </div>
     </div>
