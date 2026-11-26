@@ -44,17 +44,14 @@ export function AudienceBenefits() {
           ))}
         </ul>
         <div className="mt-6">
+          {/* Prompt 06.42 (retour utilisateur réel : un court "à retenir"
+              isolé laissait croire qu'une leçon tenait en une phrase) :
+              seulement le repère de structure (numéro + titre du
+              chapitre), jamais un extrait de contenu qui pourrait passer
+              pour l'intégralité de la leçon. */}
           <MockFrame label="Formation">
             <span className="text-[11px] font-mono text-accent-violet-light">Chapitre 2</span>
             <p className="mt-1 text-sm font-semibold text-foreground">La diversification du portefeuille</p>
-            <div className="mt-2 rounded-lg border border-accent-violet/25 bg-accent-violet/[0.08] p-2.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-violet-light">
-                À retenir
-              </span>
-              <p className="mt-1 text-xs text-foreground-muted">
-                Ne jamais tout miser sur un seul actif ou secteur.
-              </p>
-            </div>
           </MockFrame>
         </div>
       </div>
@@ -79,15 +76,13 @@ export function AudienceBenefits() {
           ))}
         </ul>
         <div className="mt-6">
+          {/* Prompt 06.42 (retour utilisateur réel : un seul échange
+              question/réponse donnait l'impression que le chat se résume
+              à ça) : seulement le champ de saisie, jamais un exemple de
+              conversation qui pourrait passer pour toute l'étendue du chat. */}
           <MockFrame label="Chat avec Tavyra">
-            <div className="space-y-2">
-              <div className="ml-auto max-w-[80%] rounded-lg rounded-tr-sm bg-white/[0.06] px-3 py-2 text-xs text-foreground">
-                C&apos;est quoi un ETF concrètement ?
-              </div>
-              <div className="max-w-[85%] rounded-lg rounded-tl-sm bg-accent-violet/10 px-3 py-2 text-xs text-foreground">
-                Un panier d&apos;actifs que tu achètes en une seule fois, comme un
-                mini-portefeuille déjà diversifié.
-              </div>
+            <div className="rounded-lg border border-border-subtle bg-white/[0.03] px-3 py-2.5 text-xs text-foreground-muted">
+              Pose n&apos;importe quelle question sur ce chapitre...
             </div>
           </MockFrame>
         </div>
