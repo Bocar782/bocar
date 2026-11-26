@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { isOfflineAI } from "@/lib/courses/offline";
 import { getAnthropicApiKey } from "./env";
 
 // Client Anthropic — serveur uniquement. La clé API ne doit jamais atteindre
@@ -20,6 +21,18 @@ import { getAnthropicApiKey } from "./env";
 //   leçons sont désormais écrites par vagues successives (concurrence
 //   limitée à 4, voir generate.ts).
 export function createAnthropicClient() {
+  // Verrou du mode test (voir lib/courses/offline.ts) : même si un chemin
+  // de code oubliait de vérifier isOfflineAI(), aucune requête ne peut
+  // partir vers Anthropic — le client échoue localement, sans réseau.
+  if (isOfflineAI()) {
+    return new Anthropic({
+      apiKey: "mode-test-sans-appel",
+      maxRetries: 0,
+      fetch: async () => {
+        throw new Error("Mode test actif : aucun appel à l'API Anthropic n'est autorisé.");
+      },
+    });
+  }
   return new Anthropic({
     apiKey: getAnthropicApiKey(),
     maxRetries: 2,
