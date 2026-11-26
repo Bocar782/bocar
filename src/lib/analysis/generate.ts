@@ -1,3 +1,5 @@
+import { isOfflineAI } from "@/lib/courses/offline";
+import { offlineBrief, offlineCases, offlineSection, offlineSynthesis } from "./offline";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
@@ -54,6 +56,7 @@ async function parseStructured<Schema extends z.ZodType>(
 // --- Étape 1 : cadrage ---
 
 async function scopeAnalysis(client: Anthropic, topic: string): Promise<AnalysisBrief> {
+  if (isOfflineAI()) return offlineBrief(topic);
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, analyste pédagogique spécialisée dans l'étude de cas réels : parcours d'entrepreneurs, d'entreprises, d'investisseurs, stratégies, réussites et échecs. Tu cadres une demande d'analyse approfondie avant la phase de recherche. Ton rôle est de préparer une vraie recherche structurée, pas une simple reformulation du sujet.",
@@ -96,6 +99,7 @@ async function performResearchTurn(
   brief: AnalysisBrief,
   state: ResearchTurnState | undefined,
 ): Promise<ResearchTurnState> {
+  if (isOfflineAI()) return { messages: [], resumes: 0, findings: "", realSources: [], done: true };
   const system =
     "Tu es Tavyra, chargée de rassembler des cas réels et vérifiables (parcours d'entrepreneurs, entreprises, investisseurs, stratégies, réussites, échecs, événements, données) disponibles publiquement, en lien avec un sujet donné. Utilise l'outil de recherche web pour mener PLUSIEURS recherches distinctes couvrant différents angles (succès, échecs, stratégies, données). Vérifie chaque fait par une recherche avant de l'avancer. N'affirme jamais qu'un cas est réel sans l'avoir confirmé par une recherche.";
   const tools = [
@@ -169,6 +173,7 @@ async function extractVerifiedCases(
   findings: string,
   realSources: { url: string; title: string }[],
 ): Promise<VerifiedCase[]> {
+  if (isOfflineAI()) return offlineCases(brief);
   if (realSources.length === 0) return [];
 
   const sourceList = realSources.map((s) => `- ${s.url} (${s.title})`).join("\n");
@@ -195,6 +200,7 @@ async function writeSection(
   verifiedCase: VerifiedCase,
   otherCases: VerifiedCase[],
 ): Promise<z.infer<typeof DeepSectionSchema>> {
+  if (isOfflineAI()) return offlineSection(brief, verifiedCase);
   const context =
     otherCases.length > 0
       ? `Autres cas traités ailleurs dans cette analyse (pour ne pas te répéter, sans devoir les développer) :\n${otherCases.map((c) => `- ${c.name} (${c.outcome})`).join("\n")}`
@@ -216,6 +222,7 @@ async function writeSynthesis(
   brief: AnalysisBrief,
   sections: DeepAnalysisSection[],
 ): Promise<z.infer<typeof DeepSynthesisSchema>> {
+  if (isOfflineAI()) return offlineSynthesis();
   const casesOverview = sections
     .map((s) => `- ${s.name} (${s.outcome}) : ${s.lessons.join(" / ")}`)
     .join("\n");

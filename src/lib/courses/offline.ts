@@ -50,10 +50,14 @@ function subjectOf(analysis: Analysis): string {
   return analysis.title.split(" : ")[0].toLowerCase();
 }
 
-export function offlineProgramme(analysis: Analysis): Programme {
+export function offlineProgramme(analysis: Analysis, answers?: DiagnosticAnswer[]): Programme {
   const t = subjectOf(analysis);
+  const profile =
+    answers && answers.length > 0
+      ? `\n\n**Ce parcours tient compte de ton diagnostic :**\n${answers.map((a) => `- ${a.question} → *${a.answer}*`).join("\n")}\n\nLe niveau retenu est **${analysis.level}** : ${analysis.level === "débutant" ? "on part de zéro, chaque notion est expliquée pas à pas." : analysis.level === "intermédiaire" ? "on consolide tes bases et on insiste sur la mise en pratique." : "on va droit aux notions avancées et aux arbitrages."}`
+      : "";
   return {
-    introduction: `Cette formation t'accompagne pas à pas dans l'apprentissage de **${t}**, au niveau ${analysis.level}. L'objectif n'est pas d'accumuler des informations, mais de construire une compréhension solide, puis de la transformer en compétence concrète.\n\nLe parcours est organisé en trois modules progressifs : d'abord les fondamentaux et le vocabulaire, ensuite la mise en pratique avec une méthode claire et les erreurs à éviter, enfin l'approfondissement et la construction de ton propre plan d'action. Chaque leçon se termine par un encadré « à retenir », et chaque module par un quiz pour vérifier tes acquis.`,
+    introduction: `Cette formation t'accompagne pas à pas dans l'apprentissage de **${t}**, au niveau ${analysis.level}. L'objectif n'est pas d'accumuler des informations, mais de construire une compréhension solide, puis de la transformer en compétence concrète.\n\nLe parcours est organisé en trois modules progressifs : d'abord les fondamentaux et le vocabulaire, ensuite la mise en pratique avec une méthode claire et les erreurs à éviter, enfin l'approfondissement et la construction de ton propre plan d'action. Chaque leçon se termine par un encadré « à retenir », et chaque module par un quiz pour vérifier tes acquis.${profile}`,
     objectives: [
       `Expliquer avec tes propres mots ce qu'est ${t} et pourquoi c'est important`,
       `Maîtriser le vocabulaire et les principes essentiels de ${t}`,

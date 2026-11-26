@@ -899,7 +899,7 @@ async function buildProgramme(
   adjustmentRequest?: string,
   previousProgramme?: Programme,
 ): Promise<Programme> {
-  if (isOfflineAI()) return offlineProgramme(analysis);
+  if (isOfflineAI()) return offlineProgramme(analysis, diagnosticAnswers);
   const examplesList =
     verifiedExamples.length > 0
       ? verifiedExamples
