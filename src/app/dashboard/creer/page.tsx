@@ -16,7 +16,7 @@ function formatResetDate(iso: string | null): string | null {
 function UsagePill({ label, usage }: { label: string; usage: UsageStatus }) {
   const resetLabel = formatResetDate(usage.resetsAt);
   return (
-    <div className="flex items-center gap-3 rounded-full border border-border-subtle bg-background-card px-4 py-2">
+    <div className="flex items-center gap-3 rounded-full border border-border-subtle bg-background-card/80 px-4 py-2 shadow-[0_8px_24px_-18px_var(--glow)]">
       <span className="text-xs font-medium text-foreground-muted">{label}</span>
       <span className="text-sm font-semibold text-foreground">
         {usage.remaining}/{usage.limit}
@@ -46,7 +46,15 @@ const HOW_IT_WORKS = [
   },
 ];
 
-export default async function CreateCoursePage() {
+const MAX_PREFILLED_TOPIC_LENGTH = 120;
+
+export default async function CreateCoursePage(props: PageProps<"/dashboard/creer">) {
+  const searchParams = await props.searchParams;
+  const rawTopic = searchParams?.sujet;
+  const initialTopic = (Array.isArray(rawTopic) ? rawTopic[0] : rawTopic ?? "")
+    .trim()
+    .slice(0, MAX_PREFILLED_TOPIC_LENGTH);
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -69,7 +77,11 @@ export default async function CreateCoursePage() {
   return (
     <DashboardShell userEmail={user.email ?? ""} isPro={!onFreePlan} onSignOut={signOut}>
       <div className="mx-auto flex w-full max-w-3xl flex-col items-center">
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        <span className="rise inline-flex items-center gap-2 rounded-full border border-accent-violet/30 bg-accent-violet/10 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-violet-light">
+          <span className="bg-brand h-1.5 w-1.5 rounded-full" />
+          Nouvelle formation
+        </span>
+        <h1 className="mt-4 text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Que veux-tu apprendre aujourd&apos;hui ?
         </h1>
         <p className="mt-2 max-w-md text-center text-sm text-foreground-muted">
@@ -89,6 +101,7 @@ export default async function CreateCoursePage() {
             courseLocked={onFreePlan}
             analysisRemainingGenerations={analysisUsage.remaining}
             analysisIsPro={analysisUsage.isPro}
+            initialTopic={initialTopic}
           />
         </div>
 
@@ -100,9 +113,9 @@ export default async function CreateCoursePage() {
             {HOW_IT_WORKS.map((step) => (
               <div
                 key={step.title}
-                className="rounded-2xl border border-border-subtle bg-background-card p-5"
+                className="lift rounded-2xl border border-border-subtle bg-background-card/80 p-5"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
+                <span className="bg-brand flex h-9 w-9 items-center justify-center rounded-lg text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
                   {step.icon}
                 </span>
                 <p className="mt-3 text-sm font-semibold text-foreground">{step.title}</p>

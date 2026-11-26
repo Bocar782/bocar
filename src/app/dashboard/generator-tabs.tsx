@@ -9,11 +9,13 @@ export function GeneratorTabs({
   courseLocked,
   analysisRemainingGenerations,
   analysisIsPro,
+  initialTopic,
 }: {
   courseRemainingGenerations: number;
   courseLocked: boolean;
   analysisRemainingGenerations: number;
   analysisIsPro: boolean;
+  initialTopic?: string;
 }) {
   const [tab, setTab] = useState<"course" | "analysis">("course");
 
@@ -45,7 +47,11 @@ export function GeneratorTabs({
       </div>
 
       {tab === "course" ? (
-        <CourseGenerator remainingGenerations={courseRemainingGenerations} locked={courseLocked} />
+        <CourseGenerator
+          remainingGenerations={courseRemainingGenerations}
+          locked={courseLocked}
+          initialTopic={initialTopic}
+        />
       ) : (
         <AnalysisGenerator
           remainingGenerations={analysisRemainingGenerations}

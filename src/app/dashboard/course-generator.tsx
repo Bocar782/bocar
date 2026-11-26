@@ -207,9 +207,12 @@ type StepResponse = {
 export function CourseGenerator({
   remainingGenerations,
   locked,
+  initialTopic = "",
 }: {
   remainingGenerations: number;
   locked: boolean;
+  /** Sujet pré-rempli depuis une suggestion (`/dashboard/creer?sujet=…`). */
+  initialTopic?: string;
 }) {
   const router = useRouter();
   // Prompt 06.39 (demande explicite : "assure-toi que quand il a
@@ -228,7 +231,7 @@ export function CourseGenerator({
       const draft = loadFreeDraftTopic();
       if (draft) return draft;
     }
-    return "";
+    return initialTopic;
   });
   const [status, setStatus] = useState<Status>(() => (loadStoredGeneration() ? "generating" : "idle"));
   const [stage, setStage] = useState<GenerationStage>("chapitres");

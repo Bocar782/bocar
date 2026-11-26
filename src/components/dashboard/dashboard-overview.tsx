@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { computeCourseProgress } from "@/lib/courses/progress";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PRO_PLAN_MONTHLY_COURSE_LIMIT } from "@/lib/courses/plan";
+import { PRO_PLAN_FEATURES, PRO_PLAN_PRICE_EUR } from "@/lib/courses/plan";
+import { TopicSuggestions } from "@/components/dashboard/topic-suggestions";
 import type { DashboardStats } from "@/lib/dashboard/stats";
 
 type RecentCourse = {
@@ -108,6 +109,10 @@ export function DashboardOverview({
           </div>
         </div>
       </section>
+
+      {recentCourses.length === 0 && (
+        <TopicSuggestions className="rise mt-5" />
+      )}
 
       <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div className="rise" style={{ ["--d" as string]: "80ms" }}>
@@ -240,21 +245,43 @@ export function DashboardOverview({
       </section>
 
       {locked && (
-        <section className="gradient-border relative mt-10 flex flex-col items-center justify-between gap-4 overflow-hidden rounded-2xl bg-accent-violet/[0.08] px-6 py-6 text-center sm:flex-row sm:text-left">
+        <section className="rise relative mt-10 overflow-hidden rounded-3xl border border-accent-violet/30 bg-background-card/80 p-6 sm:p-8">
           <div
             aria-hidden
-            className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full bg-accent-violet/25 blur-3xl"
+            className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-accent-violet/25 blur-3xl"
           />
-          <div className="relative">
-            <p className="text-sm font-semibold text-foreground">Passe au plan Pro</p>
-            <p className="mt-1 text-sm text-foreground-muted">
-              {PRO_PLAN_MONTHLY_COURSE_LIMIT} formations par mois, accès complet à chaque formation et
-              au chat avec Tavyra.
-            </p>
+          <div className="relative grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              <span className="bg-brand inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                Plan Pro
+              </span>
+              <h2 className="mt-3 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+                Débloque tes formations complètes
+              </h2>
+              <ul className="mt-4 grid gap-2.5 text-sm text-foreground sm:grid-cols-2">
+                {PRO_PLAN_FEATURES.map((feature) => (
+                  <li key={feature} className="flex gap-2.5">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">
+                      ✓
+                    </span>
+                    <span className="text-foreground-muted">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-col items-start gap-2 md:items-center">
+              <p className="text-3xl font-semibold tracking-tight text-foreground">
+                {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
+                <span className="text-sm font-normal text-foreground-muted"> / mois</span>
+              </p>
+              <Button href="/checkout" className="w-full md:w-auto">
+                Passer au Pro →
+              </Button>
+              <p className="text-[11px] text-foreground-muted">
+                Paiement sécurisé via Stripe · Résiliation en un clic
+              </p>
+            </div>
           </div>
-          <Button href="/dashboard/profil" className="shrink-0">
-            Voir les offres →
-          </Button>
         </section>
       )}
     </div>

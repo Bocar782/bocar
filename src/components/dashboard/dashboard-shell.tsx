@@ -24,7 +24,7 @@ function SidebarFooter({
     <div className="mt-4 space-y-3">
       {!isPro && (
         <Link
-          href="/dashboard/profil"
+          href="/checkout"
           className="gradient-border group relative block overflow-hidden rounded-2xl bg-accent-violet/[0.1] p-4 transition-colors hover:bg-accent-violet/[0.16]"
         >
           <div
@@ -36,7 +36,7 @@ function SidebarFooter({
             Débloque les formations complètes et le chat avec Tavyra.
           </p>
           <span className="relative mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent-violet-light transition-transform group-hover:translate-x-0.5">
-            Voir les offres →
+            Passer au Pro →
           </span>
         </Link>
       )}
