@@ -1,3 +1,4 @@
+import { isOfflineAI } from "@/lib/courses/offline";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import { createAnthropicClient } from "@/lib/anthropic/client";
@@ -135,6 +136,15 @@ export async function POST(request: Request) {
         // le moindre octet envoyé au navigateur, ce qui produirait une
         // page d'erreur serveur brute au lieu du message "Une erreur est
         // survenue..." déjà prévu ci-dessous pour ce flux en streaming.
+        if (isOfflineAI()) {
+          const chapter = course.chapters[chapterIndex];
+          controller.enqueue(
+            encoder.encode(
+              `Bonne question ! Pour le chapitre « ${chapter?.title ?? course.title} », retiens d'abord l'essentiel : ${chapter?.keyTakeaway ?? "reviens sur les points clés de la leçon."}\n\nAstuce : reformule cette idée avec tes propres mots, puis applique-la sur un petit exemple concret. Si un point reste flou, relis l'exemple de la leçon et refais l'exercice proposé.`,
+            ),
+          );
+          return;
+        }
         const client = createAnthropicClient();
         const anthropicStream = client.messages.stream({
           model: MODEL,

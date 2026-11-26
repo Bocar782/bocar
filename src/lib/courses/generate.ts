@@ -3,6 +3,15 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { createAnthropicClient } from "@/lib/anthropic/client";
 import {
+  isOfflineAI,
+  offlineAnalysis,
+  offlineChapter,
+  offlineFinalQuiz,
+  offlineModuleQuiz,
+  offlineProgramme,
+  offlineSummary,
+} from "./offline";
+import {
   AnalysisSchema,
   ChapterContentSchema,
   CourseSummarySchema,
@@ -186,6 +195,7 @@ async function analyzeTopic(
   topic: string,
   diagnosticAnswers?: DiagnosticAnswer[],
 ): Promise<Analysis> {
+  if (isOfflineAI()) return offlineAnalysis(topic, diagnosticAnswers);
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
@@ -685,6 +695,9 @@ export async function generateAdaptiveDiagnosticQuestion(
   topic: string,
   previousAnswers: DiagnosticAnswer[],
 ): Promise<{ question: DiagnosticQuestion | null; unclear: boolean }> {
+  if (isOfflineAI()) {
+    return { question: generateFreeDiagnosticQuestion(topic, previousAnswers), unclear: false };
+  }
   if (previousAnswers.length >= MAX_DIAGNOSTIC_QUESTIONS) {
     return { question: null, unclear: false };
   }
@@ -733,6 +746,7 @@ async function searchRealExamples(
   client: Anthropic,
   analysis: Analysis,
 ): Promise<{ findings: string; realSources: { url: string; title: string }[] }> {
+  if (isOfflineAI()) return { findings: "", realSources: [] };
   const system =
     "Tu es Tavyra, chargée de trouver des exemples réels et vérifiables (vraies entreprises, personnes, événements, statistiques) pour illustrer une formation. Utilise l'outil de recherche web pour vérifier chaque fait avant de l'avancer. N'affirme jamais qu'un exemple est réel sans l'avoir confirmé par une recherche.";
   const user = `Sujet de la formation : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}).\n\nTrouve entre ${Math.min(8, analysis.moduleCount * 2 + 2)} et 8 exemples réels et vérifiables pertinents pour illustrer différents aspects de ce sujet. Pour chacun : cherche sur le web pour vérifier les faits, puis décris ce que l'exemple illustre et quel aspect du sujet il concerne. Cite explicitement l'URL exacte de ta source pour chaque exemple.`;
@@ -885,6 +899,7 @@ async function buildProgramme(
   adjustmentRequest?: string,
   previousProgramme?: Programme,
 ): Promise<Programme> {
+  if (isOfflineAI()) return offlineProgramme(analysis);
   const examplesList =
     verifiedExamples.length > 0
       ? verifiedExamples
@@ -1020,6 +1035,7 @@ export async function writeChapter(
   plan: FlatChapterPlan,
   assignedExample: VerifiedExample | null,
 ): Promise<ChapterContent> {
+  if (isOfflineAI()) return offlineChapter(analysis, plan);
   // Les leçons sont rédigées en parallèle (latence) : chacune reçoit le
   // plan complet (groupé par module) pour se situer dans la progression,
   // plutôt que le contenu déjà écrit des précédentes.
@@ -1059,6 +1075,7 @@ async function writeSummary(
   programme: Programme,
   chapters: GeneratedChapter[],
 ): Promise<CourseSummary> {
+  if (isOfflineAI()) return offlineSummary(analysis, chapters);
   const takeaways = chapters
     .map((c) => `- ${c.title} : ${c.keyTakeaway}`)
     .join("\n");
@@ -1157,6 +1174,7 @@ async function writeQuiz(
   chapters: GeneratedChapter[],
   moduleQuestions: QuizQuestion[],
 ): Promise<QuizQuestion[]> {
+  if (isOfflineAI()) return offlineFinalQuiz();
   const fullContent = chapters
     .map(
       (c, i) =>
@@ -1225,6 +1243,10 @@ async function writeModuleQuiz(
   moduleTitle: string,
   moduleChapters: GeneratedChapter[],
 ): Promise<QuizQuestion[]> {
+  if (isOfflineAI()) {
+    const index = moduleTitle.startsWith("Mettre") ? 1 : moduleTitle.startsWith("Approfondir") ? 2 : 0;
+    return offlineModuleQuiz(index);
+  }
   const fullContent = moduleChapters
     .map(
       (c, i) =>
