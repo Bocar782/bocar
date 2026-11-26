@@ -46,14 +46,14 @@ export function WowDemo() {
     <div className="relative mx-auto w-full max-w-4xl">
       <div
         aria-hidden
-        className="absolute -inset-4 -z-10 rounded-[40px] bg-gradient-to-br from-accent-blue/20 via-transparent to-accent-violet/20 blur-2xl"
+        className="absolute -inset-6 -z-10 rounded-[40px] bg-gradient-to-br from-accent-violet/30 via-transparent to-[#d946ef]/20 blur-3xl"
       />
-      <div className="overflow-hidden rounded-[28px] border border-border-subtle bg-background-elevated/80 shadow-[0_40px_120px_-40px_rgba(76,124,243,0.35)] backdrop-blur-xl">
+      <div className="glass-solid gradient-border overflow-hidden rounded-[28px]">
         {/* Barre de fenêtre, pour ancrer visuellement "produit réel" */}
         <div className="flex items-center gap-1.5 border-b border-border-subtle px-5 py-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
-          <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
-          <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]/70" />
           <span className="ml-3 text-xs text-foreground-muted">dashboard.tavyra.app</span>
         </div>
 

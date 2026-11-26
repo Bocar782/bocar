@@ -44,7 +44,7 @@ export function ComparisonTable() {
         <div className="grid grid-cols-[1.6fr_1fr_1fr_1fr] items-center gap-2 border-b border-border-subtle bg-white/[0.02] px-4 py-4 sm:px-6">
           <span className="text-xs font-medium text-foreground-muted">&nbsp;</span>
           <span className="flex items-center justify-center gap-1.5 text-center text-sm font-semibold text-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-br from-accent-blue to-accent-violet" />
+            <span className="h-1.5 w-1.5 rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to" />
             Tavyra
           </span>
           <span className="text-center text-xs text-foreground-muted">Chatbot</span>

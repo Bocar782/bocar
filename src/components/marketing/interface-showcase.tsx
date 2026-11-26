@@ -15,13 +15,13 @@ export function MockFrame({
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-xl border border-border-subtle bg-background-card ${className}`}
+      className={`glass-card overflow-hidden rounded-xl ${className}`}
       style={style}
     >
       <div className="flex items-center gap-1.5 border-b border-border-subtle px-4 py-2.5">
-        <span className="h-2 w-2 rounded-full bg-white/10" />
-        <span className="h-2 w-2 rounded-full bg-white/10" />
-        <span className="h-2 w-2 rounded-full bg-white/10" />
+        <span className="h-2 w-2 rounded-full bg-[#ff5f57]/70" />
+        <span className="h-2 w-2 rounded-full bg-[#febc2e]/70" />
+        <span className="h-2 w-2 rounded-full bg-[#28c840]/70" />
         <span className="ml-2 text-[11px] text-foreground-muted">{label}</span>
       </div>
       <div className="p-4 sm:p-5">{children}</div>
@@ -50,7 +50,7 @@ export function InterfaceShowcase() {
               <p className="truncate text-xs font-medium text-foreground">{course.title}</p>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet"
+                  className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to"
                   style={{ width: `${course.pct}%` }}
                 />
               </div>
@@ -65,7 +65,7 @@ export function InterfaceShowcase() {
           Les bases de l&apos;investissement
         </p>
         <div className="mt-4 flex justify-end">
-          <span className="rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2 text-xs font-semibold text-white">
+          <span className="rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-4 py-2 text-xs font-semibold text-white">
             Générer ma formation
           </span>
         </div>

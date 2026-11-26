@@ -25,7 +25,7 @@ export function GeneratorTabs({
           onClick={() => setTab("course")}
           className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
             tab === "course"
-              ? "bg-gradient-to-r from-accent-blue to-accent-violet text-white"
+              ? "bg-gradient-to-r from-brand-from via-brand-via to-brand-to text-white"
               : "text-foreground-muted hover:text-foreground"
           }`}
         >
@@ -36,7 +36,7 @@ export function GeneratorTabs({
           onClick={() => setTab("analysis")}
           className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
             tab === "analysis"
-              ? "bg-gradient-to-r from-accent-blue to-accent-violet text-white"
+              ? "bg-gradient-to-r from-brand-from via-brand-via to-brand-to text-white"
               : "text-foreground-muted hover:text-foreground"
           }`}
         >

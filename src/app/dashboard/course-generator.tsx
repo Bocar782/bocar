@@ -816,7 +816,7 @@ export function CourseGenerator({
               >
                 <span
                   aria-hidden
-                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white"
+                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to text-white"
                 >
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
                     <path
@@ -964,7 +964,7 @@ export function CourseGenerator({
                 className="overflow-hidden rounded-2xl border border-border-subtle bg-overlay/[0.02]"
               >
                 <div className="flex items-center gap-3 border-b border-border-subtle bg-overlay/[0.02] px-4 py-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-[11px] font-semibold text-white">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to text-[11px] font-semibold text-white">
                     {moduleIndex + 1}
                   </span>
                   <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">

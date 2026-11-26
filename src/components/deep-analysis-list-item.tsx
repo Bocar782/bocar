@@ -14,7 +14,7 @@ type DeepAnalysisListItemData = {
 export function DeepAnalysisListItem({ analysis }: { analysis: DeepAnalysisListItemData }) {
   return (
     <li className="h-full">
-      <Card padding="sm" className="flex h-full flex-col">
+      <Card padding="sm" className="lift flex h-full flex-col">
         <div className="flex items-start justify-between gap-2">
           <CourseCover
             seed={analysis.id}

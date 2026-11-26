@@ -161,7 +161,7 @@ export function AssistantChatPanel({
         {messages.map((message, i) => (
           <div key={i} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
             {message.role === "user" ? (
-              <p className="max-w-[85%] rounded-2xl rounded-tr-sm bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-2 text-sm text-white shadow-[0_4px_16px_-6px_var(--accent-violet)]">
+              <p className="max-w-[85%] rounded-2xl rounded-tr-sm bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-3.5 py-2 text-sm text-white shadow-[0_4px_16px_-6px_var(--accent-violet)]">
                 {message.content}
               </p>
             ) : message.content ? (
@@ -196,7 +196,7 @@ export function AssistantChatPanel({
         <button
           type="submit"
           disabled={isStreaming || !input.trim()}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-accent-blue to-accent-violet text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
           aria-label="Envoyer"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

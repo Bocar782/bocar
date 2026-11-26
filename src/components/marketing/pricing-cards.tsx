@@ -23,11 +23,11 @@ export function PricingCards({
 }) {
   return (
     <div className="grid w-full gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      <Card padding="md">
+      <Card padding="md" className="h-full">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
           Gratuit
         </h3>
-        <p className="mt-3 text-3xl font-semibold text-foreground">0 €</p>
+        <p className="mt-3 text-4xl font-semibold tracking-tight text-foreground">0 €</p>
         <p className="mt-1 text-sm text-foreground-muted">
           Pour découvrir Tavyra sans engagement.
         </p>
@@ -35,7 +35,7 @@ export function PricingCards({
         <ul className="mt-6 space-y-3 text-sm text-foreground">
           {FREE_PLAN_FEATURES.map((feature) => (
             <li key={feature} className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">✓</span>
               <span>{feature}</span>
             </li>
           ))}
@@ -56,52 +56,54 @@ export function PricingCards({
         )}
       </Card>
 
-      <Card variant="elevated" className="relative h-full">
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_20px_-4px_var(--accent-violet)]">
-          Recommandé
-        </span>
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
-          Pro
-        </h3>
-        <p className="mt-3 text-3xl font-semibold text-foreground">
-          {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
-          <span className="text-base font-normal text-foreground-muted"> / mois</span>
-        </p>
-        <p className="mt-1 text-sm text-foreground-muted">Pour aller plus loin, chaque mois.</p>
+      <div className="spin-border h-full rounded-2xl">
+        <div className="relative h-full rounded-2xl bg-background-elevated p-6 sm:p-8">
+          <span className="bg-brand absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_20px_-4px_var(--glow)]">
+            Recommandé
+          </span>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
+            Pro
+          </h3>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-foreground">
+            {PRO_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
+            <span className="text-base font-normal text-foreground-muted"> / mois</span>
+          </p>
+          <p className="mt-1 text-sm text-foreground-muted">Pour aller plus loin, chaque mois.</p>
 
-        <ul className="mt-6 space-y-3 text-sm text-foreground">
-          {PRO_PLAN_FEATURES.map((feature) => (
-            <li key={feature} className="flex gap-2.5">
-              <span className="mt-0.5 text-accent-violet-light">✓</span>
-              <span>{feature}</span>
-            </li>
-          ))}
-        </ul>
+          <ul className="mt-6 space-y-3 text-sm text-foreground">
+            {PRO_PLAN_FEATURES.map((feature) => (
+              <li key={feature} className="flex gap-2.5">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">✓</span>
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
 
-        {!user && (
-          <Button href="/login" fullWidth className="mt-8">
-            Se connecter pour s&apos;abonner
-          </Button>
-        )}
-        {/* Prompt 06.28 : simple navigation vers /checkout (paiement intégré
-            sur ce site), plus de soumission directe vers /api/stripe/checkout
-            — cette route ne redirige plus (voir route.ts, ui_mode: "embedded"). */}
-        {user && onFreePlan && (
-          <Button href="/checkout" fullWidth className="mt-8">
-            S&apos;abonner
-          </Button>
-        )}
-        {user && !onFreePlan && (
-          <div className="mt-8 space-y-2">
-            <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
-              Ton plan actuel
+          {!user && (
+            <Button href="/login" fullWidth className="mt-8">
+              Se connecter pour s&apos;abonner
+            </Button>
+          )}
+          {/* Prompt 06.28 : simple navigation vers /checkout (paiement intégré
+              sur ce site), plus de soumission directe vers /api/stripe/checkout
+              — cette route ne redirige plus (voir route.ts, ui_mode: "embedded"). */}
+          {user && onFreePlan && (
+            <Button href="/checkout" fullWidth className="mt-8">
+              S&apos;abonner
+            </Button>
+          )}
+          {user && !onFreePlan && (
+            <div className="mt-8 space-y-2">
+              <div className="rounded-full border border-accent-violet/30 bg-accent-violet/10 px-5 py-2.5 text-center text-sm text-accent-violet-light">
+                Ton plan actuel
+              </div>
+              <StripeSubmitForm action="/api/stripe/portal" variant="secondary" fullWidth>
+                Gérer mon abonnement
+              </StripeSubmitForm>
             </div>
-            <StripeSubmitForm action="/api/stripe/portal" variant="secondary" fullWidth>
-              Gérer mon abonnement
-            </StripeSubmitForm>
-          </div>
-        )}
-      </Card>
+          )}
+        </div>
+      </div>
 
       {/* Affichage seul — aucun prix Stripe ni entitlement réel pour
           l'instant (voir plan.ts), donc bouton désactivé plutôt qu'un
@@ -110,7 +112,7 @@ export function PricingCards({
         <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
           Expert
         </h3>
-        <p className="mt-3 text-3xl font-semibold text-foreground">
+        <p className="mt-3 text-4xl font-semibold tracking-tight text-foreground">
           {EXPERT_PLAN_PRICE_EUR.toFixed(2).replace(".", ",")} €
           <span className="text-base font-normal text-foreground-muted"> / mois</span>
         </p>

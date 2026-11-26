@@ -45,15 +45,23 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             href={item.href}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors ${
+            className={`group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ${
               active
-                ? "bg-gradient-to-r from-accent-blue/15 to-accent-violet/15 text-foreground"
-                : "text-foreground-muted hover:bg-overlay/[0.04] hover:text-foreground"
+                ? "bg-accent-violet/[0.12] text-foreground shadow-[inset_0_0_0_1px_rgba(167,139,250,0.18)]"
+                : "text-foreground-muted hover:translate-x-0.5 hover:bg-overlay/[0.05] hover:text-foreground"
             }`}
           >
+            {active && (
+              <span
+                aria-hidden
+                className="bg-brand absolute -left-4 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full shadow-[0_0_12px_var(--glow)]"
+              />
+            )}
             <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                active ? "bg-accent-violet/20 text-accent-violet-light" : "text-foreground-muted"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                active
+                  ? "bg-brand text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_6px_16px_-8px_var(--glow)]"
+                  : "text-foreground-muted group-hover:text-foreground"
               }`}
             >
               <Icon width={18} height={18} />

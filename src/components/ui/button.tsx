@@ -4,16 +4,14 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "reac
 export type ButtonVariant = "primary" | "secondary" | "ghost";
 export type ButtonSize = "sm" | "md";
 
-// Styles réellement déjà utilisés partout dans l'app (Prompt 05.14) —
-// centralisés ici tels quels, aucune nouvelle couleur/forme introduite :
-// - primary : pilule dégradée bleu → violet (CTA principal).
+// - primary : pilule au dégradé de marque, reflet qui balaie au survol
+//   (voir .btn-brand dans globals.css).
 // - secondary : pilule à bordure translucide (action secondaire).
 // - ghost : texte seul, sans fond ni bordure (action discrète).
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary:
-    "bg-gradient-to-r from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] hover:brightness-110",
+  primary: "btn-brand text-white",
   secondary:
-    "border border-border-subtle bg-overlay/5 text-foreground backdrop-blur hover:bg-overlay/10",
+    "border border-border-subtle bg-overlay/[0.04] text-foreground backdrop-blur hover:border-accent-violet/40 hover:bg-overlay/[0.08]",
   ghost: "text-foreground-muted hover:text-foreground",
 };
 
@@ -23,7 +21,7 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 };
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-violet/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40";
 
 function buttonClassName(variant: ButtonVariant, size: ButtonSize, fullWidth?: boolean, className = "") {
   return [

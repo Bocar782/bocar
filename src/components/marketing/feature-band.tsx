@@ -1,10 +1,7 @@
 import { IconBrain, IconCheck, IconExample, IconTarget } from "./icons";
 
-// Prompt 05.27 : bandeau à filets, sans cartes — rupture volontaire avec le
-// motif "carte à bordure/rayon" répété ailleurs sur la page (voir
-// benefits.tsx, dont les 4 premiers bénéfices sont repris ici tels quels,
-// déjà vérifiés comme réels). Desktop/laptop : une ligne, filets verticaux.
-// Tablette : 2x2. Mobile : liste verticale, filets horizontaux.
+// Les 4 bénéfices déjà vérifiés comme réels (voir benefits.tsx), présentés
+// en cartes de verre avec une puce lumineuse.
 const FEATURES = [
   {
     Icon: IconTarget,
@@ -30,14 +27,23 @@ const FEATURES = [
 
 export function FeatureBand() {
   return (
-    <div className="grid grid-cols-1 divide-y divide-border-subtle sm:grid-cols-2 sm:gap-x-10 lg:grid-cols-4 lg:gap-x-0 lg:divide-x lg:divide-y-0">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {FEATURES.map((feature) => (
-        <div key={feature.title} className="flex flex-col gap-2.5 py-6 first:pt-0 lg:px-8 lg:py-0 lg:first:pl-0">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#8b5cf6] to-accent-violet text-white shadow-[0_4px_14px_-6px_rgba(147,51,234,0.55)]">
-            <feature.Icon width={16} height={16} />
+        <div
+          key={feature.title}
+          className="glass-card lift group relative overflow-hidden rounded-2xl p-6"
+        >
+          <div
+            aria-hidden
+            className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-accent-violet/20 opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100"
+          />
+          <span className="bg-brand relative flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_20px_-8px_var(--glow)]">
+            <feature.Icon width={20} height={20} />
           </span>
-          <h3 className="text-sm font-semibold text-foreground">{feature.title}</h3>
-          <p className="text-sm leading-relaxed text-foreground-muted">{feature.description}</p>
+          <h3 className="relative mt-5 text-base font-semibold text-foreground">{feature.title}</h3>
+          <p className="relative mt-2 text-sm leading-relaxed text-foreground-muted">
+            {feature.description}
+          </p>
         </div>
       ))}
     </div>

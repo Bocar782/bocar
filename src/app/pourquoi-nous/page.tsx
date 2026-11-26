@@ -100,7 +100,7 @@ export default function WhyWeExistPage() {
         <div className="mt-20 flex justify-center">
           <Link
             href="/signup"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-7 py-3.5 text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
           >
             Créer ma première formation →
           </Link>

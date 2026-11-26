@@ -33,7 +33,7 @@ export function StickyMobileCta() {
     >
       <Link
         href="/signup"
-        className="flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgba(147,51,234,0.55)]"
+        className="btn-brand flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white"
       >
         Essayer gratuitement →
       </Link>

@@ -99,7 +99,7 @@ export function LibraryBrowser({
               onClick={() => setFilter(value)}
               className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
                 filter === value
-                  ? "bg-gradient-to-r from-accent-blue to-accent-violet text-white"
+                  ? "bg-gradient-to-r from-brand-from via-brand-via to-brand-to text-white"
                   : "text-foreground-muted hover:text-foreground"
               }`}
             >

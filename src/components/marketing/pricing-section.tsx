@@ -43,7 +43,7 @@ export function PricingSection() {
           className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/50 via-white/10 to-accent-violet/50"
         />
         <div className="relative h-full rounded-[28px] bg-background-elevated/95 p-6 sm:p-8">
-          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_20px_-4px_var(--accent-violet)]">
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-[0_4px_20px_-4px_var(--accent-violet)]">
             Recommandé
           </span>
           <h3 className="text-sm font-semibold uppercase tracking-wide text-accent-violet-light">
@@ -66,7 +66,7 @@ export function PricingSection() {
 
           <Link
             href="/signup"
-            className="mt-8 block rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
+            className="mt-8 block rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-5 py-2.5 text-center text-sm font-semibold text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:brightness-110"
           >
             Commencer avec Pro
           </Link>

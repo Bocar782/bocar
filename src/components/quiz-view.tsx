@@ -187,7 +187,7 @@ export function QuizView({
             <div>
               <div className="h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet transition-[width] duration-500 ease-out"
+                  className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to transition-[width] duration-500 ease-out"
                   style={{ width: `${((currentIndex + 1) / quiz.length) * 100}%` }}
                 />
               </div>

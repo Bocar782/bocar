@@ -26,19 +26,19 @@ export function AudienceBenefits() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       {/* Étudiants : carte, texte en haut, aperçu en bas. Prompt 05.30 :
           petit filet dégradé brillant en haut de carte. */}
-      <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
+      <div className="glass-card gradient-border lift relative overflow-hidden rounded-2xl p-7 sm:p-8">
         <div
           aria-hidden
-          className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] via-accent-violet to-[#8b5cf6]"
+          className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent-violet/20 blur-3xl"
         />
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
+        <span className="bg-brand relative flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_20px_-8px_var(--glow)]">
           <IconGraduationCap width={20} height={20} />
         </span>
-        <h3 className="mt-4 text-lg font-semibold text-foreground">Pour les élèves et étudiants</h3>
+        <h3 className="relative mt-5 text-lg font-semibold text-foreground">Pour les élèves et étudiants</h3>
         <ul className="mt-4 space-y-3 text-sm leading-relaxed text-foreground-muted">
           {STUDENT_POINTS.map((point) => (
             <li key={point} className="flex gap-2.5">
-              <span className="mt-0.5 shrink-0 text-accent-violet">✓</span>
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">✓</span>
               <span>{point}</span>
             </li>
           ))}
@@ -58,19 +58,19 @@ export function AudienceBenefits() {
 
       {/* Entrepreneurs : même carte que les étudiants (Prompt 05.34) —
           texte en haut, aperçu en bas, même filet dégradé. */}
-      <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-background-card p-7 shadow-[0_1px_2px_rgba(28,26,34,0.04),0_8px_24px_-16px_rgba(28,26,34,0.12)] sm:p-8">
+      <div className="glass-card gradient-border lift relative overflow-hidden rounded-2xl p-7 sm:p-8">
         <div
           aria-hidden
-          className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] via-accent-violet to-[#8b5cf6]"
+          className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent-violet/20 blur-3xl"
         />
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-violet-tint text-accent-violet">
+        <span className="bg-brand relative flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_20px_-8px_var(--glow)]">
           <IconRocket width={20} height={20} />
         </span>
-        <h3 className="mt-4 text-lg font-semibold text-foreground">Pour les entrepreneurs</h3>
+        <h3 className="relative mt-5 text-lg font-semibold text-foreground">Pour les entrepreneurs</h3>
         <ul className="mt-4 space-y-3 text-sm leading-relaxed text-foreground-muted">
           {ENTREPRENEUR_POINTS.map((point) => (
             <li key={point} className="flex gap-2.5">
-              <span className="mt-0.5 shrink-0 text-accent-violet">✓</span>
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-violet/20 text-[11px] text-accent-violet-light">✓</span>
               <span>{point}</span>
             </li>
           ))}

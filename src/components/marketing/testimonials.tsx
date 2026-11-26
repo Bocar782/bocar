@@ -107,23 +107,27 @@ export function Testimonials() {
       {TESTIMONIALS.map((t) => (
         <figure
           key={t.name}
-          className="flex flex-col rounded-2xl border border-border-subtle bg-background-card p-6"
+          className="glass-card lift relative flex flex-col overflow-hidden rounded-2xl p-6"
         >
-          <blockquote className="flex-1 text-sm leading-relaxed text-foreground-muted">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute right-5 top-2 font-display text-6xl leading-none text-accent-violet/25"
+          >
+            &rdquo;
+          </span>
+          <StarRating rating={t.rating} />
+          <blockquote className="mt-4 flex-1 text-sm leading-relaxed text-foreground/85">
             {t.quote}
           </blockquote>
-          <figcaption className="mt-5 flex items-center gap-3">
+          <figcaption className="mt-5 flex items-center gap-3 border-t border-border-subtle pt-4">
             <Image
               src={t.photo}
               alt=""
               width={40}
               height={40}
-              className="h-10 w-10 shrink-0 rounded-full object-cover"
+              className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-accent-violet/40"
             />
-            <div className="min-w-0">
-              <span className="block text-sm font-semibold text-foreground">{t.name}</span>
-              <StarRating rating={t.rating} />
-            </div>
+            <span className="block text-sm font-semibold text-foreground">{t.name}</span>
           </figcaption>
         </figure>
       ))}

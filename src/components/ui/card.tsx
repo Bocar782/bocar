@@ -11,7 +11,7 @@ const PADDING_CLASSES: Record<CardPadding, string> = {
 /**
  * Bloc de contenu partagé (Prompt 05.14) : regroupe les quelques styles de
  * carte déjà répétés tels quels dans toute l'app, rien de nouveau.
- * - default : carte neutre (`rounded-2xl border-subtle bg-overlay/[0.02]`),
+ * - default : carte neutre (fond de carte légèrement surélevé),
  *   la plus utilisée (listes, grilles, panneaux).
  * - elevated : grand panneau à bordure dégradée (quiz, résumé, historique) —
  *   même motif à 3 calques partout (bordure dégradée + fond élevé).
@@ -38,7 +38,7 @@ export function Card({
       <div className={`relative rounded-[28px] p-px ${className}`}>
         <div
           aria-hidden
-          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-accent-blue/40 via-overlay/10 to-accent-violet/40"
+          className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-brand-from/50 via-overlay/10 to-brand-to/50"
         />
         <div className={`relative rounded-[28px] bg-background-elevated/90 ${PADDING_CLASSES[padding]}`}>
           {children}
@@ -78,7 +78,9 @@ export function Card({
   }
 
   return (
-    <div className={`rounded-2xl border border-border-subtle bg-overlay/[0.02] ${PADDING_CLASSES[padding]} ${className}`}>
+    <div
+      className={`rounded-2xl border border-border-subtle bg-background-card/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(16,12,40,0.04),0_16px_40px_-28px_rgba(16,12,40,0.35)] ${PADDING_CLASSES[padding]} ${className}`}
+    >
       {children}
     </div>
   );

@@ -15,7 +15,7 @@ export function Faq({ items = FAQ_ITEMS }: { items?: typeof FAQ_ITEMS }) {
         return (
           <div
             key={item.question}
-            className="overflow-hidden rounded-2xl border border-border-subtle bg-white/[0.02]"
+            className={`glass-card overflow-hidden rounded-2xl transition-colors duration-300 ${isOpen ? "border-accent-violet/40" : ""}`}
           >
             <button
               type="button"
@@ -25,7 +25,7 @@ export function Faq({ items = FAQ_ITEMS }: { items?: typeof FAQ_ITEMS }) {
             >
               <span className="text-sm font-medium text-foreground">{item.question}</span>
               <span
-                className={`shrink-0 text-accent-violet-light transition-transform duration-300 ${isOpen ? "rotate-45" : ""}`}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-base transition-all duration-300 ${isOpen ? "bg-brand rotate-45 text-white" : "bg-accent-violet/15 text-accent-violet-light"}`}
                 aria-hidden
               >
                 +

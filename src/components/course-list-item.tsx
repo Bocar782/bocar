@@ -33,7 +33,7 @@ export function CourseListItem({ course }: { course: CourseListItemData }) {
 
   return (
     <li className="h-full">
-      <Card padding="sm" className="flex h-full flex-col">
+      <Card padding="sm" className="lift flex h-full flex-col">
         <div className="flex items-start justify-between gap-2">
           <CourseCover
             seed={course.id}
@@ -53,7 +53,7 @@ export function CourseListItem({ course }: { course: CourseListItemData }) {
         <div className="mt-4 flex items-center gap-3">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-overlay/[0.06]">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet"
+              className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to"
               style={{ width: `${percent}%` }}
             />
           </div>

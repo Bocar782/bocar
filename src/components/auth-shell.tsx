@@ -19,12 +19,15 @@ export function AuthShell({
       <BackgroundGlow />
 
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16">
-        <Link href="/" className="mb-8 flex items-center gap-2">
+        <Link href="/" className="rise mb-8 flex items-center gap-2">
           <BrandMark size={32} />
           <span className="text-lg font-semibold tracking-tight">Tavyra</span>
         </Link>
 
-        <div className="w-full max-w-md rounded-[28px] border border-border-subtle bg-background-elevated/80 p-8 shadow-[0_20px_60px_-20px_rgba(76,124,243,0.25)] backdrop-blur-xl">
+        <div
+          className="rise gradient-border w-full max-w-md rounded-[28px] bg-background-elevated/80 p-8 shadow-[0_30px_80px_-30px_var(--glow)] backdrop-blur-xl"
+          style={{ ["--d" as string]: "80ms" }}
+        >
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {subtitle && (
             <p className="mt-2 text-sm text-foreground-muted">{subtitle}</p>

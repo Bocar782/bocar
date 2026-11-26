@@ -112,7 +112,7 @@ export function ChapterChat({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Fermer le chat avec Tavyra" : "Ouvrir le chat avec Tavyra"}
-        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:scale-105 hover:shadow-[0_10px_40px_-6px_var(--accent-violet)] sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
+        className="fixed bottom-4 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to text-white shadow-[0_8px_30px_-8px_var(--accent-violet)] transition-all hover:scale-105 hover:shadow-[0_10px_40px_-6px_var(--accent-violet)] sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
       >
         {open ? (
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -183,7 +183,7 @@ export function ChapterChat({
                   className={message.role === "user" ? "flex justify-end" : "flex justify-start"}
                 >
                   {message.role === "user" ? (
-                    <p className="max-w-[85%] rounded-2xl rounded-tr-sm bg-gradient-to-r from-accent-blue to-accent-violet px-3.5 py-2 text-sm text-white shadow-[0_4px_16px_-6px_var(--accent-violet)]">
+                    <p className="max-w-[85%] rounded-2xl rounded-tr-sm bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-3.5 py-2 text-sm text-white shadow-[0_4px_16px_-6px_var(--accent-violet)]">
                       {message.content}
                     </p>
                   ) : message.content ? (
@@ -218,7 +218,7 @@ export function ChapterChat({
               <button
                 type="submit"
                 disabled={isStreaming || !input.trim()}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-accent-blue to-accent-violet text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to text-white transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
                 aria-label="Envoyer"
               >
                 <svg width="15" height="15" viewBox="0 0 16 16" fill="none">

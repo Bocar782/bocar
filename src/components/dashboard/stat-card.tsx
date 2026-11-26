@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Sparkline } from "./charts";
+import { CountUp } from "./count-up";
 
 // Prompt 06.2 : carte de stat façon "Wallet" (maquette de référence
 // fournie par l'utilisateur) — icône sur puce dégradée colorée, valeur,
@@ -18,7 +19,7 @@ export function StatCard({
   sparklineColor,
 }: {
   icon: ReactNode;
-  /** Classes Tailwind du dégradé de la puce icône, ex. "from-accent-blue to-accent-violet". */
+  /** Classes Tailwind du dégradé de la puce icône, ex. "from-brand-from via-brand-via to-brand-to". */
   gradient: string;
   label: string;
   value: string;
@@ -28,10 +29,14 @@ export function StatCard({
   sparklineColor?: string;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border-subtle bg-background-card p-5">
+    <div className="lift group relative h-full overflow-hidden rounded-2xl border border-border-subtle bg-background-card/80 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_40px_-28px_rgba(16,12,40,0.35)]">
+      <div
+        aria-hidden
+        className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br opacity-20 blur-2xl transition-opacity duration-500 group-hover:opacity-40 ${gradient}`}
+      />
       <div className="flex items-start justify-between gap-2">
         <span
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-[0_6px_18px_-8px_rgba(139,92,246,0.55)] ${gradient}`}
+          className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_8px_20px_-10px_var(--glow)] ${gradient}`}
         >
           {icon}
         </span>
@@ -48,11 +53,13 @@ export function StatCard({
         )}
       </div>
 
-      <p className="mt-4 text-xs font-medium text-foreground-muted">{label}</p>
+      <p className="relative mt-4 text-xs font-medium text-foreground-muted">{label}</p>
 
       <div className="mt-1 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-2xl font-semibold text-foreground">{value}</p>
+          <p className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-[1.7rem]">
+            <CountUp value={value} />
+          </p>
           {sublabel && <p className="mt-0.5 truncate text-xs text-foreground-muted">{sublabel}</p>}
         </div>
         {/* Masquée sous sm : sur une grille 2 colonnes en mobile, la carte

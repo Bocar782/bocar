@@ -1,39 +1,34 @@
 @import "tailwindcss";
 
+/* Identité visuelle Tavyra (refonte design) : une seule famille de violets,
+   alignée sur le logo (lavande clair → violet profond). --accent-blue reste
+   disponible pour les graphiques uniquement, jamais comme couleur de marque. */
 :root {
-  --background: #06070f;
-  --background-elevated: #0b0d1c;
-  --foreground: #f4f4fb;
-  --foreground-muted: #9797ad;
-  --border-subtle: rgba(255, 255, 255, 0.08);
+  --background: #0e0b1d;
+  --background-elevated: #151229;
+  --background-card: #1a1631;
+  --foreground: #f5f3ff;
+  --foreground-muted: #a9a3c7;
+  --border-subtle: rgba(196, 181, 253, 0.11);
   --accent-violet: #8b5cf6;
   --accent-violet-light: #c4b5fd;
-  --accent-blue: #4c7cf3;
-  --accent-blue-light: #7fa6ff;
-  /* Rôles ajoutés au Prompt 05.27 : valeurs par défaut pensées pour le
-     thème sombre existant (identiques à background-elevated / accent-violet-light
-     ici), réellement utilisées seulement par .theme-landing-light ci-dessous
-     et par les nouveaux composants de la landing. */
-  --background-card: var(--background-elevated);
-  --accent-violet-tint: var(--accent-violet-light);
-  /* Couleurs de statut centralisées (Prompt 05.14) : reprennent exactement
-     les teintes déjà utilisées un peu partout dans l'app (emerald/amber/red
-     à 500 pour les accents, 300 pour le texte sur fond sombre) — jamais de
-     nouvelle teinte introduite, seulement un nom partagé pour les
-     composants src/components/ui/*. */
+  --accent-blue: #6d7cf6;
+  --accent-blue-light: #a5b4fc;
+  --accent-violet-tint: rgba(139, 92, 246, 0.14);
   --success: #10b981;
   --success-light: #6ee7b7;
   --warning: #f59e0b;
   --warning-light: #fcd34d;
   --danger: #ef4444;
   --danger-light: #fca5a5;
-  /* Prompt 06.7 : base des surimpressions neutres ("bg-overlay/[0.0x]",
-     "border-overlay/20"...) utilisées partout dans l'intérieur de l'app pour
-     les fonds/bordures discrets sur un aplat uni — blanc en thème sombre
-     (valeur historique, inchangée), noir en thème clair (voir
-     [data-theme="light"] plus bas). Jamais utilisé seul : toujours avec un
-     modificateur d'opacité Tailwind (/[0.03], /10, /20...). */
+  /* Base des surimpressions neutres ("bg-overlay/[0.0x]") : blanc en thème
+     sombre, noir en thème clair. Toujours utilisé avec une opacité. */
   --overlay-base: #ffffff;
+  /* Dégradé de marque (boutons, puces, barres de progression) */
+  --brand-from: #a78bfa;
+  --brand-via: #8b5cf6;
+  --brand-to: #6d28d9;
+  --glow: rgba(139, 92, 246, 0.45);
 }
 
 @theme inline {
@@ -55,6 +50,9 @@
   --color-danger: var(--danger);
   --color-danger-light: var(--danger-light);
   --color-overlay: var(--overlay-base);
+  --color-brand-from: var(--brand-from);
+  --color-brand-via: var(--brand-via);
+  --color-brand-to: var(--brand-to);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-fraunces), var(--font-geist-sans), serif;
@@ -64,9 +62,15 @@
   border-color: var(--border-subtle);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
@@ -74,339 +78,676 @@ body {
   color: white;
 }
 
-/* Prompt 05.27 : thème clair "ivoire/encre", scopé à la landing page
-   uniquement (classe posée sur la racine de page.tsx). Le reste de
-   l'application continue de consommer les tokens de :root (thème sombre)
-   sans aucun changement. La direction artistique abandonne les dégradés
-   bleu→violet systématiques : --accent-blue reste défini pour un usage
-   ponctuel rare, --accent-violet devient la seule couleur d'accent
-   structurante. */
+/* Thème de la landing : violet profond mais lumineux (halos animés par
+   dessus, voir .landing-aurora), cartes en verre teinté. */
 .theme-landing-light {
-  /* Prompt 05.29 : fond violet foncé pleine page (remplace le violet clair
-     du 05.28, jugé trop proche du blanc) — plus aucune zone blanche sur la
-     landing, y compris les cartes. --background-elevated/--background-card
-     restent des tons plus clairs MAIS toujours violets (jamais blancs),
-     pour garder de la profondeur entre bande/carte/fond. Le nom de la
-     classe (historique, depuis le 05.27) ne reflète plus "clair" à la
-     lettre, mais reste le point d'entrée du thème scopé à la landing. */
-  --background: #190f2e;
-  --background-elevated: #23153f;
-  --background-card: #2b1a4d;
-  --foreground: #f3eefb;
-  --foreground-muted: #b7a7d6;
-  --border-subtle: rgba(199, 178, 255, 0.16);
-  --accent-violet: #9333ea;
-  --accent-violet-light: #c9a8ff;
-  --accent-violet-tint: rgba(147, 51, 234, 0.22);
+  --background: #150c2b;
+  --background-elevated: #1c1238;
+  --background-card: #231745;
+  --foreground: #f7f3ff;
+  --foreground-muted: #bcaedb;
+  --border-subtle: rgba(205, 186, 255, 0.14);
+  --accent-violet: #9d6bff;
+  --accent-violet-light: #cdb6ff;
+  --accent-violet-tint: rgba(157, 107, 255, 0.2);
 }
 
-/* Réaffirme localement les tokens sombres d'origine pour les aperçus de
-   l'interface réelle de Tavyra (WowDemo, MockFrame) : le produit garde son
-   identité visuelle sombre et violette, en contraste assumé sur la page
-   claire — ce n'est jamais une incohérence oubliée. */
 .theme-dark-accent {
-  --background: #06070f;
-  --background-elevated: #0b0d1c;
-  --background-card: #0b0d1c;
-  --foreground: #f4f4fb;
-  --foreground-muted: #9797ad;
-  --border-subtle: rgba(255, 255, 255, 0.08);
+  --background: #0e0b1d;
+  --background-elevated: #151229;
+  --background-card: #1a1631;
+  --foreground: #f5f3ff;
+  --foreground-muted: #a9a3c7;
+  --border-subtle: rgba(196, 181, 253, 0.11);
   --accent-violet: #8b5cf6;
   --accent-violet-light: #c4b5fd;
-  --accent-violet-tint: rgba(139, 92, 246, 0.12);
-  --accent-blue: #4c7cf3;
-  --accent-blue-light: #7fa6ff;
+  --accent-violet-tint: rgba(139, 92, 246, 0.14);
 }
 
-/* Prompt 06.7 : second thème pour l'intérieur de l'app (tableau de bord,
-   bibliothèque, création, assistant, profil — jamais la landing, qui garde
-   son propre habillage défini au-dessus). Posé via l'attribut
-   data-theme="light" sur la racine de DashboardShell (voir
-   theme-context.tsx) : fond blanc partout, mêmes sections violettes
-   qu'en thème sombre (--accent-violet/--accent-blue INCHANGÉS à dessein —
-   seuls --accent-violet-light/--accent-blue-light, utilisés comme COULEUR
-   DE TEXTE sur fond clair, sont assombris pour rester lisibles ; en pastel
-   d'origine ils étaient illisibles sur blanc). Le thème sombre actuel
-   reste la valeur par défaut (:root, au-dessus) sans aucun changement. */
+/* Thème clair de l'intérieur de l'app : blanc lavande très doux plutôt
+   qu'un blanc pur, cartes blanches surélevées par une ombre légère. Les
+   couleurs de statut "-light" (utilisées comme couleur de TEXTE) sont
+   assombries pour rester lisibles sur fond clair. */
 [data-theme="light"] {
-  --background: #ffffff;
-  --background-elevated: #f7f7fb;
+  --background: #f6f5fc;
+  --background-elevated: #fbfaff;
   --background-card: #ffffff;
-  --foreground: #16161f;
-  --foreground-muted: #6b6b7c;
-  --border-subtle: rgba(15, 15, 35, 0.1);
+  --foreground: #17142b;
+  --foreground-muted: #696482;
+  --border-subtle: rgba(64, 37, 140, 0.1);
   --accent-violet-light: #7c3aed;
-  --accent-blue-light: #3558c9;
+  --accent-blue-light: #4f46e5;
   --accent-violet-tint: rgba(124, 58, 237, 0.1);
-  --overlay-base: #000000;
+  --success-light: #047857;
+  --warning-light: #b45309;
+  --danger-light: #b91c1c;
+  --overlay-base: #1e1047;
+  --glow: rgba(124, 58, 237, 0.28);
 }
 
-/* Grain papier statique, très discret : remplace l'aurora animée et la
-   grille de points sur la landing (Prompt 05.27) — aucun mouvement, juste
-   une texture. Prompt 05.29 : mode de fusion "overlay" (plutôt que
-   "multiply", quasi invisible sur un fond sombre) pour rester perceptible
-   maintenant que la landing est en violet foncé. */
-.paper-grain {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+@property --spin-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
 }
 
-/* Lueur statique très subtile derrière le hero uniquement (pas de dérive
-   animée, pas de halo saturé) : un unique dégradé radial très doux pour
-   donner de la profondeur sans rappeler l'aurora IA générique. */
-.hero-glow-light {
-  position: absolute;
-  inset: -10% -10% auto -10%;
-  height: 32rem;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse 60% 70% at 50% 0%,
-    var(--accent-violet-tint) 0%,
-    transparent 70%
-  );
-  opacity: 0.6;
-}
+@layer components {
+  /* ---------------------------------------------------------------------
+     Fonds
+     --------------------------------------------------------------------- */
 
-/* Halos décoratifs en arrière-plan : bleu nuit -> violet, très diffus */
-.aurora {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.aurora::before,
-.aurora::after {
-  content: "";
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(120px);
-  opacity: 0.55;
-}
-
-.aurora::before {
-  top: -18rem;
-  left: 50%;
-  translate: -50% 0;
-  width: 46rem;
-  height: 32rem;
-  background: radial-gradient(
-    closest-side,
-    var(--accent-violet) 0%,
-    transparent 100%
-  );
-  animation: aurora-drift-a 26s ease-in-out infinite alternate;
-}
-
-.aurora::after {
-  top: 6rem;
-  right: -12rem;
-  width: 34rem;
-  height: 34rem;
-  background: radial-gradient(
-    closest-side,
-    var(--accent-blue) 0%,
-    transparent 100%
-  );
-  opacity: 0.35;
-  animation: aurora-drift-b 32s ease-in-out infinite alternate;
-}
-
-/* Dérive très lente des halos : signature visuelle vivante plutôt qu'un
-   fond figé, sans jamais distraire du contenu. */
-@keyframes aurora-drift-a {
-  0% {
-    translate: -54% -2%;
-    scale: 1;
+  .paper-grain,
+  .grain-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
   }
-  100% {
-    translate: -46% 3%;
-    scale: 1.08;
-  }
-}
 
-@keyframes aurora-drift-b {
-  0% {
-    transform: translate(0, 0) scale(1);
+  /* Halos lumineux de la landing : trois nappes floues qui dérivent très
+     lentement — donnent de la profondeur et de la lumière au violet. */
+  .landing-aurora {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
   }
-  100% {
-    transform: translate(-3rem, 2rem) scale(1.1);
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
+  .landing-aurora span {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(110px);
+    will-change: transform;
+  }
+
+  .landing-aurora span:nth-child(1) {
+    top: -14rem;
+    left: 8%;
+    width: 46rem;
+    height: 34rem;
+    background: radial-gradient(closest-side, rgba(157, 107, 255, 0.55), transparent);
+    animation: drift-a 24s ease-in-out infinite alternate;
+  }
+
+  .landing-aurora span:nth-child(2) {
+    top: -6rem;
+    right: -10rem;
+    width: 38rem;
+    height: 38rem;
+    background: radial-gradient(closest-side, rgba(217, 70, 239, 0.28), transparent);
+    animation: drift-b 30s ease-in-out infinite alternate;
+  }
+
+  .landing-aurora span:nth-child(3) {
+    top: 22rem;
+    left: -12rem;
+    width: 34rem;
+    height: 34rem;
+    background: radial-gradient(closest-side, rgba(99, 102, 241, 0.3), transparent);
+    animation: drift-c 36s ease-in-out infinite alternate;
+  }
+
+  @keyframes drift-a {
+    to {
+      transform: translate(6rem, 3rem) scale(1.12);
+    }
+  }
+
+  @keyframes drift-b {
+    to {
+      transform: translate(-5rem, 4rem) scale(1.08);
+    }
+  }
+
+  @keyframes drift-c {
+    to {
+      transform: translate(4rem, -3rem) scale(1.15);
+    }
+  }
+
+  /* Grille fine estompée, sous le hero uniquement */
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(205, 186, 255, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(205, 186, 255, 0.07) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 80%);
+  }
+
+  .hero-glow-light {
+    position: absolute;
+    inset: -10% -10% auto -10%;
+    height: 32rem;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse 60% 70% at 50% 0%, var(--accent-violet-tint) 0%, transparent 70%);
+  }
+
+  /* Fond des pages publiques secondaires (tarifs, connexion, légal...) */
+  .aurora {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
   .aurora::before,
   .aurora::after {
-    animation: none;
+    content: "";
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(120px);
   }
-}
 
-/* Grain très subtil, pour casser l'effet "dégradé plat de template" */
-.grain-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-}
+  .aurora::before {
+    top: -18rem;
+    left: 50%;
+    translate: -50% 0;
+    width: 48rem;
+    height: 34rem;
+    background: radial-gradient(closest-side, rgba(139, 92, 246, 0.5), transparent);
+    animation: aurora-drift-a 26s ease-in-out infinite alternate;
+  }
 
-/* Alternance de teinte très subtile entre sections (voir page.tsx) */
-.section-tint-violet {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 70% 60% at 50% 0%,
-    rgba(139, 92, 246, 0.06),
-    transparent 70%
-  );
-  pointer-events: none;
-}
+  .aurora::after {
+    top: 8rem;
+    right: -12rem;
+    width: 34rem;
+    height: 34rem;
+    background: radial-gradient(closest-side, rgba(192, 38, 211, 0.22), transparent);
+    animation: aurora-drift-b 32s ease-in-out infinite alternate;
+  }
 
-.section-tint-blue {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 70% 60% at 50% 0%,
-    rgba(76, 124, 243, 0.06),
-    transparent 70%
-  );
-  pointer-events: none;
-}
+  @keyframes aurora-drift-a {
+    0% {
+      translate: -54% -2%;
+      scale: 1;
+    }
+    100% {
+      translate: -46% 3%;
+      scale: 1.08;
+    }
+  }
 
-/* Grille très subtile pour donner de la texture au fond sans distraire */
-.grid-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black 40%, transparent 100%);
-  pointer-events: none;
-}
+  @keyframes aurora-drift-b {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(-3rem, 2rem) scale(1.1);
+    }
+  }
 
-.text-gradient {
-  background: linear-gradient(
-    100deg,
-    var(--accent-blue-light) 0%,
-    var(--accent-violet-light) 55%,
-    var(--accent-violet) 100%
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image:
+      linear-gradient(to right, rgba(196, 181, 253, 0.045) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(196, 181, 253, 0.045) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(ellipse 60% 50% at 50% 0%, black 40%, transparent 100%);
+    pointer-events: none;
+  }
 
-/* Apparition douce au scroll (voir components/marketing/reveal.tsx) */
-.reveal {
-  opacity: 0;
-  transform: translateY(10px);
-  transition:
-    opacity 0.7s ease-out,
-    transform 0.7s ease-out;
-}
+  /* Lueur d'ambiance en haut de la zone principale de l'app */
+  .app-ambient {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 30rem;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 50% 60% at 20% 0%, rgba(139, 92, 246, 0.16), transparent 70%),
+      radial-gradient(ellipse 40% 50% at 85% 0%, rgba(192, 38, 211, 0.08), transparent 70%);
+  }
 
-.reveal.is-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
+  [data-theme="light"] .app-ambient {
+    background:
+      radial-gradient(ellipse 50% 60% at 20% 0%, rgba(139, 92, 246, 0.12), transparent 70%),
+      radial-gradient(ellipse 40% 50% at 85% 0%, rgba(192, 38, 211, 0.06), transparent 70%);
+  }
 
-@media (prefers-reduced-motion: reduce) {
+  /* Séparateur lumineux entre sections */
+  .glow-divider {
+    height: 1px;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, rgba(205, 186, 255, 0.35), transparent);
+  }
+
+  /* ---------------------------------------------------------------------
+     Surfaces
+     --------------------------------------------------------------------- */
+
+  /* Carte en verre : fond translucide + bordure claire en haut */
+  .glass-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+    border: 1px solid var(--border-subtle);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 20px 50px -30px rgba(10, 4, 30, 0.8);
+    backdrop-filter: blur(14px);
+  }
+
+  /* Variante plus opaque pour les éléments posés sur un halo lumineux */
+  .glass-solid {
+    background: linear-gradient(180deg, rgba(48, 32, 92, 0.92), rgba(30, 20, 60, 0.92));
+    border: 1px solid rgba(205, 186, 255, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 24px 60px -24px rgba(8, 2, 24, 0.9);
+    backdrop-filter: blur(18px);
+  }
+
+  /* Bordure dégradée de 1px (technique du masque) */
+  .gradient-border {
+    position: relative;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      140deg,
+      rgba(205, 186, 255, 0.55),
+      rgba(205, 186, 255, 0.05) 40%,
+      rgba(157, 107, 255, 0.45)
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    -webkit-mask-composite: xor;
+    pointer-events: none;
+  }
+
+  /* Bordure en rotation lente (carte mise en avant) */
+
+  .spin-border {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .spin-border::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--spin-angle),
+      rgba(157, 107, 255, 0.15),
+      #a78bfa,
+      #e879f9,
+      rgba(157, 107, 255, 0.15) 40%,
+      rgba(157, 107, 255, 0.15)
+    );
+    animation: spin-angle 6s linear infinite;
+  }
+
+  .spin-border::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -2;
+    border-radius: inherit;
+    background: radial-gradient(closest-side, rgba(157, 107, 255, 0.45), transparent);
+    filter: blur(30px);
+    opacity: 0.7;
+  }
+
+  @keyframes spin-angle {
+    to {
+      --spin-angle: 360deg;
+    }
+  }
+
+  /* Élévation au survol (cartes cliquables) */
+  .lift {
+    transition:
+      transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+      box-shadow 0.35s ease,
+      border-color 0.35s ease;
+  }
+
+  .lift:hover {
+    transform: translateY(-4px);
+    border-color: rgba(167, 139, 250, 0.4);
+    box-shadow: 0 24px 50px -24px var(--glow);
+  }
+
+  /* ---------------------------------------------------------------------
+     Boutons de marque
+     --------------------------------------------------------------------- */
+
+  .btn-brand {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background: linear-gradient(135deg, var(--brand-from) 0%, var(--brand-via) 45%, var(--brand-to) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      0 10px 30px -10px var(--glow);
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.3s ease,
+      filter 0.3s ease;
+  }
+
+  .btn-brand::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(
+      110deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.35) 50%,
+      transparent 70%
+    );
+    transform: translateX(-120%);
+    transition: transform 0.7s ease;
+  }
+
+  .btn-brand:hover {
+    filter: brightness(1.08);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      0 14px 40px -10px var(--glow);
+  }
+
+  .btn-brand:hover::after {
+    transform: translateX(120%);
+  }
+
+  .btn-brand:active {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  .btn-brand:disabled {
+    filter: grayscale(0.4);
+    box-shadow: none;
+  }
+
+  .bg-brand {
+    background: linear-gradient(135deg, var(--brand-from) 0%, var(--brand-via) 45%, var(--brand-to) 100%);
+  }
+
+  /* ---------------------------------------------------------------------
+     Typographie animée
+     --------------------------------------------------------------------- */
+
+  .text-gradient,
+  .text-shimmer {
+    background: linear-gradient(
+      100deg,
+      #c4b5fd 0%,
+      #a78bfa 25%,
+      #e879f9 50%,
+      #a78bfa 75%,
+      #c4b5fd 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-shimmer {
+    animation: shimmer 6s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: -200% center;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     Mouvements
+     --------------------------------------------------------------------- */
+
+  /* Apparition au scroll (voir components/marketing/reveal.tsx) */
   .reveal {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+    filter: blur(6px);
+    transition:
+      opacity 0.9s cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1),
+      filter 0.9s ease;
+  }
+
+  .reveal.is-visible {
     opacity: 1;
     transform: none;
-    transition: none;
+    filter: none;
   }
-}
 
-/* Curseur clignotant pour la démo visuelle de la landing page */
-@keyframes blink-caret {
-  0%,
-  49% {
-    opacity: 1;
+  /* Apparition au chargement, avec un délai par élément (--d) */
+  .rise {
+    animation: rise 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--d, 0ms);
   }
-  50%,
-  100% {
-    opacity: 0;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
   }
-}
 
-/* Lueur qui suit le curseur sur les CTA principaux (voir
-   components/marketing/magnetic-button.tsx) */
-.magnetic-btn {
-  position: relative;
-  isolation: isolate;
-  transition: transform 0.15s ease-out;
-}
+  .float-y {
+    animation: float-y 7s ease-in-out infinite;
+  }
 
-.magnetic-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    140px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(255, 255, 255, 0.35),
-    transparent 65%
-  );
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-  z-index: 1;
-  mix-blend-mode: overlay;
-}
+  .float-y-slow {
+    animation: float-y 9s ease-in-out infinite;
+    animation-delay: -3s;
+  }
 
-.magnetic-btn:hover::before {
-  opacity: 1;
-}
+  @keyframes float-y {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-12px);
+    }
+  }
 
-@media (prefers-reduced-motion: reduce) {
+  /* Barres de progression qui se remplissent au chargement */
+  .fill-in {
+    animation: fill-in 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--d, 200ms);
+    transform-origin: left;
+  }
+
+  @keyframes fill-in {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
+  .grow-up {
+    animation: grow-up 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--d, 0ms);
+    transform-origin: bottom;
+  }
+
+  @keyframes grow-up {
+    from {
+      transform: scaleY(0);
+    }
+  }
+
+  /* Bandeau défilant infini */
+  .marquee {
+    mask-image: linear-gradient(90deg, transparent, black 10%, black 90%, transparent);
+  }
+
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 40s linear infinite;
+  }
+
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Point pulsé (statut "en direct") */
+  .pulse-dot {
+    position: relative;
+  }
+
+  .pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: inherit;
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+
+  @keyframes pulse-ring {
+    from {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    to {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+
+  /* Curseur clignotant de la démo */
+  @keyframes blink-caret {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  .typing-caret::after {
+    content: "";
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--accent-violet-light);
+    animation: blink-caret 1s step-end infinite;
+  }
+
+  /* Lueur qui suit le curseur sur les CTA principaux */
   .magnetic-btn {
-    transition: none;
+    position: relative;
+    isolation: isolate;
+    transition: transform 0.15s ease-out;
   }
-}
 
-/* Transition douce quand l'aperçu de la démo change de sujet */
-@keyframes preset-fade-in {
-  from {
+  .magnetic-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      140px circle at var(--mx, 50%) var(--my, 50%),
+      rgba(255, 255, 255, 0.35),
+      transparent 65%
+    );
     opacity: 0;
-    transform: translateY(4px);
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: overlay;
   }
-  to {
+
+  .magnetic-btn:hover::before {
     opacity: 1;
-    transform: translateY(0);
   }
-}
 
-.preset-fade {
-  animation: preset-fade-in 0.35s ease-out;
-}
+  @keyframes preset-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
-@media (prefers-reduced-motion: reduce) {
   .preset-fade {
-    animation: none;
+    animation: preset-fade-in 0.35s ease-out;
   }
-}
 
-.typing-caret::after {
-  content: "";
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: var(--accent-violet-light);
-  animation: blink-caret 1s step-end infinite;
+  /* Entrée de page de l'app */
+  .page-enter {
+    animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    .landing-aurora span,
+    .aurora::before,
+    .aurora::after,
+    .spin-border::before,
+    .text-shimmer,
+    .float-y,
+    .float-y-slow,
+    .marquee-track,
+    .pulse-dot::after,
+    .preset-fade,
+    .page-enter,
+    .rise,
+    .fill-in,
+    .grow-up,
+    .ring-in {
+      animation: none !important;
+    }
+
+    .reveal {
+      opacity: 1;
+      transform: none;
+      filter: none;
+      transition: none;
+    }
+
+    .magnetic-btn,
+    .lift,
+    .btn-brand,
+    .btn-brand::after {
+      transition: none;
+    }
+  }
 }

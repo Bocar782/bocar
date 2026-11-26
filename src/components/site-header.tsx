@@ -32,7 +32,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
     <header
       className={`sticky top-0 z-20 w-full transition-colors duration-300 ${
         scrolled
-          ? "border-b border-border-subtle bg-background/80 backdrop-blur-xl"
+          ? "border-b border-border-subtle bg-background/70 shadow-[0_10px_30px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl backdrop-saturate-150"
           : "border-b border-transparent"
       }`}
     >
@@ -73,7 +73,7 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
             href="/signup"
             className={
               isLight
-                ? "rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-4 py-2 text-sm font-medium text-white shadow-[0_4px_16px_-6px_rgba(147,51,234,0.6)] transition-all hover:brightness-110"
+                ? "btn-brand rounded-lg px-4 py-2 text-sm font-semibold text-white"
                 : "rounded-full border border-border-subtle bg-white/5 px-4 py-2 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/10"
             }
           >
@@ -141,8 +141,8 @@ export function SiteHeader({ variant = "dark" }: { variant?: "dark" | "light" })
               onClick={() => setOpen(false)}
               className={
                 isLight
-                  ? "mt-2 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-accent-violet px-4 py-2.5 text-center text-sm font-semibold text-white"
-                  : "mt-2 rounded-full bg-gradient-to-r from-accent-blue to-accent-violet px-4 py-2.5 text-center text-sm font-semibold text-white"
+                  ? "btn-brand mt-2 rounded-lg px-4 py-2.5 text-center text-sm font-semibold text-white"
+                  : "mt-2 rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to px-4 py-2.5 text-center text-sm font-semibold text-white"
               }
             >
               Essayer gratuitement

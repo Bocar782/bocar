@@ -39,7 +39,7 @@ function UsageCard({
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-overlay/[0.06]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet"
+          className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to"
           style={{ width: `${Math.min(100, percentUsed)}%` }}
         />
       </div>

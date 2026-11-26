@@ -38,7 +38,7 @@ export function GenerationProgress<Stage extends string>({
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet transition-[width] duration-500 ease-out"
+          className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to transition-[width] duration-500 ease-out"
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -60,7 +60,7 @@ export function GenerationProgress<Stage extends string>({
               <span
                 className={
                   isDone
-                    ? "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-blue to-accent-violet text-xs font-semibold text-white"
+                    ? "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-from via-brand-via to-brand-to text-xs font-semibold text-white"
                     : isActive
                       ? "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-accent-violet-light bg-background-elevated text-xs font-semibold text-accent-violet-light shadow-[0_0_0_4px_rgba(139,92,246,0.12)]"
                       : "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-background-elevated text-xs text-foreground-muted/50"

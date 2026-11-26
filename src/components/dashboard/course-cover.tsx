@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 // vraie image du contenu — contrairement à une maquette qui afficherait
 // une photo stock sans rapport avec la formation.
 const GRADIENTS = [
-  "from-accent-blue to-accent-violet",
+  "from-brand-from via-brand-via to-brand-to",
   "from-accent-violet to-accent-violet-light",
   "from-success to-accent-blue",
   "from-warning to-accent-violet",

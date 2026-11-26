@@ -41,7 +41,7 @@ function SidebarBody({
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-accent-blue to-accent-violet transition-all duration-500"
+            className="h-full rounded-full bg-gradient-to-r from-brand-from via-brand-via to-brand-to transition-all duration-500"
             style={{ width: `${percent}%` }}
           />
         </div>
