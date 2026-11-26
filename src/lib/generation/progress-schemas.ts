@@ -63,8 +63,8 @@ export const CourseStepInputSchema = z.object({
 
 export const CourseStepProgressSchema = z.object({
   stage: CourseStageSchema,
-  chapters: z.record(z.string(), StoredChapterSchema),
-  moduleQuizzes: z.record(z.string(), z.array(StoredQuizQuestionSchema)),
+  chapters: z.record(z.string(), StoredChapterSchema).default({}),
+  moduleQuizzes: z.record(z.string(), z.array(StoredQuizQuestionSchema)).default({}),
   summary: z.object({ summary: z.string(), keyPoints: z.array(z.string()) }).optional(),
   finalQuiz: z.array(StoredQuizQuestionSchema).optional(),
 });
@@ -113,6 +113,6 @@ export const AnalysisStepProgressSchema = z.object({
   brief: AnalysisBriefSchema.optional(),
   research: ResearchTurnStateSchema.optional(),
   verifiedCases: CaseExtractionSchema.shape.cases.optional(),
-  sections: z.record(z.string(), StoredSectionSchema),
+  sections: z.record(z.string(), StoredSectionSchema).default({}),
   synthesis: z.object({ synthesis: z.string(), keyLessons: z.array(z.string()) }).optional(),
 });
