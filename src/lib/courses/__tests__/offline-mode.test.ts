@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 describe("mode test : aucun appel Anthropic", () => {
   it("formation + analyse complètes sans réseau", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("TAVYRA_OFFLINE_AI", "1");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { createAnthropicClient } = await import("@/lib/anthropic/client");
     const g = await import("@/lib/courses/generate");

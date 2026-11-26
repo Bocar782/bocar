@@ -8,14 +8,12 @@ import type {
   QuizQuestion,
 } from "./schemas";
 
-// Mode de génération SANS appel à l'API Anthropic (demande explicite de
-// l'utilisateur, pour tester le produit sans frais). Actif par défaut ;
-// pour revenir à la vraie génération par Claude, définir la variable
-// d'environnement TAVYRA_LIVE_AI=1 (Netlify → Environment variables).
-// Jamais actif pendant les tests automatisés (NODE_ENV=test), qui vérifient
-// le vrai parcours avec un client Anthropic simulé.
+// Mode de génération SANS appel à l'API Anthropic (contenu gabarit, pour
+// tester le parcours sans aucun frais). Désactivé par défaut : l'activer en
+// définissant TAVYRA_OFFLINE_AI=1 sur Netlify. Jamais actif pendant les
+// tests automatisés (NODE_ENV=test), qui vérifient le vrai parcours.
 export function isOfflineAI(): boolean {
-  return process.env.TAVYRA_LIVE_AI !== "1" && process.env.NODE_ENV !== "test";
+  return process.env.TAVYRA_OFFLINE_AI === "1" && process.env.NODE_ENV !== "test";
 }
 
 function cleanTopic(topic: string): string {

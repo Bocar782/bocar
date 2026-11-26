@@ -1,3 +1,4 @@
+import { AI_MODEL, webSearchTool } from "@/lib/anthropic/model";
 import { isOfflineAI } from "@/lib/courses/offline";
 import { offlineBrief, offlineCases, offlineSection, offlineSynthesis } from "./offline";
 import Anthropic from "@anthropic-ai/sdk";
@@ -16,7 +17,7 @@ import {
   type VerifiedCase,
 } from "./schemas";
 
-const MODEL = "claude-sonnet-5-5";
+const MODEL = AI_MODEL;
 const MIN_VERIFIED_CASES = 3;
 
 export class AnalysisGenerationError extends Error {}
@@ -62,7 +63,7 @@ async function scopeAnalysis(client: Anthropic, topic: string): Promise<Analysis
       "Tu es Tavyra, analyste pédagogique spécialisée dans l'étude de cas réels : parcours d'entrepreneurs, d'entreprises, d'investisseurs, stratégies, réussites et échecs. Tu cadres une demande d'analyse approfondie avant la phase de recherche. Ton rôle est de préparer une vraie recherche structurée, pas une simple reformulation du sujet.",
     user: `Sujet demandé : "${topic}"\n\nCadre cette analyse approfondie. Choisis un nombre de cas réels à analyser entre 4 et 7 selon la richesse du sujet. Prépare 4 à 6 requêtes de recherche web distinctes et complémentaires (par exemple : succès notables, échecs notables, stratégies spécifiques, données chiffrées ou études) pour rassembler des cas réels variés et pertinents, pas uniquement des success stories.`,
     schema: AnalysisBriefSchema,
-    maxTokens: 2048,
+    maxTokens: 8000,
   });
 
   return { ...result, caseCount: Math.min(7, Math.max(4, Math.round(result.caseCount))) };
@@ -103,7 +104,7 @@ async function performResearchTurn(
   const system =
     "Tu es Tavyra, chargée de rassembler des cas réels et vérifiables (parcours d'entrepreneurs, entreprises, investisseurs, stratégies, réussites, échecs, événements, données) disponibles publiquement, en lien avec un sujet donné. Utilise l'outil de recherche web pour mener PLUSIEURS recherches distinctes couvrant différents angles (succès, échecs, stratégies, données). Vérifie chaque fait par une recherche avant de l'avancer. N'affirme jamais qu'un cas est réel sans l'avoir confirmé par une recherche.";
   const tools = [
-    { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 14 },
+    webSearchTool(14),
   ];
 
   let messages: Anthropic.MessageParam[];

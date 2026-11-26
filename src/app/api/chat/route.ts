@@ -1,3 +1,4 @@
+import { AI_MODEL } from "@/lib/anthropic/model";
 import { isOfflineAI } from "@/lib/courses/offline";
 import { z } from "zod";
 import { NextResponse } from "next/server";
@@ -13,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MODEL = "claude-sonnet-5-5";
+const MODEL = AI_MODEL;
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MESSAGES = 40;
 
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
         const client = createAnthropicClient();
         const anthropicStream = client.messages.stream({
           model: MODEL,
-          max_tokens: 1536,
+          max_tokens: 6000,
           system,
           messages,
         });

@@ -1,3 +1,4 @@
+import { AI_MODEL, webSearchTool } from "@/lib/anthropic/model";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
@@ -36,7 +37,7 @@ import {
   type VerifiedExample,
 } from "./schemas";
 
-const MODEL = "claude-sonnet-5-5";
+const MODEL = AI_MODEL;
 
 export class CourseGenerationError extends Error {}
 
@@ -199,9 +200,9 @@ async function analyzeTopic(
   const result = await parseStructured(client, {
     system:
       "Tu es Tavyra, une experte en ingénierie pédagogique. Tu analyses une demande de formation pour en déterminer le domaine, le niveau cible et l'angle d'approche, avant qu'elle ne soit construite par d'autres étapes.",
-    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.${formatDiagnosticContext(diagnosticAnswers)}`,
+    user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet (privilégie une formation complète : la plupart des sujets concrets, comme le e-commerce, le marketing ou la finance, justifient ${MAX_MODULE_COUNT} modules) : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.${formatDiagnosticContext(diagnosticAnswers)}`,
     schema: AnalysisSchema,
-    maxTokens: 2048,
+    maxTokens: 8000,
   });
 
   // Simple normalisation d'une VALEUR INDICATIVE envoyée ensuite dans le
@@ -712,7 +713,7 @@ export async function generateAdaptiveDiagnosticQuestion(
       "Tu es Tavyra, une experte en ingénierie pédagogique qui mène un diagnostic avant de construire une formation sur mesure. Ton rôle : d'abord vérifier que le sujet demandé est compréhensible comme sujet de formation réel (ex. \"voiture\", \"la bourse\", \"le piano\" sont compréhensibles même vagues ; \"hddkd\" ou \"caca\" ne le sont pas). Ensuite, poser UNE SEULE question à la fois, qui tient VRAIMENT compte du contenu des réponses précédentes (reformule ou référence ce que la personne vient de répondre, comme le ferait une vraie personne qui l'écoute) plutôt que des questions génériques interchangeables. Décide toi-même quand tu as assez d'informations pour construire un bon plan (`done: true`), sans viser un nombre de questions précis.",
     user: `Sujet demandé : "${topic}"\n\nHistorique des réponses déjà données :\n${history}\n\nSi "${topic}" n'est pas compréhensible comme sujet de formation, renvoie unclear: true, done: false, question: null. Sinon, si tu as déjà assez d'informations (ou si l'historique est déjà riche), renvoie unclear: false, done: true, question: null. Sinon, renvoie unclear: false, done: false, et UNE question pertinente qui tient compte du contenu réel de la dernière réponse si elle existe.`,
     schema: DiagnosticStepSchema,
-    maxTokens: 700,
+    maxTokens: 12000,
   });
 
   if (result.unclear) return { question: null, unclear: true };
@@ -753,7 +754,7 @@ async function searchRealExamples(
 
   let messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
   const tools = [
-    { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: 8 },
+    webSearchTool(8),
   ];
 
   let response = requireContent(
@@ -819,7 +820,7 @@ async function extractVerifiedExamples(
       "Tu extrais des exemples réels vérifiés à partir de notes de recherche, pour une formation. Pour chaque exemple, l'URL source doit être copiée EXACTEMENT depuis la liste fournie — jamais inventée, jamais modifiée.",
     user: `Sujet : "${analysis.title}"\n\nNotes de recherche :\n${findings}\n\nSources réellement trouvées (copie l'URL exactement) :\n${sourceList}\n\nExtrais la liste des exemples réels et vérifiés, chacun avec sa source exacte tirée de la liste ci-dessus.`,
     schema: ResearchExtractionSchema,
-    maxTokens: 6000,
+    maxTokens: 12000,
   });
 
   const realUrlSet = new Set(realSources.map((s) => s.url.trim().replace(/\/$/, "")));
@@ -919,13 +920,13 @@ async function buildProgramme(
     ? `\n\nPlan proposé précédemment, à prendre comme point de départ :\n${describeProgrammeForPrompt(previousProgramme)}\n\nL'utilisateur a demandé cet ajustement sur cette proposition — respecte-le autant que possible, en conservant le reste du plan tel quel, sans jamais sortir des règles strictes ci-dessous : "${adjustmentRequest.trim()}"`
     : "";
 
-  const baseUser = `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} modules, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Règles STRICTES à respecter : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules au total, chacun avec un titre précis, un véritable objectif pédagogique (jamais vide, ce que l'apprenant saura faire précisément après ce module), et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons cohérentes et suffisamment développées.\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}${formatDiagnosticContext(diagnosticAnswers)}${adjustmentNote}`;
+  const baseUser = `Sujet : "${analysis.title}" (domaine : ${analysis.domain}, niveau ${analysis.level}, angle : ${analysis.angle}).\n\nConstruis un plan en ${analysis.moduleCount} modules, progressifs (chaque module s'appuie sur les précédents) — par exemple, à titre d'illustration et non comme structure obligatoire : introduction et fondamentaux, développement des connaissances, approfondissement et mise en pratique, puis maîtrise des notions avancées si le sujet le justifie. Adapte librement cette progression au sujet réel. Le plan doit couvrir le sujet exact de A à Z avec des notions concrètes propres à ce domaine (jamais de modules ou leçons génériques sur la motivation, la discipline ou « comment apprendre »), et tenir compte des réponses au diagnostic : ne réexplique pas longuement ce que l'utilisateur maîtrise déjà, insiste sur ce qui lui manque et sur son objectif. Règles STRICTES à respecter : entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} modules au total, chacun avec un titre précis, un véritable objectif pédagogique (jamais vide, ce que l'apprenant saura faire précisément après ce module), et entre ${MIN_CHAPTERS_PER_MODULE} et ${MAX_CHAPTERS_PER_MODULE} leçons cohérentes et suffisamment développées (vise le haut de la fourchette pour un sujet riche : l'apprenant doit ressortir avec une maîtrise complète).\n\nExemples réels vérifiés disponibles (assigne-en un par exampleIndex à la leçon la plus pertinente s'il y en a un adapté, sinon laisse exampleIndex à null) :\n${examplesList}${formatDiagnosticContext(diagnosticAnswers)}${adjustmentNote}`;
 
   let programme = await parseStructured(client, {
     system,
     user: baseUser,
     schema: ProgrammeSchema,
-    maxTokens: 14000,
+    maxTokens: 24000,
   });
   let errors = validateProgrammeStructure(programme);
 
@@ -939,7 +940,7 @@ async function buildProgramme(
       system,
       user: correctionUser,
       schema: ProgrammeSchema,
-      maxTokens: 14000,
+      maxTokens: 24000,
     });
     errors = validateProgrammeStructure(programme);
   }
@@ -1060,10 +1061,10 @@ export async function writeChapter(
 
   return parseStructured(client, {
     system:
-      "Tu es Tavyra. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules : une explication approfondie, progressive et structurée, qui distingue clairement l'essentiel du secondaire, simplifie toute notion complexe avec une analogie ou un contre-exemple quand c'est utile, utilise un tableau comparatif quand il apporte une vraie valeur, un exemple concret, un encadré à retenir, et un exercice pratique quand (et seulement quand) le sujet s'y prête. N'invente jamais un fait présenté comme réel. N'allonge jamais artificiellement une leçon dont le sujet ne justifie pas plus de développement.",
-    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus. Elle doit apporter des connaissances NOUVELLES par rapport aux autres leçons de ce même module (vois leurs résumés dans le plan ci-dessus) : ne réexplique jamais ce qu'une autre leçon de ce module couvre déjà.\n\n${exampleInstruction}\n\n${exerciseInstruction}`,
+      "Tu es Tavyra, formatrice experte du sujet traité. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, longue et dense. Règle absolue : la leçon parle CONCRÈTEMENT du sujet exact de la formation (ses notions, méthodes, outils, chiffres, étapes et cas propres à ce domaine) — jamais de généralités sur la motivation, la discipline ou la méthode d'apprentissage, sauf si c'est explicitement le sujet. Vise 1 500 à 2 500 mots : une explication approfondie, progressive et structurée en plusieurs sous-parties, qui distingue clairement l'essentiel du secondaire, simplifie toute notion complexe avec une analogie ou un contre-exemple quand c'est utile, utilise un tableau comparatif quand il apporte une vraie valeur, un exemple concret, un encadré à retenir, et un exercice pratique quand (et seulement quand) le sujet s'y prête. N'invente jamais un fait présenté comme réel. Écris comme un expert qui transmet un vrai savoir-faire : précis, actionnable, sans remplissage ni répétition.",
+    user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus, et enseigner des connaissances précises et directement utilisables sur le sujet de la formation (pas des conseils généraux). Elle doit apporter des connaissances NOUVELLES par rapport aux autres leçons de ce même module (vois leurs résumés dans le plan ci-dessus) : ne réexplique jamais ce qu'une autre leçon de ce module couvre déjà.\n\n${exampleInstruction}\n\n${exerciseInstruction}`,
     schema: ChapterContentSchema,
-    maxTokens: 20000,
+    maxTokens: 32000,
   });
 }
 
@@ -1084,7 +1085,7 @@ async function writeSummary(
     system: "Tu es Tavyra. Tu rédiges le résumé final d'une formation à partir de ses points clés.",
     user: `Formation : "${analysis.title}".\nAngle du résumé : ${programme.summaryAngle}\n\nPoints à retenir de chaque chapitre :\n${takeaways}\n\nRédige un résumé final synthétique et les points essentiels de toute la formation.`,
     schema: CourseSummarySchema,
-    maxTokens: 6000,
+    maxTokens: 12000,
   });
 }
 
@@ -1194,7 +1195,7 @@ async function writeQuiz(
       "Tu es Tavyra. Tu crées le quiz FINAL d'une formation : une évaluation globale qui doit couvrir l'ensemble des modules et des leçons, pas seulement les premiers. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni — jamais une connaissance externe non enseignée dans ce texte, même si tu la connais par ailleurs. Privilégie des questions qui testent la compréhension, le raisonnement ou la capacité à appliquer une notion (mise en situation, comparaison, conséquence logique) plutôt que la pure mémorisation d'un fait isolé, tout en restant strictement dans les limites du contenu fourni. Choisis pour chaque question le type (single_choice, multiple_choice, true_false) le plus adapté, sans chercher à imposer une répartition fixe. Ne pose jamais une question déjà posée dans un quiz de module (liste fournie), ni une simple reformulation de celle-ci avec quelques mots changés : choisis un autre angle ou une autre notion du même contenu.",
     user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\n\nObjectifs pédagogiques de la formation :\n${objectivesList}\n\nContenu complet de la formation :\n\n${fullContent}\n\nQuestions déjà posées dans un quiz de module (à NE PAS reposer, ni reformuler) :\n${moduleQuestionsList}\n\nGénère un quiz final de ${QUESTION_COUNT} questions qui couvre l'ensemble de la formation de façon équilibrée — chaque module/chapitre important doit être représenté, pas seulement les premiers. Pour "multiple_choice" : fournis TOUS les index corrects (0-based, au moins 2) dans correctChoiceIndexes et laisse correctChoiceIndex à null. Pour "single_choice" et "true_false" : fournis un seul index correct dans correctChoiceIndex et laisse correctChoiceIndexes à null (pour "true_false", exactement 2 choix). Donne pour chaque question une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus, et indique l'index (0-based) du chapitre principalement concerné (ou null si la question porte sur plusieurs chapitres à la fois).`,
     schema: FinalQuizSchema,
-    maxTokens: 10000,
+    maxTokens: 16000,
   });
 
   const moduleQuestionTextSet = new Set(
@@ -1259,7 +1260,7 @@ async function writeModuleQuiz(
       "Tu es Tavyra. Tu crées un quiz de validation des acquis pour UN SEUL module d'une formation, à partir du contenu RÉEL de ce module uniquement. Règle absolue : chaque question, ses choix et sa bonne réponse doivent être vérifiables uniquement à partir du texte fourni pour ce module — jamais à partir d'une connaissance externe, même correcte, et jamais à partir du contenu d'un autre module. Choisis pour chaque question le type (single_choice, multiple_choice, true_false) le plus adapté à la notion testée, sans chercher à imposer une répartition fixe entre les types. Évite les questions génériques, répétitives entre elles, ou qui ne testent rien de spécifique à ce module.",
     user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nModule : "${moduleTitle}".\n\nContenu complet de ce module :\n\n${fullContent}\n\nGénère un quiz de ${MODULE_QUIZ_QUESTION_COUNT} questions portant UNIQUEMENT sur ce module, couvrant ses différentes leçons de façon équilibrée. Pour "multiple_choice" : fournis TOUS les index corrects (0-based, au moins 2) dans correctChoiceIndexes et laisse correctChoiceIndex à null. Pour "single_choice" et "true_false" : fournis un seul index correct dans correctChoiceIndex et laisse correctChoiceIndexes à null (pour "true_false", exactement 2 choix, ex. "Vrai"/"Faux"). Donne pour chaque question une explication qui justifie la bonne réponse en te basant uniquement sur le texte ci-dessus.`,
     schema: ModuleQuizSchema,
-    maxTokens: 6000,
+    maxTokens: 12000,
   });
 
   const validQuestions: QuizQuestion[] = [];
