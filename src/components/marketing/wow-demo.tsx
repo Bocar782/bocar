@@ -8,7 +8,6 @@ type Preset = {
   level: string;
   title: string;
   chapters: string[];
-  exampleTitle: string;
   example: string;
   quizQuestion: string;
   quizChoices: [string, string];
@@ -26,9 +25,8 @@ const PRESETS: Preset[] = [
       "Acquisition : SEO, publicité et réseaux sociaux",
       "Logistique, paiement et service client",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment Shopify a aidé des milliers de créateurs à lancer leur boutique sans compétences techniques.",
+      "Avant de choisir ton produit, commence par identifier un problème réel que rencontrent les gens — Shopify a ainsi permis à des milliers de créateurs sans aucune compétence technique de lancer leur boutique en quelques semaines. L'essentiel n'est pas la plateforme, mais la clarté de ton offre et la confiance que tu inspires dès la première visite.",
     quizQuestion: "Quel indicateur mesure le taux de visiteurs qui achètent ?",
     quizChoices: ["Trafic", "Taux de conversion"],
   },
@@ -43,9 +41,8 @@ const PRESETS: Preset[] = [
       "Construire un portefeuille diversifié",
       "Gérer le risque et les biais émotionnels",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment Warren Buffett a construit Berkshire Hathaway en misant sur la valeur à long terme.",
+      "Warren Buffett n'a jamais cherché à deviner les mouvements du marché : il achetait des entreprises solides à un prix inférieur à leur valeur réelle, puis attendait. Cette discipline, tenue sur des décennies, a transformé Berkshire Hathaway en l'une des plus grandes réussites financières de l'histoire.",
     quizQuestion: "Que signifie « diversifier » un portefeuille ?",
     quizChoices: ["Investir dans une seule action", "Répartir ses investissements"],
   },
@@ -60,9 +57,8 @@ const PRESETS: Preset[] = [
       "Créer une campagne publicitaire efficace",
       "Mesurer et optimiser ses résultats",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment Dollar Shave Club a conquis un marché dominé par Gillette avec une seule vidéo virale.",
+      "Dollar Shave Club n'avait ni le budget ni la notoriété de Gillette — seulement une vidéo de 90 secondes, tournée pour quelques centaines de dollars, qui parlait directement à sa cible avec humour et honnêteté. Elle a généré 12 000 commandes en 48 heures et changé la façon dont les marques pensent la publicité.",
     quizQuestion: "Que mesure le CPA en publicité ?",
     quizChoices: ["Le nombre de clics", "Le coût par acquisition"],
   },
@@ -77,9 +73,8 @@ const PRESETS: Preset[] = [
       "La Terreur et la radicalisation révolutionnaire",
       "L'héritage politique de la Révolution",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment la convocation des États généraux en 1789 a déclenché une dynamique que personne ne contrôlait plus.",
+      "Quand Louis XVI convoque les États généraux en 1789 pour résoudre la crise financière du royaume, il espère calmer la contestation — il va en réalité déclencher une dynamique que plus personne ne contrôlera. En quelques semaines, la contestation fiscale devient une remise en cause totale de l'Ancien Régime.",
     quizQuestion: "Que sont les États généraux ?",
     quizChoices: ["Une armée royale", "Une assemblée des trois ordres"],
   },
@@ -94,9 +89,8 @@ const PRESETS: Preset[] = [
       "Électricité et magnétisme",
       "Introduction à la relativité d'Einstein",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment Einstein a reformulé notre compréhension du temps et de l'espace avec la relativité restreinte.",
+      "Einstein a posé une question simple en apparence : et si la vitesse de la lumière était la même pour tout observateur, peu importe sa propre vitesse ? En poussant cette idée jusqu'au bout, il a dû renoncer à l'idée d'un temps absolu — une rupture qui a redéfini notre compréhension de l'univers.",
     quizQuestion: "Que décrit la deuxième loi de Newton ?",
     quizChoices: ["E = mc²", "F = m × a"],
   },
@@ -111,9 +105,8 @@ const PRESETS: Preset[] = [
       "Construire son plan de financement",
       "Trouver ses premiers clients",
     ],
-    exampleTitle: "Exemple concret",
     example:
-      "Comment Airbnb a validé son concept en louant des matelas gonflables avant de lever des millions.",
+      "Airbnb n'a pas commencé par lever des millions — ses fondateurs ont loué des matelas gonflables dans leur propre appartement pour payer leur loyer, et ont découvert que des inconnus étaient prêts à payer pour un logement chez l'habitant. Cette validation à petite échelle, presque gratuite, a précédé toute la suite.",
     quizQuestion: "Qu'est-ce qu'un MVP ?",
     quizChoices: ["Un plan marketing complet", "Un produit minimum viable"],
   },
@@ -224,13 +217,30 @@ export function WowDemo() {
                 </li>
               ))}
             </ul>
+            {/* Prompt 06.41 (retour utilisateur réel : la démo donnait
+                l'impression qu'une formation = 4 titres + 2 phrases) :
+                précise ce que contient RÉELLEMENT chaque leçon, jamais
+                visible dans cette simple liste de titres. */}
+            <p className="mt-2 text-[11px] text-foreground-muted">
+              + explications détaillées, exemples vérifiés et exercices pour chaque leçon
+            </p>
 
-            <div className="mt-4 rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-white/[0.03] p-3">
+            {/* Présenté comme un EXTRAIT d'une leçon bien plus longue (effet
+                de fondu en bas + mention explicite "la leçon continue"),
+                jamais comme la totalité du contenu de cette leçon. */}
+            <div className="relative mt-4 overflow-hidden rounded-xl border border-l-4 border-border-subtle border-l-accent-blue/50 bg-white/[0.03] p-3">
               <span className="text-[11px] font-medium uppercase tracking-wide text-accent-blue-light">
-                {preset.exampleTitle}
+                Extrait — {preset.chapters[1]}
               </span>
               <p className="mt-1 text-xs leading-relaxed text-foreground-muted">{preset.example}</p>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background-elevated to-transparent"
+              />
             </div>
+            <p className="mt-1.5 text-[11px] italic text-foreground-muted/70">
+              La leçon continue — explication complète, puis exercice pratique
+            </p>
 
             <div className="mt-4 rounded-xl border border-accent-violet/25 bg-accent-violet/[0.08] p-3">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-accent-violet-light">
