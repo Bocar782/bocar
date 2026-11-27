@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { IconClose, IconLogout, IconMenu } from "./icons";
 import { SidebarNav } from "./sidebar-nav";
 import { useAppTheme } from "./theme-context";
+import { ThemeDots } from "./theme-toggle";
 import { TopbarSearch } from "./topbar-search";
 
 function SidebarFooter({
@@ -46,9 +47,12 @@ function SidebarFooter({
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-foreground">{userEmail}</p>
-          <Badge tone={isPro ? "accent" : "neutral"} className="mt-1 px-2 py-0.5 text-[10px]">
-            {isPro ? "Plan Pro" : "Plan gratuit"}
-          </Badge>
+          <div className="mt-1 flex items-center gap-2">
+            <Badge tone={isPro ? "accent" : "neutral"} className="px-2 py-0.5 text-[10px]">
+              {isPro ? "Plan Pro" : "Plan gratuit"}
+            </Badge>
+            <ThemeDots />
+          </div>
         </div>
         <form action={onSignOut}>
           <button

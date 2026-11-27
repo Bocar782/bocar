@@ -68,7 +68,7 @@ describe("Thème clair/sombre de l'intérieur de l'app (Prompt 06.7)", () => {
     expect(shellRoot().dataset.theme).toBe("dark");
 
     const clairButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.trim() === "Clair",
+      (b) => b.textContent?.trim() === "Blanc",
     ) as HTMLButtonElement;
     expect(clairButton).not.toBeUndefined();
 
@@ -86,7 +86,7 @@ describe("Thème clair/sombre de l'intérieur de l'app (Prompt 06.7)", () => {
     expect(shellRoot().dataset.theme).toBe("light");
 
     const sombreButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.trim() === "Sombre",
+      (b) => b.textContent?.trim() === "Violet",
     ) as HTMLButtonElement;
 
     await act(async () => {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BackgroundGlow } from "@/components/background-glow";
+import { FocusReader } from "@/components/focus-reader";
+import { ThemeScope } from "@/components/dashboard/theme-toggle";
 import { ChapterChat } from "@/components/chapter-chat";
 import { CourseView } from "@/components/course-view";
 import { computeCourseAccess, redactLockedCourseContent } from "@/lib/courses/access";
@@ -48,7 +50,7 @@ export default async function CourseDetailPage(
   const safeCourse = redactLockedCourseContent(course, locked);
 
   return (
-    <div className="relative flex min-h-screen flex-1 flex-col">
+    <ThemeScope className="relative isolate flex min-h-screen flex-1 flex-col bg-background text-foreground">
       <BackgroundGlow />
 
       <header className="relative z-10 px-6 py-6 sm:px-10">
@@ -61,11 +63,13 @@ export default async function CourseDetailPage(
       </header>
 
       <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center px-6 pb-24 pt-2">
-        <CourseView course={safeCourse} courseId={id} locked={locked} />
+        <FocusReader>
+          <CourseView course={safeCourse} courseId={id} locked={locked} />
+        </FocusReader>
       </main>
 
       <ChapterChat course={safeCourse} courseId={id} maxChapterIndex={maxChapterIndex} />
       <ProgressTracker courseId={id} maxChapterIndex={maxChapterIndex} />
-    </div>
+    </ThemeScope>
   );
 }

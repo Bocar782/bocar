@@ -16,6 +16,7 @@ import { TrustStrip } from "@/components/marketing/trust-strip";
 import { TopicMarquee } from "@/components/marketing/topic-marquee";
 import { WowDemo } from "@/components/marketing/wow-demo";
 import { BrandMark } from "@/components/brand-mark";
+import { ThemeDots, ThemeScope } from "@/components/dashboard/theme-toggle";
 import { isOnFreePlan } from "@/lib/courses/plan";
 import { getSiteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
@@ -77,7 +78,7 @@ export default async function Home() {
   const onFreePlan = user ? await isOnFreePlan(supabase, user.id) : true;
 
   return (
-    <div className="theme-landing-light relative isolate flex-1 overflow-x-clip bg-background text-foreground">
+    <ThemeScope className="theme-landing-light relative isolate flex-1 overflow-x-clip bg-background text-foreground">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
@@ -357,6 +358,7 @@ export default async function Home() {
             <span className="text-xs text-foreground-muted">
               © {new Date().getFullYear()} Tavyra. Tous droits réservés.
             </span>
+            <ThemeDots className="mt-1" />
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-foreground-muted">
             <Link href="/pricing" className="transition-colors hover:text-foreground">
@@ -376,6 +378,6 @@ export default async function Home() {
       </footer>
 
       <StickyMobileCta />
-    </div>
+    </ThemeScope>
   );
 }

@@ -125,6 +125,21 @@ body {
   --glow: rgba(124, 58, 237, 0.28);
 }
 
+/* Thème Noir : gris neutres très sombres, accent violet conservé. */
+[data-theme="noir"] {
+  --background: #0a0a0b;
+  --background-elevated: #111113;
+  --background-card: #161618;
+  --foreground: #f4f4f5;
+  --foreground-muted: #a1a1aa;
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --accent-violet: #8b5cf6;
+  --accent-violet-light: #c4b5fd;
+  --accent-violet-tint: rgba(139, 92, 246, 0.14);
+  --overlay-base: #ffffff;
+  --glow: rgba(139, 92, 246, 0.35);
+}
+
 @property --spin-angle {
   syntax: "<angle>";
   initial-value: 0deg;
@@ -750,4 +765,56 @@ body {
       transition: none;
     }
   }
+}
+
+/* Ajustements des surfaces « verre » de la landing pour les thèmes Blanc et
+   Noir (non superposés à une couche : priment sur les classes ci-dessus). */
+[data-theme="light"] .glass-card,
+[data-theme="light"] .glass-solid {
+  background: #ffffff;
+  border-color: rgba(64, 37, 140, 0.12);
+  box-shadow:
+    0 1px 2px rgba(16, 12, 40, 0.05),
+    0 20px 50px -28px rgba(76, 29, 149, 0.35);
+}
+
+[data-theme="noir"] .glass-card,
+[data-theme="noir"] .glass-solid {
+  background: linear-gradient(180deg, #1a1a1d, #141416);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+[data-theme="light"] .hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(76, 29, 149, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(76, 29, 149, 0.07) 1px, transparent 1px);
+}
+
+[data-theme="light"] .landing-aurora span {
+  opacity: 0.45;
+}
+
+[data-theme="noir"] .landing-aurora span {
+  opacity: 0.35;
+}
+
+[data-theme="light"] .glow-divider {
+  background: linear-gradient(90deg, transparent, rgba(76, 29, 149, 0.25), transparent);
+}
+
+[data-theme="light"] .gradient-border::before {
+  background: linear-gradient(140deg, rgba(124, 58, 237, 0.45), rgba(124, 58, 237, 0.05) 40%, rgba(124, 58, 237, 0.35));
+}
+
+/* Mode concentration (lecture d'une formation en plein écran) */
+.focus-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow-y: auto;
+  background: var(--background);
+}
+
+[data-theme="light"] .text-shimmer {
+  background-image: linear-gradient(100deg, #7c3aed 0%, #6d28d9 25%, #c026d3 50%, #6d28d9 75%, #7c3aed 100%);
 }

@@ -2,7 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 
-export type AppTheme = "dark" | "light";
+// "dark" = thème Violet (par défaut), "light" = Blanc, "noir" = Noir.
+export type AppTheme = "dark" | "light" | "noir";
 
 export const THEME_STORAGE_KEY = "tavyra:app-theme";
 
@@ -20,7 +21,8 @@ const listeners = new Set<() => void>();
 
 function readStoredTheme(): AppTheme {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "noir" ? stored : "dark";
   } catch {
     // Stockage indisponible (navigation privée stricte...) : thème sombre
     // par défaut, sans faire planter la page pour autant.
