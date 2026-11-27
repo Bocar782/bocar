@@ -151,7 +151,7 @@ async function parseStructured<Schema extends z.ZodType>(
     user: string;
     schema: Schema;
     maxTokens: number;
-    effort?: "medium" | "high";
+    effort?: "low" | "medium" | "high";
   },
 ): Promise<z.infer<Schema>> {
   const response = await client.messages.parse({
@@ -203,6 +203,7 @@ async function analyzeTopic(
     user: `Demande de l'utilisateur : "${topic}"\n\nAnalyse ce sujet. Recommande un nombre de modules entre ${MIN_MODULE_COUNT} et ${MAX_MODULE_COUNT} selon la richesse réelle du sujet (privilégie une formation complète : la plupart des sujets concrets, comme le e-commerce, le marketing ou la finance, justifient ${MAX_MODULE_COUNT} modules) : ${MIN_MODULE_COUNT} pour un sujet plus étroit, jusqu'à ${MAX_MODULE_COUNT} pour un sujet riche qui appelle une vraie progression en plusieurs étapes. Détermine si des exemples réels (vraies entreprises, personnes, événements, statistiques) sont pertinents pour ce sujet — ce n'est pas le cas pour des notions très abstraites ou purement techniques où un exemple fictif est plus clair.${formatDiagnosticContext(diagnosticAnswers)}`,
     schema: AnalysisSchema,
     maxTokens: 8000,
+    effort: "low",
   });
 
   // Simple normalisation d'une VALEUR INDICATIVE envoyée ensuite dans le
@@ -714,6 +715,7 @@ export async function generateAdaptiveDiagnosticQuestion(
     user: `Sujet demandé : "${topic}"\n\nHistorique des réponses déjà données :\n${history}\n\nSi "${topic}" n'est pas compréhensible comme sujet de formation, renvoie unclear: true, done: false, question: null. Sinon, si tu as déjà assez d'informations (ou si l'historique est déjà riche), renvoie unclear: false, done: true, question: null. Sinon, renvoie unclear: false, done: false, et UNE question pertinente qui tient compte du contenu réel de la dernière réponse si elle existe.`,
     schema: DiagnosticStepSchema,
     maxTokens: 12000,
+    effort: "low",
   });
 
   if (result.unclear) return { question: null, unclear: true };
@@ -927,6 +929,7 @@ async function buildProgramme(
     user: baseUser,
     schema: ProgrammeSchema,
     maxTokens: 24000,
+    effort: "low",
   });
   let errors = validateProgrammeStructure(programme);
 
@@ -941,6 +944,7 @@ async function buildProgramme(
       user: correctionUser,
       schema: ProgrammeSchema,
       maxTokens: 24000,
+      effort: "low",
     });
     errors = validateProgrammeStructure(programme);
   }
@@ -1061,10 +1065,11 @@ export async function writeChapter(
 
   return parseStructured(client, {
     system:
-      "Tu es Tavyra, formatrice experte du sujet traité. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, longue et dense. Règle absolue : la leçon parle CONCRÈTEMENT du sujet exact de la formation (ses notions, méthodes, outils, chiffres, étapes et cas propres à ce domaine) — jamais de généralités sur la motivation, la discipline ou la méthode d'apprentissage, sauf si c'est explicitement le sujet. Vise 1 500 à 2 500 mots : une explication approfondie, progressive et structurée en plusieurs sous-parties, qui distingue clairement l'essentiel du secondaire, simplifie toute notion complexe avec une analogie ou un contre-exemple quand c'est utile, utilise un tableau comparatif quand il apporte une vraie valeur, un exemple concret, un encadré à retenir, et un exercice pratique quand (et seulement quand) le sujet s'y prête. N'invente jamais un fait présenté comme réel. Écris comme un expert qui transmet un vrai savoir-faire : précis, actionnable, sans remplissage ni répétition.",
+      "Tu es Tavyra, formatrice experte du sujet traité. Tu rédiges une leçon complète et pédagogique d'une formation structurée en modules, longue et dense. Règle absolue : la leçon parle CONCRÈTEMENT du sujet exact de la formation (ses notions, méthodes, outils, chiffres, étapes et cas propres à ce domaine) — jamais de généralités sur la motivation, la discipline ou la méthode d'apprentissage, sauf si c'est explicitement le sujet. Vise 1 200 à 2 000 mots : une explication approfondie, progressive et structurée en plusieurs sous-parties, qui distingue clairement l'essentiel du secondaire, simplifie toute notion complexe avec une analogie ou un contre-exemple quand c'est utile, utilise un tableau comparatif quand il apporte une vraie valeur, un exemple concret, un encadré à retenir, et un exercice pratique quand (et seulement quand) le sujet s'y prête. N'invente jamais un fait présenté comme réel. Écris comme un expert qui transmet un vrai savoir-faire : précis, actionnable, sans remplissage ni répétition.",
     user: `Formation : "${analysis.title}" (niveau ${analysis.level}).\nPlan complet de la formation, par module (pour situer cette leçon dans la progression globale, sans répéter ce que les autres modules couvrent) :\n${outline}\n\n${moduleContext}\n\nRédige la leçon : "${plan.title}".\nCette leçon doit couvrir : ${plan.summary}\nElle doit contribuer concrètement à l'objectif pédagogique du module rappelé ci-dessus, et enseigner des connaissances précises et directement utilisables sur le sujet de la formation (pas des conseils généraux). Elle doit apporter des connaissances NOUVELLES par rapport aux autres leçons de ce même module (vois leurs résumés dans le plan ci-dessus) : ne réexplique jamais ce qu'une autre leçon de ce module couvre déjà.\n\n${exampleInstruction}\n\n${exerciseInstruction}`,
     schema: ChapterContentSchema,
     maxTokens: 32000,
+    effort: "low",
   });
 }
 
@@ -1336,7 +1341,11 @@ export async function buildCoursePlan(
 
     onProgress("recherche", STAGE_LABELS.recherche);
     verifiedExamples = [];
-    if (analysis.usesRealWorldExamples) {
+    // Recherche web : plusieurs tours de recherche dans la même requête que
+    // l'analyse et le programme dépassaient la durée maximale des fonctions
+    // Netlify (page d'erreur HTML côté navigateur). Désactivée par défaut,
+    // réactivable avec TAVYRA_WEB_RESEARCH=1.
+    if (analysis.usesRealWorldExamples && process.env.TAVYRA_WEB_RESEARCH === "1") {
       const { findings, realSources } = await searchRealExamples(client, analysis);
       verifiedExamples = await extractVerifiedExamples(client, analysis, findings, realSources);
     }

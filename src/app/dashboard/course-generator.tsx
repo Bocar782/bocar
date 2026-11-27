@@ -107,6 +107,17 @@ function JourneyBreadcrumb({ status }: { status: Status }) {
 }
 
 const MAX_LENGTH = 500;
+
+// Netlify renvoie une page d'erreur HTML (et non du JSON) quand une
+// requête dépasse sa durée maximale : message lisible plutôt que
+// « Unexpected token '<' ».
+async function readJsonOrTimeout(response: Response) {
+  const payload = await response.json().catch(() => null);
+  if (payload === null) {
+    throw new Error("Le serveur a mis trop de temps à répondre. Réessaie dans un instant.");
+  }
+  return payload;
+}
 const MAX_ANSWER_LENGTH = 500;
 const SESSION_STORAGE_KEY = "tavyra:course-generation";
 
@@ -349,7 +360,7 @@ export function CourseGenerator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "question", topic: trimmed, previousAnswers: [] }),
       });
-      const payload = await response.json();
+      const payload = await readJsonOrTimeout(response);
       if (!response.ok) throw new Error(payload?.error ?? "Impossible de démarrer le diagnostic.");
       if (payload.unclear) {
         setUnclearTopicNotice(
@@ -388,7 +399,7 @@ export function CourseGenerator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "question", topic: topic.trim(), previousAnswers: nextAnswers }),
       });
-      const payload = await response.json();
+      const payload = await readJsonOrTimeout(response);
       if (!response.ok) throw new Error(payload?.error ?? "Impossible de poursuivre le diagnostic.");
       if (payload.unclear) {
         // Prompt 06.40 : ne peut arriver qu'au fil du diagnostic adaptatif
@@ -461,7 +472,7 @@ export function CourseGenerator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "build", topic: topic.trim(), diagnosticAnswers: answers }),
       });
-      const payload = await response.json();
+      const payload = await readJsonOrTimeout(response);
       if (!response.ok) throw new Error(payload?.error ?? "Impossible de construire le plan.");
       setPlan(payload as PlanContext);
       setStatus("plan_review");
@@ -489,7 +500,7 @@ export function CourseGenerator({
           programme: plan.programme,
         }),
       });
-      const payload = await response.json();
+      const payload = await readJsonOrTimeout(response);
       if (!response.ok) throw new Error(payload?.error ?? "Impossible d'ajuster le plan.");
       setPlan(payload as PlanContext);
       setAdjustmentRequest("");

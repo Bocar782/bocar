@@ -145,7 +145,7 @@ export const ChapterContentSchema = z.object({
   explanation: z
     .string()
     .describe(
-      "Explication approfondie, progressive et structurée du chapitre, en markdown (sous-titres ## autorisés, pas de titre de niveau 1 ; tableaux au format GFM autorisés quand ils apportent une vraie valeur comparative — jamais systématiques). Pour une notion complexe, simplifie-la avec une analogie ou un contre-exemple quand c'est pertinent. Distingue clairement ce qui est essentiel de ce qui n'est que secondaire (par exemple en mettant l'essentiel en **gras** ou dans un paragraphe dédié). Leçon LONGUE et dense en connaissances concrètes sur le sujet exact : viser 1 500 à 2 500 mots, avec plusieurs sous-parties ##, des chiffres, des méthodes, des étapes, des outils et des cas concrets propres au sujet.",
+      "Explication approfondie, progressive et structurée du chapitre, en markdown (sous-titres ## autorisés, pas de titre de niveau 1 ; tableaux au format GFM autorisés quand ils apportent une vraie valeur comparative — jamais systématiques). Pour une notion complexe, simplifie-la avec une analogie ou un contre-exemple quand c'est pertinent. Distingue clairement ce qui est essentiel de ce qui n'est que secondaire (par exemple en mettant l'essentiel en **gras** ou dans un paragraphe dédié). Leçon LONGUE et dense en connaissances concrètes sur le sujet exact : viser 1 200 à 2 000 mots, avec plusieurs sous-parties ##, des chiffres, des méthodes, des étapes, des outils et des cas concrets propres au sujet.",
     ),
   example: z.object({
     isReal: z
